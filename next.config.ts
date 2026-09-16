@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  allowedDevOrigins: ["dense-script-manhole.ngrok-free.dev"],
 };
 
 export default nextConfig;

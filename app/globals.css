@@ -1,26 +1,482 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #09090b;
+  --foreground: #fafafa;
+
+  --surface: #111113;
+  --surface-hover: #18181b;
+  --surface-elevated: #151518;
+
+  --border: #27272a;
+  --border-hover: #3f3f46;
+
+  --muted: #a1a1aa;
+  --muted-foreground: #71717a;
+
+  --primary: #ffffff;
+  --primary-foreground: #09090b;
+
+  --accent: #8b5cf6;
+  --accent-hover: #7c3aed;
+
+  --success: #22c55e;
+  --danger: #ef4444;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-elevated: var(--surface-elevated);
+
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
 }
 
 body {
+  margin: 0;
+  min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+
+  font-family:
+    var(--font-geist-sans),
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #71717a;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.7);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.3);
+  color: #ffffff;
+}
+
+/* Scrollbar */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* =========================================================
+   POSTOLL COMPONENT UTILITIES
+   ========================================================= */
+
+.postoll-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.postoll-card-hover {
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.postoll-card-hover:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+/* Inputs */
+
+.postoll-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--foreground);
+  padding: 14px 16px;
+
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.postoll-input:hover {
+  border-color: var(--border-hover);
+}
+
+.postoll-input:focus {
+  border-color: rgba(139, 92, 246, 0.75);
+  background: var(--surface-hover);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+}
+
+/* Primary button */
+
+.postoll-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  min-height: 44px;
+  padding: 0 18px;
+
+  border: 0;
+  border-radius: 10px;
+
+  background: var(--primary);
+  color: var(--primary-foreground);
+
+  font-size: 14px;
+  font-weight: 600;
+
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.postoll-button:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+}
+
+.postoll-button:active {
+  transform: translateY(0);
+}
+
+.postoll-button:disabled {
+  opacity: 0.45;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Secondary button */
+
+.postoll-button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  min-height: 44px;
+  padding: 0 18px;
+
+  border: 1px solid var(--border);
+  border-radius: 10px;
+
+  background: var(--surface);
+  color: var(--foreground);
+
+  font-size: 14px;
+  font-weight: 500;
+
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.postoll-button-secondary:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+
+/* Selected creation option */
+
+.postoll-choice {
+  position: relative;
+
+  width: 100%;
+  padding: 24px;
+
+  border: 1px solid var(--border);
+  border-radius: 16px;
+
+  background: var(--surface);
+
+  text-align: left;
+
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.postoll-choice:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+
+.postoll-choice.selected {
+  border-color: var(--accent);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(139, 92, 246, 0.13),
+      rgba(139, 92, 246, 0.04)
+    );
+
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.2),
+    0 14px 35px rgba(0, 0, 0, 0.25);
+}
+
+.postoll-choice.selected::after {
+  content: "✓";
+
+  position: absolute;
+  top: 16px;
+  right: 16px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 25px;
+  height: 25px;
+
+  border-radius: 999px;
+
+  background: var(--accent);
+  color: #ffffff;
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Badge */
+
+.postoll-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 5px 9px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  background: var(--surface-hover);
+
+  color: var(--muted);
+
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.postoll-badge-accent {
+  border-color: rgba(139, 92, 246, 0.3);
+  background: rgba(139, 92, 246, 0.1);
+  color: #c4b5fd;
+}
+
+/* Page */
+
+.postoll-page {
+  min-height: 100vh;
+  background: var(--background);
+}
+
+.postoll-container {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px;
+}
+
+/* Page heading */
+
+.postoll-page-header {
+  margin-bottom: 32px;
+}
+
+.postoll-page-header h1 {
+  margin: 0;
+
+  font-size: clamp(28px, 4vw, 38px);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.postoll-page-header p {
+  margin: 10px 0 0;
+
+  color: var(--muted);
+
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* Divider */
+
+.postoll-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Gradient text */
+
+.postoll-gradient-text {
+  background: linear-gradient(
+    90deg,
+    #ffffff,
+    #c4b5fd
+  );
+
+  -webkit-background-clip: text;
+  background-clip: text;
+
+  color: transparent;
+}
+
+/* Animations */
+
+@keyframes postoll-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes postoll-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.postoll-fade-in {
+  animation: postoll-fade-in 300ms ease-out both;
+}
+
+.postoll-loading {
+  animation: postoll-pulse 1.5s ease-in-out infinite;
+}
+
+/* Responsive */
+
+@media (max-width: 900px) {
+  .postoll-container {
+    padding: 32px 24px;
+  }
+}
+
+@media (max-width: 700px) {
+  .postoll-container {
+    padding: 24px 16px;
+  }
+
+  .postoll-page-header {
+    margin-bottom: 24px;
+  }
+
+  .postoll-page-header h1 {
+    font-size: 28px;
+  }
+
+  .postoll-choice {
+    padding: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
