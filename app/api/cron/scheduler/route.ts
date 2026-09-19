@@ -13,26 +13,106 @@ import {
  * CONFIG
  * ================================================================
  *
- * A slot is only considered "due" if the current UTC time is
- * within this many minutes of its post_time. This matches the
- * external scheduler running roughly every 5 minutes.
+ * A slot is only considered "due" if the current time in
+ * APP_TIMEZONE is within this many minutes of its post_time.
+ *
+ * IMPORTANT — SINGLE TIMEZONE ASSUMPTION:
+ *
+ * The workflow builder's time picker (schedule/page.tsx) stores
+ * a plain "HH:mm" string with no timezone attached — whatever
+ * the user picks in the UI, verbatim. There is currently no
+ * per-workflow or per-user timezone setting anywhere in the
+ * schema.
+ *
+ * Since the current audience is entirely in US Eastern time,
+ * this scheduler hardcodes America/New_York as the timezone
+ * those "HH:mm" values are assumed to represent. Using the
+ * IANA zone name (rather than a fixed UTC offset) means
+ * Daylight Saving transitions are handled automatically.
+ *
+ * If Postoll ever supports users/workflows in other timezones,
+ * this needs to become a real per-workflow field instead of a
+ * single hardcoded constant.
  */
+
+const APP_TIMEZONE = "America/New_York";
 
 const WINDOW_MINUTES = 5;
 
 /*
  * ================================================================
- * TIME HELPERS
+ * TIME HELPERS (timezone-aware)
  * ================================================================
  */
 
-function getUtcDayOfWeek(date: Date): number {
-  // 0 = Sunday ... 6 = Saturday, matches workflow_schedule_slots.day_of_week
-  return date.getUTCDay();
+const WEEKDAY_TO_NUMBER: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+function getZonedDayOfWeek(
+  date: Date,
+  timeZone: string
+): number {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+  });
+
+  const weekday = formatter.format(date);
+
+  return WEEKDAY_TO_NUMBER[weekday] ?? date.getUTCDay();
 }
 
-function getUtcTimeMinutes(date: Date): number {
-  return date.getUTCHours() * 60 + date.getUTCMinutes();
+function getZonedTimeMinutes(
+  date: Date,
+  timeZone: string
+): number {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+
+  const hourPart = parts.find(
+    (part) => part.type === "hour"
+  )?.value;
+
+  const minutePart = parts.find(
+    (part) => part.type === "minute"
+  )?.value;
+
+  // Some locales render midnight as "24" with hour12: false.
+  const hour = hourPart === "24" ? 0 : Number(hourPart);
+  const minute = Number(minutePart);
+
+  return (
+    (Number.isFinite(hour) ? hour : 0) * 60 +
+    (Number.isFinite(minute) ? minute : 0)
+  );
+}
+
+function getZonedDateString(
+  date: Date,
+  timeZone: string
+): string {
+  // en-CA formats as YYYY-MM-DD, which matches Postgres date input.
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  return formatter.format(date);
 }
 
 function timeStringToMinutes(time: string): number {
@@ -45,10 +125,6 @@ function timeStringToMinutes(time: string): number {
     (Number.isFinite(hours) ? hours : 0) * 60 +
     (Number.isFinite(minutes) ? minutes : 0)
   );
-}
-
-function getUtcDateString(date: Date): string {
-  return date.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
 /*
@@ -151,9 +227,9 @@ async function handleScheduler(request: Request) {
   );
 
   const now = new Date();
-  const todayDow = getUtcDayOfWeek(now);
-  const nowMinutes = getUtcTimeMinutes(now);
-  const runDate = getUtcDateString(now);
+  const todayDow = getZonedDayOfWeek(now, APP_TIMEZONE);
+  const nowMinutes = getZonedTimeMinutes(now, APP_TIMEZONE);
+  const runDate = getZonedDateString(now, APP_TIMEZONE);
 
   const results: Array<{
     scheduleSlotId: string;
@@ -207,6 +283,9 @@ async function handleScheduler(request: Request) {
       return NextResponse.json({
         success: true,
         checkedAt: now.toISOString(),
+        timezone: APP_TIMEZONE,
+        localDayOfWeek: todayDow,
+        localTimeMinutes: nowMinutes,
         dueSlotCount: 0,
         results: [],
       });
@@ -511,6 +590,9 @@ async function handleScheduler(request: Request) {
     return NextResponse.json({
       success: true,
       checkedAt: now.toISOString(),
+      timezone: APP_TIMEZONE,
+      localDayOfWeek: todayDow,
+      localTimeMinutes: nowMinutes,
       dueSlotCount: dueSlots.length,
       results,
     });
