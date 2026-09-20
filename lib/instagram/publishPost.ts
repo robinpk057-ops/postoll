@@ -37,6 +37,72 @@ export class PublishPostError extends Error {
 
 /*
  * ================================================================
+ * WAIT FOR CONTAINER TO FINISH PROCESSING
+ * ================================================================
+ *
+ * Instagram creates the media container asynchronously — right
+ * after POST /{ig-user-id}/media returns a creation_id, the
+ * actual image may still be downloading/processing on
+ * Instagram's side. Calling media_publish before that finishes
+ * returns errors like "Media ID is not available".
+ *
+ * Instagram's own docs recommend polling status_code until it
+ * reports FINISHED before publishing.
+ */
+
+async function waitForContainerReady(
+  creationId: string,
+  accessToken: string,
+  maxAttempts = 8,
+  delayMs = 3000
+): Promise<void> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const statusResponse = await fetch(
+      `${INSTAGRAM_GRAPH_URL}/${creationId}?fields=status_code&access_token=${encodeURIComponent(
+        accessToken
+      )}`,
+      { cache: "no-store" }
+    );
+
+    const statusData = await statusResponse.json();
+
+    if (!statusResponse.ok) {
+      throw new PublishPostError(
+        statusData?.error?.message ||
+          "Unable to check media container status.",
+        400,
+        statusData
+      );
+    }
+
+    const statusCode = statusData?.status_code;
+
+    if (statusCode === "FINISHED") {
+      return;
+    }
+
+    if (statusCode === "ERROR" || statusCode === "EXPIRED") {
+      throw new PublishPostError(
+        `Instagram media container failed to process (status: ${statusCode}).`,
+        400,
+        statusData
+      );
+    }
+
+    // status_code is IN_PROGRESS (or similar) — wait and check again.
+    await new Promise((resolve) =>
+      setTimeout(resolve, delayMs)
+    );
+  }
+
+  throw new PublishPostError(
+    "Timed out waiting for Instagram to finish processing the media container.",
+    408
+  );
+}
+
+/*
+ * ================================================================
  * PUBLISH INSTAGRAM POST
  * ================================================================
  *
@@ -322,6 +388,19 @@ export async function publishInstagramPost(
       400
     );
   }
+
+  /*
+   * ------------------------------------------------------------
+   * WAIT FOR THE CONTAINER TO FINISH PROCESSING
+   * ------------------------------------------------------------
+   *
+   * Publishing too early causes "Media ID is not available".
+   */
+
+  await waitForContainerReady(
+    creationId,
+    account.access_token
+  );
 
   /*
    * ------------------------------------------------------------

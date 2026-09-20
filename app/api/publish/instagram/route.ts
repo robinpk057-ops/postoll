@@ -5,6 +5,14 @@ import {
   PublishPostError,
 } from "@/lib/instagram/publishPost";
 
+/*
+ * Polling for the Instagram media container to finish processing
+ * can take up to ~24s (8 attempts x 3s). Vercel's default
+ * Serverless Function timeout on Hobby is 10s, so this must be
+ * raised explicitly or the function gets killed mid-poll.
+ */
+export const maxDuration = 30;
+
 type PublishRequest = {
   contentId?: string;
 };

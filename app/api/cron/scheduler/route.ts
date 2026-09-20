@@ -9,6 +9,17 @@ import {
 } from "@/lib/instagram/publishPost";
 
 /*
+ * Publishing a single item can take up to ~24s while polling
+ * Instagram's media container status. This route can process
+ * multiple due slots in one invocation (sequentially), so this
+ * is generous, but still bounded. If many slots ever end up due
+ * in the exact same 5-minute window for the same workflow, this
+ * may need to move to a queue instead of one synchronous request
+ * — fine for the current volume, worth revisiting if that grows.
+ */
+export const maxDuration = 60;
+
+/*
  * ================================================================
  * CONFIG
  * ================================================================
