@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import AppShell from "../../../AppShell";
 import {
   useWorkflow,
@@ -45,6 +45,62 @@ const durations = [
   },
 ];
 
+/*
+|--------------------------------------------------------------------------
+| TIMEZONE LIST
+|--------------------------------------------------------------------------
+|
+| Uses the browser's own list of supported IANA timezone names
+| when available (modern browsers). Falls back to a short common
+| list if the runtime doesn't support Intl.supportedValuesOf.
+|
+*/
+
+const FALLBACK_TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Africa/Lagos",
+  "Africa/Cairo",
+  "Asia/Kolkata",
+  "Asia/Dubai",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+  "UTC",
+];
+
+function getTimezoneOptions(): string[] {
+  try {
+    if (
+      typeof (Intl as any).supportedValuesOf ===
+      "function"
+    ) {
+      const zones = (
+        Intl as any
+      ).supportedValuesOf("timeZone") as string[];
+
+      if (Array.isArray(zones) && zones.length > 0) {
+        return zones;
+      }
+    }
+  } catch (err) {
+    console.error(
+      "Unable to load full timezone list:",
+      err
+    );
+  }
+
+  return FALLBACK_TIMEZONES;
+}
+
 function createTimes(count: number, start: number) {
   const times: string[] = [];
 
@@ -59,28 +115,6 @@ function createTimes(count: number, start: number) {
   return times;
 }
 
-function formatTime(time: string) {
-  if (!time) {
-    return "";
-  }
-
-  const [hour, minute] = time.split(":");
-
-  const h = Number(hour);
-
-  const period = h >= 12 ? "PM" : "AM";
-
-  const displayHour =
-    h % 12 === 0
-      ? 12
-      : h % 12;
-
-  return `${String(displayHour).padStart(
-    2,
-    "0"
-  )}:${minute} ${period}`;
-}
-
 export default function SchedulePage() {
   const router = useRouter();
 
@@ -88,6 +122,11 @@ export default function SchedulePage() {
     workflow,
     updateWorkflow,
   } = useWorkflow();
+
+  const timezoneOptions = useMemo(
+    () => getTimezoneOptions(),
+    []
+  );
 
   /*
    * ---------------------------------------------------------
@@ -100,9 +139,9 @@ export default function SchedulePage() {
    *
    * Content Per Day = 3
    *
-   * Content 1 -> 09:00 AM
-   * Content 2 -> 12:00 PM
-   * Content 3 -> 03:00 PM
+   * Content 1 -> 09:00
+   * Content 2 -> 12:00
+   * Content 3 -> 15:00
    *
    * No Reel/Post distinction.
    */
@@ -383,6 +422,72 @@ export default function SchedulePage() {
         >
 
           {/* =================================================
+              TIMEZONE
+              ================================================= */}
+
+          <div>
+
+            <h2 className="text-xl font-semibold">
+              Timezone
+            </h2>
+
+            <p
+              className="mt-2 text-sm"
+              style={{
+                color: "var(--muted)",
+              }}
+            >
+              All posting times below are in this
+              timezone. We detected yours
+              automatically — change it if this
+              workflow should post for a different
+              audience.
+            </p>
+
+            <div className="mt-4">
+
+              <select
+                value={
+                  workflow.timezone ||
+                  "UTC"
+                }
+                onChange={(e) =>
+                  updateWorkflow({
+                    timezone:
+                      e.target.value,
+                  })
+                }
+                className="w-full max-w-md rounded-xl border p-3 text-sm"
+                style={{
+                  background:
+                    "var(--background)",
+                  borderColor:
+                    "var(--border)",
+                }}
+              >
+
+                {timezoneOptions.map(
+                  (zone) => (
+                    <option
+                      key={zone}
+                      value={zone}
+                    >
+                      {zone.replace(
+                        /_/g,
+                        " "
+                      )}
+                    </option>
+                  )
+                )}
+
+              </select>
+
+            </div>
+
+          </div>
+
+
+          {/* =================================================
               CONTENT PER DAY
               ================================================= */}
 
@@ -642,8 +747,10 @@ export default function SchedulePage() {
                 color: "var(--muted)",
               }}
             >
-              These times will automatically apply
-              to all selected days.
+              24-hour format, in the timezone
+              selected above. These times will
+              automatically apply to all selected
+              days.
             </p>
 
 
@@ -696,19 +803,6 @@ export default function SchedulePage() {
                     {/* TIME */}
 
                     <div className="flex items-center gap-3">
-
-                      <span
-                        className="text-sm"
-                        style={{
-                          color:
-                            "var(--muted)",
-                        }}
-                      >
-                        {formatTime(
-                          slot.time
-                        )}
-                      </span>
-
 
                       <TimePicker
                         value={slot.time}
@@ -932,16 +1026,11 @@ export default function SchedulePage() {
 
 /*
 |--------------------------------------------------------------------------
-| TIME PICKER
+| TIME PICKER — 24-HOUR FORMAT
 |--------------------------------------------------------------------------
 |
-| Allows the user to select:
-|
-|   Hour   -> 1 to 12
-|   Minute -> 00 to 59
-|   Period -> AM / PM
-|
-| The value stored in workflow remains HH:mm.
+| Plain 24-hour hour/minute dropdowns. No AM/PM — the value
+| stored in workflow is, and always displays as, HH:mm.
 |
 |--------------------------------------------------------------------------
 */
@@ -960,46 +1049,18 @@ function TimePicker({
   ] = (value || "09:00").split(":");
 
   const currentHour =
-    Number(hourString) || 9;
+    Number(hourString) || 0;
 
   const currentMinute =
     Number(minuteString) || 0;
 
-  const currentPeriod =
-    currentHour >= 12
-      ? "PM"
-      : "AM";
-
-  const displayHour =
-    currentHour % 12 === 0
-      ? 12
-      : currentHour % 12;
-
 
   function updateTime(
     hour: number,
-    minute: number,
-    period: string
+    minute: number
   ) {
-
-    let hour24 = hour;
-
-    if (period === "AM") {
-
-      if (hour === 12) {
-        hour24 = 0;
-      }
-
-    } else {
-
-      if (hour !== 12) {
-        hour24 = hour + 12;
-      }
-
-    }
-
     const formatted =
-      `${String(hour24).padStart(
+      `${String(hour).padStart(
         2,
         "0"
       )}:${String(minute).padStart(
@@ -1015,15 +1076,14 @@ function TimePicker({
 
     <div className="flex items-center gap-2">
 
-      {/* HOUR */}
+      {/* HOUR (00–23) */}
 
       <select
-        value={displayHour}
+        value={currentHour}
         onChange={(e) =>
           updateTime(
             Number(e.target.value),
-            currentMinute,
-            currentPeriod
+            currentMinute
           )
         }
         className="rounded-lg border px-3 py-2"
@@ -1037,9 +1097,9 @@ function TimePicker({
 
         {Array.from(
           {
-            length: 12,
+            length: 24,
           },
-          (_, i) => i + 1
+          (_, i) => i
         ).map(
           (hour) => (
 
@@ -1064,15 +1124,14 @@ function TimePicker({
       </span>
 
 
-      {/* MINUTE */}
+      {/* MINUTE (00–59) */}
 
       <select
         value={currentMinute}
         onChange={(e) =>
           updateTime(
-            displayHour,
-            Number(e.target.value),
-            currentPeriod
+            currentHour,
+            Number(e.target.value)
           )
         }
         className="rounded-lg border px-3 py-2"
@@ -1104,37 +1163,6 @@ function TimePicker({
 
           )
         )}
-
-      </select>
-
-
-      {/* AM / PM */}
-
-      <select
-        value={currentPeriod}
-        onChange={(e) =>
-          updateTime(
-            displayHour,
-            currentMinute,
-            e.target.value
-          )
-        }
-        className="rounded-lg border px-3 py-2"
-        style={{
-          background:
-            "var(--background)",
-          borderColor:
-            "var(--border)",
-        }}
-      >
-
-        <option value="AM">
-          AM
-        </option>
-
-        <option value="PM">
-          PM
-        </option>
 
       </select>
 

@@ -462,6 +462,8 @@ export default function ReviewPage() {
           approval_required: approvalRequired,
 
           approval_before: approvalBefore,
+
+          timezone: workflow.timezone || null,
         });
 
       if (settingsError) {

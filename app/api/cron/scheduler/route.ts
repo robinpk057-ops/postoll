@@ -19,36 +19,13 @@ import {
  */
 export const maxDuration = 60;
 
-/*
- * ================================================================
- * CONFIG
- * ================================================================
- *
- * A slot is only considered "due" if the current time in
- * APP_TIMEZONE is within this many minutes of its post_time.
- *
- * IMPORTANT — SINGLE TIMEZONE ASSUMPTION:
- *
- * The workflow builder's time picker (schedule/page.tsx) stores
- * a plain "HH:mm" string with no timezone attached — whatever
- * the user picks in the UI, verbatim. There is currently no
- * per-workflow or per-user timezone setting anywhere in the
- * schema.
- *
- * Since the current audience is entirely in US Eastern time,
- * this scheduler hardcodes America/New_York as the timezone
- * those "HH:mm" values are assumed to represent. Using the
- * IANA zone name (rather than a fixed UTC offset) means
- * Daylight Saving transitions are handled automatically.
- *
- * If Postoll ever supports users/workflows in other timezones,
- * this needs to become a real per-workflow field instead of a
- * single hardcoded constant.
- */
-
-const APP_TIMEZONE = "America/New_York";
-
 const WINDOW_MINUTES = 5;
+
+/*
+ * Fallback for workflows created before the per-workflow
+ * timezone field existed (workflow_settings.timezone is null).
+ */
+const DEFAULT_TIMEZONE = "America/New_York";
 
 /*
  * ================================================================
@@ -70,60 +47,70 @@ function getZonedDayOfWeek(
   date: Date,
   timeZone: string
 ): number {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-  });
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+    });
 
-  const weekday = formatter.format(date);
+    const weekday = formatter.format(date);
 
-  return WEEKDAY_TO_NUMBER[weekday] ?? date.getUTCDay();
+    return WEEKDAY_TO_NUMBER[weekday] ?? date.getUTCDay();
+  } catch {
+    return date.getUTCDay();
+  }
 }
 
 function getZonedTimeMinutes(
   date: Date,
   timeZone: string
 ): number {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
 
-  const parts = formatter.formatToParts(date);
+    const parts = formatter.formatToParts(date);
 
-  const hourPart = parts.find(
-    (part) => part.type === "hour"
-  )?.value;
+    const hourPart = parts.find(
+      (part) => part.type === "hour"
+    )?.value;
 
-  const minutePart = parts.find(
-    (part) => part.type === "minute"
-  )?.value;
+    const minutePart = parts.find(
+      (part) => part.type === "minute"
+    )?.value;
 
-  // Some locales render midnight as "24" with hour12: false.
-  const hour = hourPart === "24" ? 0 : Number(hourPart);
-  const minute = Number(minutePart);
+    const hour = hourPart === "24" ? 0 : Number(hourPart);
+    const minute = Number(minutePart);
 
-  return (
-    (Number.isFinite(hour) ? hour : 0) * 60 +
-    (Number.isFinite(minute) ? minute : 0)
-  );
+    return (
+      (Number.isFinite(hour) ? hour : 0) * 60 +
+      (Number.isFinite(minute) ? minute : 0)
+    );
+  } catch {
+    return date.getUTCHours() * 60 + date.getUTCMinutes();
+  }
 }
 
 function getZonedDateString(
   date: Date,
   timeZone: string
 ): string {
-  // en-CA formats as YYYY-MM-DD, which matches Postgres date input.
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
 
-  return formatter.format(date);
+    return formatter.format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
 }
 
 function timeStringToMinutes(time: string): number {
@@ -136,6 +123,68 @@ function timeStringToMinutes(time: string): number {
     (Number.isFinite(hours) ? hours : 0) * 60 +
     (Number.isFinite(minutes) ? minutes : 0)
   );
+}
+
+/*
+ * ================================================================
+ * DURATION / EXPIRY CHECK
+ * ================================================================
+ */
+
+const DURATION_MONTHS: Record<string, number> = {
+  "1_month": 1,
+  "3_months": 3,
+  "6_months": 6,
+  "12_months": 12,
+};
+
+function isWorkflowExpired(
+  createdAt: string,
+  settings:
+    | {
+        duration_type: string | null;
+        start_date: string | null;
+        end_date: string | null;
+      }
+    | undefined,
+  todayDateString: string
+): boolean {
+  if (!settings || !settings.duration_type) {
+    return false;
+  }
+
+  const { duration_type, end_date } = settings;
+
+  if (duration_type === "unlimited") {
+    return false;
+  }
+
+  if (duration_type === "custom") {
+    if (!end_date) {
+      return false;
+    }
+
+    return todayDateString > end_date;
+  }
+
+  const months = DURATION_MONTHS[duration_type];
+
+  if (!months) {
+    return false;
+  }
+
+  const start = new Date(createdAt);
+
+  if (Number.isNaN(start.getTime())) {
+    return false;
+  }
+
+  const expiry = new Date(start);
+  expiry.setUTCMonth(expiry.getUTCMonth() + months);
+
+  const today = new Date(`${todayDateString}T00:00:00Z`);
+
+  return today.getTime() > expiry.getTime();
 }
 
 /*
@@ -161,6 +210,14 @@ type ScheduleSlot = {
   post_time: string;
   content_type: string;
   enabled: boolean;
+};
+
+type WorkflowSettingsRow = {
+  workflow_id: string;
+  duration_type: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  timezone: string | null;
 };
 
 /*
@@ -238,9 +295,6 @@ async function handleScheduler(request: Request) {
   );
 
   const now = new Date();
-  const todayDow = getZonedDayOfWeek(now, APP_TIMEZONE);
-  const nowMinutes = getZonedTimeMinutes(now, APP_TIMEZONE);
-  const runDate = getZonedDateString(now, APP_TIMEZONE);
 
   const results: Array<{
     scheduleSlotId: string;
@@ -252,12 +306,13 @@ async function handleScheduler(request: Request) {
   try {
     /*
      * ------------------------------------------------------------
-     * LOAD TODAY'S ENABLED SLOTS
+     * LOAD ALL ENABLED SLOTS
      * ------------------------------------------------------------
      *
-     * Two-step lookup (slots, then workflows) instead of a
-     * relational embed, to avoid depending on a specific
-     * foreign-key constraint name.
+     * No day_of_week filter here anymore — which calendar day
+     * "today" is depends on each workflow's own timezone, so we
+     * can't pre-filter by a single global day before knowing
+     * that. Day/time matching happens per-slot below instead.
      */
 
     const { data: slots, error: slotsError } = await supabaseAdmin
@@ -265,7 +320,6 @@ async function handleScheduler(request: Request) {
       .select(
         "id, workflow_id, day_of_week, slot_number, post_time, content_type, enabled"
       )
-      .eq("day_of_week", todayDow)
       .eq("enabled", true);
 
     if (slotsError) {
@@ -281,22 +335,12 @@ async function handleScheduler(request: Request) {
       );
     }
 
-    const dueSlots: ScheduleSlot[] = (slots ?? []).filter(
-      (slot: ScheduleSlot) => {
-        const slotMinutes = timeStringToMinutes(slot.post_time);
-        const diff = Math.abs(nowMinutes - slotMinutes);
+    const allSlots: ScheduleSlot[] = slots ?? [];
 
-        return diff <= WINDOW_MINUTES;
-      }
-    );
-
-    if (dueSlots.length === 0) {
+    if (allSlots.length === 0) {
       return NextResponse.json({
         success: true,
         checkedAt: now.toISOString(),
-        timezone: APP_TIMEZONE,
-        localDayOfWeek: todayDow,
-        localTimeMinutes: nowMinutes,
         dueSlotCount: 0,
         results: [],
       });
@@ -304,18 +348,18 @@ async function handleScheduler(request: Request) {
 
     /*
      * ------------------------------------------------------------
-     * LOAD ACTIVE WORKFLOWS FOR THESE SLOTS
+     * LOAD WORKFLOWS + SETTINGS FOR ALL WORKFLOWS WITH SLOTS
      * ------------------------------------------------------------
      */
 
     const workflowIds = Array.from(
-      new Set(dueSlots.map((slot) => slot.workflow_id))
+      new Set(allSlots.map((slot) => slot.workflow_id))
     );
 
     const { data: workflows, error: workflowsError } =
       await supabaseAdmin
         .from("workflows")
-        .select("id, user_id, active, status")
+        .select("id, user_id, active, status, created_at")
         .in("id", workflowIds);
 
     if (workflowsError) {
@@ -341,32 +385,139 @@ async function handleScheduler(request: Request) {
       ])
     );
 
+    const { data: settingsRows, error: settingsError } =
+      await supabaseAdmin
+        .from("workflow_settings")
+        .select(
+          "workflow_id, duration_type, start_date, end_date, timezone"
+        )
+        .in("workflow_id", workflowIds);
+
+    if (settingsError) {
+      console.error(
+        "Scheduler settings lookup error:",
+        settingsError
+      );
+    }
+
+    const settingsMap = new Map<string, WorkflowSettingsRow>(
+      (settingsRows ?? []).map((row) => [
+        row.workflow_id,
+        row as WorkflowSettingsRow,
+      ])
+    );
+
+    /*
+     * ------------------------------------------------------------
+     * DETERMINE WHICH SLOTS ARE ACTUALLY DUE, PER-WORKFLOW TIMEZONE
+     * ------------------------------------------------------------
+     */
+
+    type DueSlot = {
+      slot: ScheduleSlot;
+      workflowId: string;
+      userId: string;
+      timezone: string;
+      runDate: string;
+    };
+
+    const dueSlots: DueSlot[] = [];
+
+    for (const slot of allSlots) {
+      const workflow = workflowMap.get(slot.workflow_id);
+
+      if (!workflow || workflow.active !== true) {
+        continue;
+      }
+
+      const settings = settingsMap.get(slot.workflow_id);
+      const timezone = settings?.timezone || DEFAULT_TIMEZONE;
+
+      const zonedDow = getZonedDayOfWeek(now, timezone);
+      const zonedMinutes = getZonedTimeMinutes(now, timezone);
+
+      if (slot.day_of_week !== zonedDow) {
+        continue;
+      }
+
+      const slotMinutes = timeStringToMinutes(slot.post_time);
+      const diff = Math.abs(zonedMinutes - slotMinutes);
+
+      if (diff > WINDOW_MINUTES) {
+        continue;
+      }
+
+      dueSlots.push({
+        slot,
+        workflowId: slot.workflow_id,
+        userId: workflow.user_id,
+        timezone,
+        runDate: getZonedDateString(now, timezone),
+      });
+    }
+
+    if (dueSlots.length === 0) {
+      return NextResponse.json({
+        success: true,
+        checkedAt: now.toISOString(),
+        dueSlotCount: 0,
+        results: [],
+      });
+    }
+
     /*
      * ------------------------------------------------------------
      * PROCESS EACH DUE SLOT
      * ------------------------------------------------------------
      */
 
-    for (const slot of dueSlots) {
-      const workflow = workflowMap.get(slot.workflow_id);
+    for (const due of dueSlots) {
+      const { slot, workflowId, userId, runDate } = due;
+      const workflow = workflowMap.get(workflowId)!;
 
-      if (!workflow || workflow.active !== true) {
+      /*
+       * --------------------------------------------------------
+       * CHECK WORKFLOW DURATION
+       * --------------------------------------------------------
+       */
+
+      const settings = settingsMap.get(workflowId);
+
+      if (
+        isWorkflowExpired(
+          workflow.created_at,
+          settings,
+          runDate
+        )
+      ) {
+        await supabaseAdmin
+          .from("workflows")
+          .update({ active: false, status: "completed" })
+          .eq("id", workflowId);
+
+        await insertRun(supabaseAdmin, {
+          schedule_slot_id: slot.id,
+          workflow_id: workflowId,
+          run_date: runDate,
+          status: "skipped",
+          content_id: null,
+          error_message:
+            "Workflow duration has ended; workflow deactivated.",
+        });
+
         results.push({
           scheduleSlotId: slot.id,
-          workflowId: slot.workflow_id,
+          workflowId,
           status: "skipped",
-          detail: "Workflow is not active.",
+          detail: "Workflow duration has ended.",
         });
 
         continue;
       }
 
-      const workflowId = slot.workflow_id;
-      const userId: string = workflow.user_id;
-
       /*
        * --------------------------------------------------------
-       * SKIP IF ALREADY RUN TODAY
+       * SKIP IF ALREADY RUN TODAY (in this workflow's timezone)
        * --------------------------------------------------------
        */
 
@@ -496,10 +647,6 @@ async function handleScheduler(request: Request) {
        * --------------------------------------------------------
        * CLAIM THE CONTENT
        * --------------------------------------------------------
-       *
-       * Prevents two due slots for the same workflow (in the
-       * same run) from both picking up and publishing the
-       * same content item.
        */
 
       const { data: claimedContent, error: claimError } =
@@ -564,11 +711,6 @@ async function handleScheduler(request: Request) {
           status: "success",
         });
       } catch (publishError) {
-        /*
-         * Revert the claim so this content can be picked up
-         * again by a future slot or day.
-         */
-
         await supabaseAdmin
           .from("content")
           .update({ status: "queued" })
@@ -601,9 +743,6 @@ async function handleScheduler(request: Request) {
     return NextResponse.json({
       success: true,
       checkedAt: now.toISOString(),
-      timezone: APP_TIMEZONE,
-      localDayOfWeek: todayDow,
-      localTimeMinutes: nowMinutes,
       dueSlotCount: dueSlots.length,
       results,
     });
