@@ -263,12 +263,17 @@ export default function ReviewPage() {
   |--------------------------------------------------------------------------
   */
 
+  
+
 
   async function activateWorkflow() {
     try {
       setLoading(true);
       setError("");
       setMessage("");
+
+      console.log("selectedAccounts:", workflow.selectedAccounts);
+      console.log("platforms:", workflow.platforms);
 
       // ... other existing validations ...
 
