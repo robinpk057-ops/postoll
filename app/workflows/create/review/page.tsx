@@ -263,24 +263,15 @@ export default function ReviewPage() {
   |--------------------------------------------------------------------------
   */
 
-  if (
-    !workflow.selectedAccounts ||
-    workflow.selectedAccounts.length === 0
-  ) {
-    throw new Error(
-      "Please select at least one social account on the Accounts step."
-    );
-  }
 
   async function activateWorkflow() {
     try {
       setLoading(true);
       setError("");
       setMessage("");
-  
-      // ... other validations ...
-  
-      // THIS CHECK MUST BE INSIDE THE FUNCTION
+
+      // ... other existing validations ...
+
       if (
         !workflow.selectedAccounts ||
         workflow.selectedAccounts.length === 0
@@ -289,10 +280,12 @@ export default function ReviewPage() {
           "Please select at least one social account on the Accounts step."
         );
       }
-  
-      // ... rest of the activation code ...
+
+      // ... rest of your activation code ...
     } catch (err) {
       // ...
+    } finally {
+      setLoading(false);
     }
   }
 
