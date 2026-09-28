@@ -8,6 +8,50 @@ import { createClient } from "@/lib/supabase/client";
 
 type DatabaseSource = "ai_generated" | "user_uploaded";
 
+/*
+|--------------------------------------------------------------------------
+| MIME -> EXTENSION MAP (client-side)
+|--------------------------------------------------------------------------
+*/
+
+const MIME_EXTENSION_MAP: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif",
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/webm": "webm",
+};
+
+function getClientExtension(file: File): string {
+  const mapped = MIME_EXTENSION_MAP[file.type];
+
+  if (mapped) {
+    return mapped;
+  }
+
+  const parts = file.name.split(".");
+
+  if (parts.length > 1) {
+    return parts[parts.length - 1].toLowerCase();
+  }
+
+  return "bin";
+}
+
+function getClientContentCategory(
+  file: File
+): "post" | "reel" {
+  if (file.type.startsWith("video/")) {
+    return "reel";
+  }
+
+  return "post";
+}
+
 export default function ReviewPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -219,6 +263,15 @@ export default function ReviewPage() {
   |--------------------------------------------------------------------------
   */
 
+  if (
+    !workflow.selectedAccounts ||
+    workflow.selectedAccounts.length === 0
+  ) {
+    throw new Error(
+      "Please select at least one social account on the Accounts step."
+    );
+  }
+
   async function activateWorkflow() {
     try {
       setLoading(true);
@@ -399,45 +452,6 @@ export default function ReviewPage() {
       |--------------------------------------------------------------------------
       | CREATE WORKFLOW SETTINGS
       |--------------------------------------------------------------------------
-      |
-      | IMPORTANT:
-      |
-      | Only use columns that currently exist
-      | in workflow_settings.
-      |
-      | Based on your Supabase schema:
-      |
-      | id
-      | workflow_id
-      | content_type
-      | platforms
-      | posts_per_day
-      | duration_type
-      | start_date
-      | end_date
-      | approval_required
-      | approval_before
-      | created_at
-      |
-      | DO NOT send:
-      |
-      | background_music
-      | reel_script
-      | post_script
-      | brand_name
-      | text_overlay
-      | show_logo
-      | show_page_name
-      | video_mode
-      | voice_over
-      | voice_type
-      | voice_style
-      | character_enabled
-      | character_type
-      | character_gender
-      | character_age
-      | target_countries
-      |
       */
 
       const {
@@ -446,31 +460,80 @@ export default function ReviewPage() {
         .from("workflow_settings")
         .insert({
           workflow_id: workflowId,
-
           content_type: contentType,
-
           platforms: platforms,
-
           posts_per_day: postsPerDay,
-
           duration_type: durationType,
-
           start_date: startDate,
-
           end_date: endDate,
-
           approval_required: approvalRequired,
-
           approval_before: approvalBefore,
-
           timezone: workflow.timezone || null,
         });
 
       if (settingsError) {
-        /*
-        * Roll back workflow if settings creation fails.
-        */
+        await supabase
+          .from("workflows")
+          .delete()
+          .eq("id", workflowId);
 
+        throw settingsError;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | CREATE WORKFLOW_ACCOUNTS (Phase 2)
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        workflow.selectedAccounts &&
+        workflow.selectedAccounts.length > 0
+      ) {
+        const accountRows = workflow.selectedAccounts.map((acc) => ({
+          workflow_id: workflowId,
+          platform: acc.platform,
+          account_id: acc.accountId, // accounts.id (UUID)
+        }));
+
+        const { error: accountsError } = await supabase
+          .from("workflow_accounts")
+          .insert(accountRows);
+
+        if (accountsError) {
+          // roll back settings + workflow
+          await supabase
+            .from("workflow_settings")
+            .delete()
+            .eq("workflow_id", workflowId);
+
+          await supabase
+            .from("workflows")
+            .delete()
+            .eq("id", workflowId);
+
+          throw accountsError;
+        }
+      }
+      /*
+      |--------------------------------------------------------------------------
+      | UPLOAD USER CONTENT
+      |--------------------------------------------------------------------------
+      */
+      // ... the rest of your existing upload code continues here
+
+
+      /*
+      |--------------------------------------------------------------------------
+      | CREATE WORKFLOW ACCOUNTS
+      |--------------------------------------------------------------------------
+      */
+
+      const { error: accountsError } = await supabase
+        .from("workflow_accounts")
+        .insert(workflow.selectedAccounts);
+
+      if (settingsError) {
         await supabase
           .from("workflows")
           .delete()
@@ -486,9 +549,13 @@ export default function ReviewPage() {
       |
       | Only for user_uploaded workflows.
       |
-      | Files are only persisted to Supabase Storage and the
-      | `content` table now, at activation time — not earlier
-      | in the workflow builder.
+      | Files are uploaded DIRECTLY from the browser to Supabase
+      | Storage — not routed through a Vercel serverless function
+      | — since video files routinely exceed the function request
+      | body limit (this caused the earlier 413 errors).
+      |
+      | Each file is then registered via a small JSON-only API
+      | call that just records the content row.
       |
       */
 
@@ -499,41 +566,90 @@ export default function ReviewPage() {
         workflow.uploadFiles &&
         workflow.uploadFiles.length > 0
       ) {
-        const uploadFormData = new FormData();
+        try {
+          for (const file of workflow.uploadFiles) {
+            const fileType = getClientContentCategory(file);
+            const extension = getClientExtension(file);
 
-        uploadFormData.set("workflowId", workflowId);
+            const filePath = `${user.id}/${workflowId}/${crypto.randomUUID()}.${extension}`;
 
-        if (workflow.uploadDescription) {
-          uploadFormData.set(
-            "uploadDescription",
-            workflow.uploadDescription
-          );
-        }
+            const { error: uploadError } =
+              await supabase.storage
+                .from("postoll-media")
+                .upload(filePath, file, {
+                  contentType:
+                    file.type ||
+                    "application/octet-stream",
+                  upsert: false,
+                  cacheControl: "3600",
+                });
 
-        workflow.uploadFiles.forEach((file: File) => {
-          uploadFormData.append("files", file);
-        });
+            if (uploadError) {
+              throw new Error(
+                uploadError.message ||
+                `Failed to upload file: ${file.name}`
+              );
+            }
 
-        const uploadResponse = await fetch(
-          "/api/workflows/upload-content",
-          {
-            method: "POST",
-            body: uploadFormData,
+            const registerResponse = await fetch(
+              "/api/workflows/register-content",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  workflowId,
+                  filePath,
+                  fileType,
+                  uploadDescription:
+                    workflow.uploadDescription || null,
+                }),
+              }
+            );
+
+            const registerResult = await registerResponse
+              .json()
+              .catch(() => null);
+
+            if (
+              !registerResponse.ok ||
+              !registerResult?.success
+            ) {
+              throw new Error(
+                registerResult?.error ||
+                "Unable to save uploaded content for this workflow."
+              );
+            }
+
+            uploadedContentIds.push(
+              registerResult.contentId
+            );
           }
-        );
-
-        const uploadResult = await uploadResponse
-          .json()
-          .catch(() => null);
-
-        if (
-          !uploadResponse.ok ||
-          !uploadResult?.success
-        ) {
+        } catch (uploadLoopError) {
           /*
-          * Roll back workflow + settings if the
-          * upload step fails.
+          * Roll back any content already registered in
+          * this loop, then the workflow + settings.
           */
+
+          // best-effort cleanup of content rows
+          if (uploadedContentIds.length > 0) {
+            await fetch("/api/workflows/register-content", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contentIds: uploadedContentIds }),
+            }).catch(() => { });
+          }
+
+          await supabase
+            .from("workflow_accounts")
+            .delete()
+            .eq("workflow_id", workflowId);
+
+          await supabase
+            .from("workflow_schedule_slots")
+            .delete()
+            .eq("workflow_id", workflowId);
 
           await supabase
             .from("workflow_settings")
@@ -545,14 +661,8 @@ export default function ReviewPage() {
             .delete()
             .eq("id", workflowId);
 
-          throw new Error(
-            uploadResult?.error ||
-              "Unable to save uploaded content for this workflow."
-          );
+          throw uploadLoopError;
         }
-
-        uploadedContentIds =
-          uploadResult.contentIds ?? [];
       }
 
       /*
@@ -575,7 +685,6 @@ export default function ReviewPage() {
       for (const day of scheduleDays) {
         let dayOfWeek: number;
 
-        // Support numeric values such as "0", "1", etc.
         if (
           typeof day === "string" &&
           /^\d+$/.test(day.trim())
@@ -601,8 +710,6 @@ export default function ReviewPage() {
           );
         }
 
-        // Create one database row for every selected
-        // day + schedule slot.
         for (const slot of scheduleSlots) {
           if (!slot.time) {
             throw new Error(
@@ -641,27 +748,30 @@ export default function ReviewPage() {
         .insert(scheduleRows);
 
       if (scheduleError) {
-        // Delete uploaded content rows, if any were created.
         if (uploadedContentIds.length > 0) {
-          await supabase
-            .from("content")
-            .delete()
-            .in("id", uploadedContentIds);
+          await fetch("/api/workflows/register-content", {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              contentIds: uploadedContentIds,
+            }),
+          }).catch(() => {
+            /* best-effort cleanup */
+          });
         }
 
-        // Delete schedule slots.
         await supabase
           .from("workflow_schedule_slots")
           .delete()
           .eq("workflow_id", workflowId);
 
-        // Delete settings.
         await supabase
           .from("workflow_settings")
           .delete()
           .eq("workflow_id", workflowId);
 
-        // Delete workflow.
         await supabase
           .from("workflows")
           .delete()
@@ -865,7 +975,7 @@ export default function ReviewPage() {
             value={
               workflow?.showPageName
                 ? workflow?.brandName ||
-                  "Enabled"
+                "Enabled"
                 : "Disabled"
             }
           />
@@ -890,12 +1000,12 @@ export default function ReviewPage() {
             value={
               workflow?.characterEnabled
                 ? [
-                    workflow?.characterGender,
-                    workflow?.characterAge,
-                  ]
-                    .filter(Boolean)
-                    .join(" • ") ||
-                  "Enabled"
+                  workflow?.characterGender,
+                  workflow?.characterAge,
+                ]
+                  .filter(Boolean)
+                  .join(" • ") ||
+                "Enabled"
                 : "Disabled"
             }
           />
@@ -905,8 +1015,8 @@ export default function ReviewPage() {
             value={
               workflow?.targetCountries?.length
                 ? workflow.targetCountries.join(
-                    ", "
-                  )
+                  ", "
+                )
                 : "Not selected"
             }
           />
@@ -962,6 +1072,14 @@ export default function ReviewPage() {
 
         <ReviewCard title="Schedule">
           <ReviewRow
+            label="Timezone"
+            value={
+              workflow?.timezone ||
+              "Not detected"
+            }
+          />
+
+          <ReviewRow
             label="Reels per day"
             value={String(
               workflow?.reelsPerDay || 0
@@ -987,8 +1105,8 @@ export default function ReviewPage() {
             value={
               workflow?.scheduleDays?.length
                 ? workflow.scheduleDays.join(
-                    ", "
-                  )
+                  ", "
+                )
                 : "Not selected"
             }
           />
@@ -998,8 +1116,8 @@ export default function ReviewPage() {
             value={
               workflow?.scheduleTimes?.length
                 ? workflow.scheduleTimes.join(
-                    ", "
-                  )
+                  ", "
+                )
                 : "Not selected"
             }
           />
@@ -1014,24 +1132,24 @@ export default function ReviewPage() {
 
           {workflow?.scheduleDuration ===
             "custom" && (
-            <>
-              <ReviewRow
-                label="Start date"
-                value={
-                  workflow?.customStartDate ||
-                  "Not selected"
-                }
-              />
+              <>
+                <ReviewRow
+                  label="Start date"
+                  value={
+                    workflow?.customStartDate ||
+                    "Not selected"
+                  }
+                />
 
-              <ReviewRow
-                label="End date"
-                value={
-                  workflow?.customEndDate ||
-                  "Not selected"
-                }
-              />
-            </>
-          )}
+                <ReviewRow
+                  label="End date"
+                  value={
+                    workflow?.customEndDate ||
+                    "Not selected"
+                  }
+                />
+              </>
+            )}
         </ReviewCard>
 
         {/* PLATFORMS */}
@@ -1095,58 +1213,58 @@ export default function ReviewPage() {
 
         {databaseSource ===
           "user_uploaded" && (
-          <ReviewCard title="Uploaded Content">
-            <ReviewRow
-              label="Files"
-              value={
-                workflow?.uploadFiles?.length
-                  ? workflow.uploadFiles
+            <ReviewCard title="Uploaded Content">
+              <ReviewRow
+                label="Files"
+                value={
+                  workflow?.uploadFiles?.length
+                    ? workflow.uploadFiles
                       .map(
                         (file: {
                           name: string;
                         }) => file.name
                       )
                       .join(", ")
-                  : "No files selected"
-              }
-            />
+                    : "No files selected"
+                }
+              />
 
-            <ReviewRow
-              label="Content Description"
-              value={
-                workflow?.uploadDescription ||
-                "Not provided"
-              }
-            />
+              <ReviewRow
+                label="Content Description"
+                value={
+                  workflow?.uploadDescription ||
+                  "Not provided"
+                }
+              />
 
-            <div
-              className="mt-4 rounded-xl border p-4"
-              style={{
-                borderColor:
-                  "rgba(139,92,246,.3)",
-                background:
-                  "rgba(139,92,246,.06)",
-              }}
-            >
-              <p className="text-sm font-medium">
-                Original content stays unchanged
-              </p>
-
-              <p
-                className="mt-2 text-xs leading-5"
+              <div
+                className="mt-4 rounded-xl border p-4"
                 style={{
-                  color: "var(--muted)",
+                  borderColor:
+                    "rgba(139,92,246,.3)",
+                  background:
+                    "rgba(139,92,246,.06)",
                 }}
               >
-                Postoll will publish the
-                uploaded content without
-                automatically adding logos,
-                brand names, subtitles, or
-                other edits.
-              </p>
-            </div>
-          </ReviewCard>
-        )}
+                <p className="text-sm font-medium">
+                  Original content stays unchanged
+                </p>
+
+                <p
+                  className="mt-2 text-xs leading-5"
+                  style={{
+                    color: "var(--muted)",
+                  }}
+                >
+                  Postoll will publish the
+                  uploaded content without
+                  automatically adding logos,
+                  brand names, subtitles, or
+                  other edits.
+                </p>
+              </div>
+            </ReviewCard>
+          )}
 
         {/* SUCCESS */}
 

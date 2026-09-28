@@ -23,244 +23,107 @@ export type WorkflowSource =
 export type ScheduleSlot = {
   /*
   |--------------------------------------------------------------------------
-  | AI workflow
+  | AI workflow: "reel" | "post"
+  | User Upload workflow: "content"
   |--------------------------------------------------------------------------
-  |
-  | reel
-  | post
-  |
-  | User Upload workflow
-  |--------------------------------------------------------------------------
-  |
-  | content
-  |
   */
-
   type: "reel" | "post" | "content";
-
   number: number;
 
   /*
   |--------------------------------------------------------------------------
-  | TIME
+  | Always stored as HH:mm (24-hour).
+  | Interpreted in the workflow's `timezone` field.
   |--------------------------------------------------------------------------
-  |
-  | Always stored internally as HH:mm, 24-hour format.
-  |
-  | Examples:
-  | 09:00
-  | 14:30
-  | 18:45
-  |
-  | Interpreted in the workflow's `timezone` field below.
-  |
   */
-
   time: string;
 };
 
 export type Workflow = {
-  /*
-  |--------------------------------------------------------------------------
-  | BASIC WORKFLOW
-  |--------------------------------------------------------------------------
-  */
-
+  /* BASIC */
   name: string;
-
   source: WorkflowSource;
 
-  /*
-  |--------------------------------------------------------------------------
-  | CONTENT REQUIREMENTS
-  |--------------------------------------------------------------------------
-  */
-
+  /* CONTENT REQUIREMENTS */
   contentDescription: string;
-
   formats: string[];
-
   styles: string[];
-
   enablePost: boolean;
-
   enableReel: boolean;
 
-  /*
-  |--------------------------------------------------------------------------
-  | USER UPLOAD CONTENT
-  |--------------------------------------------------------------------------
-  |
-  | Used for:
-  |
-  | User Upload
-  |      ↓
-  | We Post
-  |
-  | The user chooses how many uploaded contents
-  | should be published per day.
-  |
-  */
-
+  /* USER UPLOAD CONTENT */
   contentPerDay: number;
 
-  /*
-  |--------------------------------------------------------------------------
-  | GENERATED SCRIPTS
-  |--------------------------------------------------------------------------
-  */
-
+  /* GENERATED SCRIPTS */
   reelScript: string;
-
   postScript: string;
 
-  /*
-  |--------------------------------------------------------------------------
-  | BRANDING
-  |--------------------------------------------------------------------------
-  */
-
+  /* BRANDING */
   showLogo: boolean;
-
   logoFile: File | null;
-
   showPageName: boolean;
-
   brandName: string;
-
   textOverlay: boolean;
 
-  /*
-  |--------------------------------------------------------------------------
-  | VIDEO OPTIONS
-  |--------------------------------------------------------------------------
-  */
-
+  /* VIDEO OPTIONS */
   videoMode: string;
-
   voiceOver: boolean;
-
   voiceType: string;
-
   voiceStyle: string;
-
   characterEnabled: boolean;
-
   characterType: string;
-
   characterGender: string;
-
   characterAge: string;
-
   targetCountries: string[];
-
   backgroundMusic: boolean;
 
-  /*
-  |--------------------------------------------------------------------------
-  | LANGUAGE
-  |--------------------------------------------------------------------------
-  */
-
+  /* LANGUAGE */
   language: string;
-
   videoLanguage: string;
 
-  /*
-  |--------------------------------------------------------------------------
-  | USER UPLOAD
-  |--------------------------------------------------------------------------
-  */
-
+  /* USER UPLOAD */
   uploadFiles: File[];
-
   uploadDescription: string;
 
-  /*
-  |--------------------------------------------------------------------------
-  | ASSISTANCE
-  |--------------------------------------------------------------------------
-  */
-
+  /* ASSISTANCE */
   generateCaption: boolean;
-
   generateHashtags: boolean;
-
   generateDescription: boolean;
-
   addSubtitles: boolean;
-
   autoEdit: boolean;
 
-  /*
-  |--------------------------------------------------------------------------
-  | SCHEDULE
-  |--------------------------------------------------------------------------
-  |
-  | AI workflow:
-  |
-  |   reelsPerDay
-  |   postsPerDay
-  |
-  | User Upload workflow:
-  |
-  |   contentPerDay
-  |
-  | scheduleSlots is shared by both workflow types.
-  |
-  */
-
+  /* SCHEDULE */
   reelsPerDay: number;
-
   postsPerDay: number;
-
   scheduleSlots: ScheduleSlot[];
-
   scheduleTimes: string[];
-
   scheduleDays: string[];
-
   applySameTimeAllDays: boolean;
-
   scheduleDuration: string;
-
   customStartDate: string;
-
   customEndDate: string;
 
-  /*
-  |--------------------------------------------------------------------------
-  | TIMEZONE
-  |--------------------------------------------------------------------------
-  |
-  | IANA timezone name, e.g. "America/New_York", "Europe/London",
-  | "Asia/Kolkata".
-  |
-  | All scheduleSlots' HH:mm times are interpreted in this
-  | timezone. Auto-detected from the browser when a new workflow
-  | starts (see WorkflowProvider below), but the user can
-  | override it on the schedule step.
-  |
-  */
-
+  /* TIMEZONE (IANA) */
   timezone: string;
 
   /*
   |--------------------------------------------------------------------------
-  | PLATFORMS
+  | PLATFORMS + SELECTED ACCOUNTS
+  | platforms        = which platforms are enabled
+  | selectedAccounts = concrete account rows the user picked
+  |                    (written to workflow_accounts on activate)
   |--------------------------------------------------------------------------
   */
-
   platforms: string[];
+  selectedAccounts: {
+    platform: string;           // "instagram" | "facebook" | ...
+    accountId: string;          // accounts.id (UUID)
+    accountName: string;        // display name / username
+    platformAccountId: string;  // platform’s own ID (ig-user-id etc.)
+  }[];
 
-  /*
-  |--------------------------------------------------------------------------
-  | APPROVAL
-  |--------------------------------------------------------------------------
-  */
-
+  /* APPROVAL */
   requireApproval: boolean;
-
   approvalTime: string;
 };
 
@@ -271,185 +134,65 @@ export type Workflow = {
 */
 
 const defaultWorkflow: Workflow = {
-  /*
-  |--------------------------------------------------------------------------
-  | BASIC
-  |--------------------------------------------------------------------------
-  */
-
   name: "",
-
   source: "",
 
-  /*
-  |--------------------------------------------------------------------------
-  | CONTENT
-  |--------------------------------------------------------------------------
-  */
-
   contentDescription: "",
-
   formats: [],
-
   styles: [],
-
   enablePost: false,
-
   enableReel: false,
-
-  /*
-  |--------------------------------------------------------------------------
-  | USER UPLOAD CONTENT
-  |--------------------------------------------------------------------------
-  */
 
   contentPerDay: 1,
 
-  /*
-  |--------------------------------------------------------------------------
-  | GENERATED SCRIPTS
-  |--------------------------------------------------------------------------
-  */
-
   reelScript: "",
-
   postScript: "",
 
-  /*
-  |--------------------------------------------------------------------------
-  | BRANDING
-  |--------------------------------------------------------------------------
-  */
-
   showLogo: false,
-
   logoFile: null,
-
   showPageName: false,
-
   brandName: "",
-
   textOverlay: false,
 
-  /*
-  |--------------------------------------------------------------------------
-  | VIDEO
-  |--------------------------------------------------------------------------
-  */
-
   videoMode: "",
-
   voiceOver: false,
-
   voiceType: "",
-
   voiceStyle: "",
-
   characterEnabled: false,
-
   characterType: "",
-
   characterGender: "",
-
   characterAge: "",
-
   targetCountries: [],
-
   backgroundMusic: true,
 
-  /*
-  |--------------------------------------------------------------------------
-  | LANGUAGE
-  |--------------------------------------------------------------------------
-  */
-
   language: "English",
-
   videoLanguage: "English",
 
-  /*
-  |--------------------------------------------------------------------------
-  | UPLOAD
-  |--------------------------------------------------------------------------
-  */
-
   uploadFiles: [],
-
   uploadDescription: "",
 
-  /*
-  |--------------------------------------------------------------------------
-  | ASSISTANCE
-  |--------------------------------------------------------------------------
-  */
-
   generateCaption: true,
-
   generateHashtags: true,
-
   generateDescription: true,
-
   addSubtitles: false,
-
   autoEdit: false,
 
-  /*
-  |--------------------------------------------------------------------------
-  | SCHEDULE
-  |--------------------------------------------------------------------------
-  */
-
   reelsPerDay: 1,
-
   postsPerDay: 1,
-
-  //contentPerDay: 1,
-
   scheduleSlots: [],
-
   scheduleTimes: [],
-
   scheduleDays: [],
-
   applySameTimeAllDays: false,
-
   scheduleDuration: "1_month",
-
   customStartDate: "",
-
   customEndDate: "",
-
-  /*
-  |--------------------------------------------------------------------------
-  | TIMEZONE
-  |--------------------------------------------------------------------------
-  |
-  | Left empty here — WorkflowProvider fills this in client-side
-  | via useEffect, so it reflects the actual visitor's browser,
-  | not whatever environment first evaluates this module (which,
-  | during server-side rendering, would be the server's own
-  | timezone, not the user's).
-  |
-  */
 
   timezone: "",
 
-  /*
-  |--------------------------------------------------------------------------
-  | PLATFORMS
-  |--------------------------------------------------------------------------
-  */
-
   platforms: [],
-
-  /*
-  |--------------------------------------------------------------------------
-  | APPROVAL
-  |--------------------------------------------------------------------------
-  */
+  selectedAccounts: [],
 
   requireApproval: false,
-
   approvalTime: "",
 };
 
@@ -461,24 +204,13 @@ const defaultWorkflow: Workflow = {
 
 type WorkflowContextType = {
   workflow: Workflow;
-
-  updateWorkflow: (
-    updates: Partial<Workflow>
-  ) => void;
-
+  updateWorkflow: (updates: Partial<Workflow>) => void;
   resetWorkflow: () => void;
 };
 
-/*
-|--------------------------------------------------------------------------
-| CONTEXT
-|--------------------------------------------------------------------------
-*/
-
-const WorkflowContext =
-  createContext<WorkflowContextType | undefined>(
-    undefined
-  );
+const WorkflowContext = createContext<WorkflowContextType | undefined>(
+  undefined
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -486,83 +218,38 @@ const WorkflowContext =
 |--------------------------------------------------------------------------
 */
 
-export function WorkflowProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const [workflow, setWorkflow] =
-    useState<Workflow>(defaultWorkflow);
+export function WorkflowProvider({ children }: { children: ReactNode }) {
+  const [workflow, setWorkflow] = useState<Workflow>(defaultWorkflow);
 
-  /*
-  |--------------------------------------------------------------------------
-  | UPDATE WORKFLOW
-  |--------------------------------------------------------------------------
-  */
-
-  function updateWorkflow(
-    updates: Partial<Workflow>
-  ) {
+  function updateWorkflow(updates: Partial<Workflow>) {
     setWorkflow((current) => ({
       ...current,
       ...updates,
     }));
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | RESET WORKFLOW
-  |--------------------------------------------------------------------------
-  */
-
   function resetWorkflow() {
     setWorkflow({
       ...defaultWorkflow,
 
-      /*
-      |--------------------------------------------------------------------------
-      | Fresh arrays
-      |--------------------------------------------------------------------------
-      */
-
+      // fresh arrays / objects
       formats: [],
-
       styles: [],
-
       targetCountries: [],
-
       uploadFiles: [],
-
       scheduleSlots: [],
-
       scheduleTimes: [],
-
       scheduleDays: [],
-
       platforms: [],
-
+      selectedAccounts: [],
       logoFile: null,
 
-      /*
-      |--------------------------------------------------------------------------
-      | Reset counters
-      |--------------------------------------------------------------------------
-      */
-
+      // reset counters
       reelsPerDay: 1,
-
       postsPerDay: 1,
-
       contentPerDay: 1,
 
-      /*
-      |--------------------------------------------------------------------------
-      | Timezone is reset to "" so the effect below re-detects it
-      | fresh for the new workflow (handles the rare case of a
-      | user switching devices/locations between workflows).
-      |--------------------------------------------------------------------------
-      */
-
+      // force re-detection of timezone
       timezone: "",
     });
   }
@@ -570,46 +257,22 @@ export function WorkflowProvider({
   /*
   |--------------------------------------------------------------------------
   | AUTO-DETECT BROWSER TIMEZONE
+  | Runs client-side only.
   |--------------------------------------------------------------------------
-  |
-  | Runs client-side only (useEffect never runs during server-side
-  | rendering), so this correctly reads the visiting user's own
-  | timezone rather than the server's.
-  |
-  | Re-runs whenever workflow.timezone becomes empty — covers both
-  | the initial mount and any future resetWorkflow() call.
-  |
   */
-
   useEffect(() => {
-    if (workflow.timezone) {
-      return;
-    }
+    if (workflow.timezone) return;
 
     try {
-      const detected =
-        Intl.DateTimeFormat().resolvedOptions().timeZone;
-
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (detected) {
         updateWorkflow({ timezone: detected });
       }
     } catch (err) {
-      console.error(
-        "Unable to auto-detect timezone:",
-        err
-      );
+      console.error("Unable to auto-detect timezone:", err);
     }
-
-    // Only re-run when timezone becomes empty, not on every
-    // workflow change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow.timezone]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | MEMO
-  |--------------------------------------------------------------------------
-  */
 
   const value = useMemo(
     () => ({
@@ -619,12 +282,6 @@ export function WorkflowProvider({
     }),
     [workflow]
   );
-
-  /*
-  |--------------------------------------------------------------------------
-  | PROVIDER
-  |--------------------------------------------------------------------------
-  */
 
   return (
     <WorkflowContext.Provider value={value}>
@@ -640,13 +297,10 @@ export function WorkflowProvider({
 */
 
 export function useWorkflow() {
-  const context =
-    useContext(WorkflowContext);
+  const context = useContext(WorkflowContext);
 
   if (!context) {
-    throw new Error(
-      "useWorkflow must be used inside WorkflowProvider"
-    );
+    throw new Error("useWorkflow must be used inside WorkflowProvider");
   }
 
   return context;

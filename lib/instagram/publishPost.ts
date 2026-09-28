@@ -69,7 +69,7 @@ async function waitForContainerReady(
     if (!statusResponse.ok) {
       throw new PublishPostError(
         statusData?.error?.message ||
-          "Unable to check media container status.",
+        "Unable to check media container status.",
         400,
         statusData
       );
@@ -180,15 +180,16 @@ export async function publishInstagramPost(
     .from("content")
     .select(
       `
-        id,
-        user_id,
-        type,
-        platform,
-        image_url,
-        caption,
-        hashtags,
-        status
-      `
+      id,
+      user_id,
+      workflow_id,
+      type,
+      platform,
+      image_url,
+      caption,
+      hashtags,
+      status
+    `
     )
     .eq("id", contentId)
     .eq("user_id", userId)
@@ -278,44 +279,103 @@ export async function publishInstagramPost(
   const caption = captionParts.join("\n\n");
 
   /*
-   * ------------------------------------------------------------
-   * FIND CONNECTED INSTAGRAM ACCOUNT
-   * ------------------------------------------------------------
-   */
+ * ------------------------------------------------------------
+ * FIND CONNECTED INSTAGRAM ACCOUNT
+ * ------------------------------------------------------------
+ *
+ * Preference order:
+ * 1. The specific account linked to this workflow via workflow_accounts
+ * 2. Fallback to any connected Instagram account (legacy workflows)
+ */
 
-  const { data: account, error: accountError } = await supabaseAdmin
-    .from("accounts")
-    .select(
-      `
-        id,
-        platform,
-        account_id,
-        account_name,
-        access_token,
-        connected
-      `
-    )
-    .eq("user_id", userId)
-    .eq("platform", "instagram")
-    .eq("connected", true)
-    .limit(1)
-    .maybeSingle();
+  let account: {
+    id: string;
+    platform: string;
+    account_id: string;
+    account_name: string;
+    access_token: string;
+    connected: boolean;
+  } | null = null;
 
-  if (accountError) {
-    throw new PublishPostError(
-      accountError.message ||
+  // 1. Try the account that was explicitly chosen for this workflow
+  if (content.workflow_id) {
+    const { data: linked, error: linkedError } = await supabaseAdmin
+      .from("workflow_accounts")
+      .select(
+        `
+            account_id,
+            accounts (
+              id,
+              platform,
+              account_id,
+              account_name,
+              access_token,
+              connected
+            )
+          `
+      )
+      .eq("workflow_id", content.workflow_id)
+      .eq("platform", "instagram")
+      .limit(1)
+      .maybeSingle();
+
+    if (linkedError) {
+      console.warn(
+        "workflow_accounts lookup failed, falling back:",
+        linkedError.message
+      );
+    } else if (linked?.accounts) {
+      // Supabase returns the joined row as an object (or array depending on relation)
+      const acc = Array.isArray(linked.accounts)
+        ? linked.accounts[0]
+        : linked.accounts;
+
+      if (acc && acc.connected && acc.access_token) {
+        account = acc;
+      }
+    }
+  }
+
+  // 2. Fallback for older workflows that have no workflow_accounts row
+  if (!account) {
+    const { data: fallback, error: accountError } = await supabaseAdmin
+      .from("accounts")
+      .select(
+        `
+            id,
+            platform,
+            account_id,
+            account_name,
+            access_token,
+            connected
+          `
+      )
+      .eq("user_id", userId)
+      .eq("platform", "instagram")
+      .eq("connected", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (accountError) {
+      throw new PublishPostError(
+        accountError.message ||
         "Unable to load the connected Instagram account.",
-      500,
-      accountError
-    );
+        500,
+        accountError
+      );
+    }
+
+    account = fallback;
   }
 
   if (!account) {
     throw new PublishPostError(
-      "No connected Instagram account was found.",
+      "No connected Instagram account was found for this workflow.",
       404
     );
   }
+
+
 
   /*
    * ------------------------------------------------------------
@@ -374,7 +434,7 @@ export async function publishInstagramPost(
 
     throw new PublishPostError(
       containerData?.error?.message ||
-        "Instagram could not create the media container.",
+      "Instagram could not create the media container.",
       400,
       containerData
     );
@@ -434,7 +494,7 @@ export async function publishInstagramPost(
 
     throw new PublishPostError(
       publishData?.error?.message ||
-        "Instagram could not publish the media.",
+      "Instagram could not publish the media.",
       400,
       { ...publishData, creationId }
     );
