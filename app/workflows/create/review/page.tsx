@@ -263,8 +263,6 @@ export default function ReviewPage() {
   |--------------------------------------------------------------------------
   */
 
-  
-
 
   async function activateWorkflow() {
     try {
@@ -272,23 +270,288 @@ export default function ReviewPage() {
       setError("");
       setMessage("");
 
+      console.log("1. Starting activateWorkflow");
       console.log("selectedAccounts:", workflow.selectedAccounts);
       console.log("platforms:", workflow.platforms);
 
-      // ... other existing validations ...
+      if (!workflow) {
+        throw new Error("Workflow data is missing. Please go back and complete the workflow.");
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+      if (!user) throw new Error("Please login first.");
+
+      const databaseSource = getDatabaseSource();
+      if (!databaseSource) {
+        throw new Error("Please select how Postoll should create or receive your content.");
+      }
 
       if (
         !workflow.selectedAccounts ||
         workflow.selectedAccounts.length === 0
       ) {
-        throw new Error(
-          "Please select at least one social account on the Accounts step."
-        );
+        throw new Error("Please select at least one social account on the Accounts step.");
       }
 
-      // ... rest of your activation code ...
-    } catch (err) {
-      // ...
+      const contentType = getContentType();
+      const postsPerDay = getPostsPerDay();
+      const durationType = getDurationType();
+      const startDate = getStartDate();
+      const endDate = getEndDate();
+      const platforms = workflow.platforms ?? [];
+      const approvalRequired = Boolean(workflow.requireApproval);
+      const approvalBefore = workflow.requireApproval
+        ? workflow.approvalTime || null
+        : null;
+
+      const scheduleDays = workflow.scheduleDays ?? [];
+      const scheduleSlots = workflow.scheduleSlots ?? [];
+
+      if (scheduleDays.length === 0) {
+        throw new Error("Please select at least one posting day.");
+      }
+      if (scheduleSlots.length === 0) {
+        throw new Error("Please add at least one posting time.");
+      }
+
+      console.log("2. After validations, about to create workflow");
+
+      // 1. Create workflow
+      const {
+        data: workflowData,
+        error: workflowError,
+      } = await supabase
+        .from("workflows")
+        .insert({
+          user_id: user.id,
+          name: workflow.name || "Untitled Workflow",
+          source: databaseSource,
+          mode: databaseSource === "ai_generated" ? "ai_generated" : "user_uploaded",
+          status: "active",
+          active: true,
+          description:
+            workflow.contentDescription ||
+            workflow.uploadDescription ||
+            null,
+        })
+        .select()
+        .single();
+
+      if (workflowError) throw workflowError;
+      if (!workflowData?.id) {
+        throw new Error("Workflow was created but no workflow ID was returned.");
+      }
+
+      const workflowId = workflowData.id;
+      console.log("3. Workflow created, id:", workflowId);
+
+      // 2. Create workflow_settings
+      const { error: settingsError } = await supabase
+        .from("workflow_settings")
+        .insert({
+          workflow_id: workflowId,
+          content_type: contentType,
+          platforms: platforms,
+          posts_per_day: postsPerDay,
+          duration_type: durationType,
+          start_date: startDate,
+          end_date: endDate,
+          approval_required: approvalRequired,
+          approval_before: approvalBefore,
+          timezone: workflow.timezone || null,
+        });
+
+      if (settingsError) {
+        await supabase.from("workflows").delete().eq("id", workflowId);
+        throw settingsError;
+      }
+      console.log("4. Settings created");
+
+      // 3. Create workflow_accounts
+      if (workflow.selectedAccounts.length > 0) {
+        const accountRows = workflow.selectedAccounts.map((acc) => ({
+          workflow_id: workflowId,
+          platform: acc.platform,
+          account_id: acc.accountId,
+        }));
+
+        const { error: accountsError } = await supabase
+          .from("workflow_accounts")
+          .insert(accountRows);
+
+        if (accountsError) {
+          await supabase.from("workflow_settings").delete().eq("workflow_id", workflowId);
+          await supabase.from("workflows").delete().eq("id", workflowId);
+          throw accountsError;
+        }
+      }
+      console.log("5. workflow_accounts created");
+
+      // 4. Upload user content (if any)
+      let uploadedContentIds: string[] = [];
+
+      if (
+        databaseSource === "user_uploaded" &&
+        workflow.uploadFiles &&
+        workflow.uploadFiles.length > 0
+      ) {
+        try {
+          for (const file of workflow.uploadFiles) {
+            const fileType = getClientContentCategory(file);
+            const extension = getClientExtension(file);
+            const filePath = `${user.id}/${workflowId}/${crypto.randomUUID()}.${extension}`;
+
+            const { error: uploadError } = await supabase.storage
+              .from("postoll-media")
+              .upload(filePath, file, {
+                contentType: file.type || "application/octet-stream",
+                upsert: false,
+                cacheControl: "3600",
+              });
+
+            if (uploadError) {
+              throw new Error(uploadError.message || `Failed to upload file: ${file.name}`);
+            }
+
+            const registerResponse = await fetch("/api/workflows/register-content", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                workflowId,
+                filePath,
+                fileType,
+                uploadDescription: workflow.uploadDescription || null,
+              }),
+            });
+
+            const registerResult = await registerResponse.json().catch(() => null);
+
+            if (!registerResponse.ok || !registerResult?.success) {
+              throw new Error(
+                registerResult?.error || "Unable to save uploaded content for this workflow."
+              );
+            }
+
+            uploadedContentIds.push(registerResult.contentId);
+          }
+        } catch (uploadLoopError) {
+          // rollback
+          if (uploadedContentIds.length > 0) {
+            await fetch("/api/workflows/register-content", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contentIds: uploadedContentIds }),
+            }).catch(() => { });
+          }
+
+          await supabase.from("workflow_accounts").delete().eq("workflow_id", workflowId);
+          await supabase.from("workflow_settings").delete().eq("workflow_id", workflowId);
+          await supabase.from("workflows").delete().eq("id", workflowId);
+
+          throw uploadLoopError;
+        }
+      }
+      console.log("6. Content upload finished");
+
+      // 5. Create schedule slots
+      const dayToNumber: Record<string, number> = {
+        sunday: 0, sun: 0,
+        monday: 1, mon: 1,
+        tuesday: 2, tue: 2, tues: 2,
+        wednesday: 3, wed: 3,
+        thursday: 4, thu: 4, thurs: 4,
+        friday: 5, fri: 5,
+        saturday: 6, sat: 6,
+      };
+
+      const scheduleRows: Array<{
+        workflow_id: string;
+        user_id: string;
+        day_of_week: number;
+        slot_number: number;
+        post_time: string;
+        content_type: string;
+        enabled: boolean;
+        updated_at: string;
+      }> = [];
+
+      for (const day of scheduleDays) {
+        let dayOfWeek: number;
+
+        if (typeof day === "string" && /^\d+$/.test(day.trim())) {
+          dayOfWeek = Number(day);
+        } else {
+          const normalizedDay = String(day).trim().toLowerCase();
+          const mappedDay = dayToNumber[normalizedDay];
+          if (mappedDay === undefined) {
+            throw new Error(`Invalid posting day: ${day}`);
+          }
+          dayOfWeek = mappedDay;
+        }
+
+        if (dayOfWeek < 0 || dayOfWeek > 6) {
+          throw new Error(`Invalid day-of-week value: ${dayOfWeek}`);
+        }
+
+        for (const slot of scheduleSlots) {
+          if (!slot.time) {
+            throw new Error(`Schedule slot ${slot.number} is missing a time.`);
+          }
+
+          scheduleRows.push({
+            workflow_id: workflowId,
+            user_id: user.id,
+            day_of_week: dayOfWeek,
+            slot_number: Number(slot.number),
+            post_time: slot.time,
+            content_type: slot.type,
+            enabled: true,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      const { error: scheduleError } = await supabase
+        .from("workflow_schedule_slots")
+        .insert(scheduleRows);
+
+      if (scheduleError) {
+        if (uploadedContentIds.length > 0) {
+          await fetch("/api/workflows/register-content", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contentIds: uploadedContentIds }),
+          }).catch(() => { });
+        }
+
+        await supabase.from("workflow_accounts").delete().eq("workflow_id", workflowId);
+        await supabase.from("workflow_schedule_slots").delete().eq("workflow_id", workflowId);
+        await supabase.from("workflow_settings").delete().eq("workflow_id", workflowId);
+        await supabase.from("workflows").delete().eq("id", workflowId);
+
+        throw scheduleError;
+      }
+
+      console.log("7. Schedule slots created – success!");
+
+      setMessage("Workflow activated successfully 🚀");
+
+      setTimeout(() => {
+        router.push("/workflows");
+      }, 1200);
+    } catch (err: unknown) {
+      console.error("ACTIVATE ERROR:", err);
+
+      if (err && typeof err === "object" && "message" in err) {
+        setError(String((err as { message: unknown }).message));
+      } else {
+        setError("Unable to activate workflow.");
+      }
     } finally {
       setLoading(false);
     }
