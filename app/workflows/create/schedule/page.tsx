@@ -745,8 +745,8 @@ export default function SchedulePage() {
               className="mt-2 text-sm"
               style={{ color: "var(--muted)" }}
             >
-              Choose times in 12-hour format (AM/PM). They are stored in 24-hour
-              format internally and applied to all selected days in the timezone above.
+              24-hour format (e.g. 13:00 = 1:00 PM), in the timezone selected above.
+              These times will automatically apply to all selected days.
             </p>
 
 
@@ -1022,11 +1022,11 @@ export default function SchedulePage() {
 
 /*
 |--------------------------------------------------------------------------
-| TIME PICKER — 12-HOUR DISPLAY, 24-HOUR STORAGE
+| TIME PICKER — 24-HOUR FORMAT
 |--------------------------------------------------------------------------
 |
-| UI shows familiar 1–12 + AM/PM.
-| The value written into workflow.scheduleSlots is always HH:mm (24-hour).
+| Plain 24-hour hour/minute dropdowns.
+| Value stored in workflow is always HH:mm (e.g. 13:00 = 1:00 PM).
 |
 */
 
@@ -1039,41 +1039,29 @@ function TimePicker({
 }) {
   const [hourString, minuteString] = (value || "09:00").split(":");
 
-  const hour24 = Number(hourString) || 0;
-  const minute = Number(minuteString) || 0;
+  const currentHour = Number(hourString) || 0;
+  const currentMinute = Number(minuteString) || 0;
 
-  // Convert 24-hour → 12-hour for display
-  const period: "AM" | "PM" = hour24 >= 12 ? "PM" : "AM";
-  let hour12 = hour24 % 12;
-  if (hour12 === 0) hour12 = 12;
-
-  function updateTime(newHour12: number, newMinute: number, newPeriod: "AM" | "PM") {
-    let hour24 = newHour12 % 12;
-    if (newPeriod === "PM") hour24 += 12;
-    if (newPeriod === "AM" && newHour12 === 12) hour24 = 0;
-    if (newPeriod === "PM" && newHour12 === 12) hour24 = 12;
-
-    const formatted = `${String(hour24).padStart(2, "0")}:${String(newMinute).padStart(2, "0")}`;
+  function updateTime(hour: number, minute: number) {
+    const formatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
     onChange(formatted);
   }
 
   return (
     <div className="flex items-center gap-2">
-      {/* HOUR 1–12 */}
+      {/* HOUR 00–23 */}
       <select
-        value={hour12}
-        onChange={(e) =>
-          updateTime(Number(e.target.value), minute, period)
-        }
+        value={currentHour}
+        onChange={(e) => updateTime(Number(e.target.value), currentMinute)}
         className="rounded-lg border px-3 py-2"
         style={{
           background: "var(--background)",
           borderColor: "var(--border)",
         }}
       >
-        {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-          <option key={h} value={h}>
-            {String(h).padStart(2, "0")}
+        {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+          <option key={hour} value={hour}>
+            {String(hour).padStart(2, "0")}
           </option>
         ))}
       </select>
@@ -1082,37 +1070,19 @@ function TimePicker({
 
       {/* MINUTE 00–59 */}
       <select
-        value={minute}
-        onChange={(e) =>
-          updateTime(hour12, Number(e.target.value), period)
-        }
+        value={currentMinute}
+        onChange={(e) => updateTime(currentHour, Number(e.target.value))}
         className="rounded-lg border px-3 py-2"
         style={{
           background: "var(--background)",
           borderColor: "var(--border)",
         }}
       >
-        {Array.from({ length: 60 }, (_, i) => i).map((m) => (
-          <option key={m} value={m}>
-            {String(m).padStart(2, "0")}
+        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+          <option key={minute} value={minute}>
+            {String(minute).padStart(2, "0")}
           </option>
         ))}
-      </select>
-
-      {/* AM / PM */}
-      <select
-        value={period}
-        onChange={(e) =>
-          updateTime(hour12, minute, e.target.value as "AM" | "PM")
-        }
-        className="rounded-lg border px-3 py-2"
-        style={{
-          background: "var(--background)",
-          borderColor: "var(--border)",
-        }}
-      >
-        <option value="AM">AM</option>
-        <option value="PM">PM</option>
       </select>
     </div>
   );
