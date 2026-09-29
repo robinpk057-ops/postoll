@@ -300,12 +300,12 @@ export default function SchedulePage() {
       scheduleDays:
         current.includes(day)
           ? current.filter(
-              (item) => item !== day
-            )
+            (item) => item !== day
+          )
           : [
-              ...current,
-              day,
-            ],
+            ...current,
+            day,
+          ],
     });
   }
 
@@ -499,7 +499,7 @@ export default function SchedulePage() {
 
 
             {workflow.source ===
-            "user_uploaded" ? (
+              "user_uploaded" ? (
 
               /*
                * ------------------------------------------------
@@ -537,13 +537,13 @@ export default function SchedulePage() {
                         style={{
                           background:
                             uploadedContentCount ===
-                            num
+                              num
                               ? "rgba(139,92,246,.15)"
                               : "var(--background)",
 
                           borderColor:
                             uploadedContentCount ===
-                            num
+                              num
                               ? "#8b5cf6"
                               : "var(--border)",
                         }}
@@ -588,20 +588,20 @@ export default function SchedulePage() {
                             generateSlots(
                               num,
                               workflow.postsPerDay ||
-                                1
+                              1
                             )
                           }
                           className="rounded-xl border px-6 py-3 transition"
                           style={{
                             background:
                               workflow.reelsPerDay ===
-                              num
+                                num
                                 ? "rgba(139,92,246,.15)"
                                 : "var(--background)",
 
                             borderColor:
                               workflow.reelsPerDay ===
-                              num
+                                num
                                 ? "#8b5cf6"
                                 : "var(--border)",
                           }}
@@ -636,7 +636,7 @@ export default function SchedulePage() {
                           onClick={() =>
                             generateSlots(
                               workflow.reelsPerDay ||
-                                1,
+                              1,
                               num
                             )
                           }
@@ -644,13 +644,13 @@ export default function SchedulePage() {
                           style={{
                             background:
                               workflow.postsPerDay ===
-                              num
+                                num
                                 ? "rgba(139,92,246,.15)"
                                 : "var(--background)",
 
                             borderColor:
                               workflow.postsPerDay ===
-                              num
+                                num
                                 ? "#8b5cf6"
                                 : "var(--border)",
                           }}
@@ -743,14 +743,10 @@ export default function SchedulePage() {
 
             <p
               className="mt-2 text-sm"
-              style={{
-                color: "var(--muted)",
-              }}
+              style={{ color: "var(--muted)" }}
             >
-              24-hour format, in the timezone
-              selected above. These times will
-              automatically apply to all selected
-              days.
+              Choose times in 12-hour format (AM/PM). They are stored in 24-hour
+              format internally and applied to all selected days in the timezone above.
             </p>
 
 
@@ -775,27 +771,27 @@ export default function SchedulePage() {
                       <p className="font-medium">
 
                         {slot.type ===
-                        "content"
+                          "content"
                           ? `Content ${slot.number}`
                           : slot.type ===
                             "reel"
-                          ? `Reel ${slot.number}`
-                          : `Post ${slot.number}`}
+                            ? `Reel ${slot.number}`
+                            : `Post ${slot.number}`}
 
                       </p>
 
                       {workflow.source ===
                         "user_uploaded" && (
-                        <p
-                          className="mt-1 text-xs"
-                          style={{
-                            color:
-                              "var(--muted)",
-                          }}
-                        >
-                          Uploaded content
-                        </p>
-                      )}
+                          <p
+                            className="mt-1 text-xs"
+                            style={{
+                              color:
+                                "var(--muted)",
+                            }}
+                          >
+                            Uploaded content
+                          </p>
+                        )}
 
                     </div>
 
@@ -865,13 +861,13 @@ export default function SchedulePage() {
                     style={{
                       background:
                         workflow.scheduleDuration ===
-                        item.value
+                          item.value
                           ? "rgba(139,92,246,.15)"
                           : "var(--background)",
 
                       borderColor:
                         workflow.scheduleDuration ===
-                        item.value
+                          item.value
                           ? "#8b5cf6"
                           : "var(--border)",
                     }}
@@ -894,76 +890,76 @@ export default function SchedulePage() {
           {workflow.scheduleDuration ===
             "custom" && (
 
-            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
 
-              {/* START DATE */}
+                {/* START DATE */}
 
-              <div>
+                <div>
 
-                <label
-                  className="mb-2 block text-sm"
-                >
-                  Start Date
-                </label>
+                  <label
+                    className="mb-2 block text-sm"
+                  >
+                    Start Date
+                  </label>
 
-                <input
-                  type="date"
-                  value={
-                    workflow.customStartDate
-                  }
-                  onChange={(e) =>
-                    updateWorkflow({
-                      customStartDate:
-                        e.target.value,
-                    })
-                  }
-                  className="w-full rounded-xl border p-3"
-                  style={{
-                    background:
-                      "var(--background)",
-                    borderColor:
-                      "var(--border)",
-                  }}
-                />
+                  <input
+                    type="date"
+                    value={
+                      workflow.customStartDate
+                    }
+                    onChange={(e) =>
+                      updateWorkflow({
+                        customStartDate:
+                          e.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border p-3"
+                    style={{
+                      background:
+                        "var(--background)",
+                      borderColor:
+                        "var(--border)",
+                    }}
+                  />
+
+                </div>
+
+
+                {/* END DATE */}
+
+                <div>
+
+                  <label
+                    className="mb-2 block text-sm"
+                  >
+                    End Date
+                  </label>
+
+                  <input
+                    type="date"
+                    value={
+                      workflow.customEndDate
+                    }
+                    onChange={(e) =>
+                      updateWorkflow({
+                        customEndDate:
+                          e.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border p-3"
+                    style={{
+                      background:
+                        "var(--background)",
+                      borderColor:
+                        "var(--border)",
+                    }}
+                  />
+
+                </div>
 
               </div>
 
-
-              {/* END DATE */}
-
-              <div>
-
-                <label
-                  className="mb-2 block text-sm"
-                >
-                  End Date
-                </label>
-
-                <input
-                  type="date"
-                  value={
-                    workflow.customEndDate
-                  }
-                  onChange={(e) =>
-                    updateWorkflow({
-                      customEndDate:
-                        e.target.value,
-                    })
-                  }
-                  className="w-full rounded-xl border p-3"
-                  style={{
-                    background:
-                      "var(--background)",
-                    borderColor:
-                      "var(--border)",
-                  }}
-                />
-
-              </div>
-
-            </div>
-
-          )}
+            )}
 
 
           {/* =================================================
@@ -1026,13 +1022,12 @@ export default function SchedulePage() {
 
 /*
 |--------------------------------------------------------------------------
-| TIME PICKER — 24-HOUR FORMAT
+| TIME PICKER — 12-HOUR DISPLAY, 24-HOUR STORAGE
 |--------------------------------------------------------------------------
 |
-| Plain 24-hour hour/minute dropdowns. No AM/PM — the value
-| stored in workflow is, and always displays as, HH:mm.
+| UI shows familiar 1–12 + AM/PM.
+| The value written into workflow.scheduleSlots is always HH:mm (24-hour).
 |
-|--------------------------------------------------------------------------
 */
 
 function TimePicker({
@@ -1042,131 +1037,83 @@ function TimePicker({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const [hourString, minuteString] = (value || "09:00").split(":");
 
-  const [
-    hourString,
-    minuteString,
-  ] = (value || "09:00").split(":");
+  const hour24 = Number(hourString) || 0;
+  const minute = Number(minuteString) || 0;
 
-  const currentHour =
-    Number(hourString) || 0;
+  // Convert 24-hour → 12-hour for display
+  const period: "AM" | "PM" = hour24 >= 12 ? "PM" : "AM";
+  let hour12 = hour24 % 12;
+  if (hour12 === 0) hour12 = 12;
 
-  const currentMinute =
-    Number(minuteString) || 0;
+  function updateTime(newHour12: number, newMinute: number, newPeriod: "AM" | "PM") {
+    let hour24 = newHour12 % 12;
+    if (newPeriod === "PM") hour24 += 12;
+    if (newPeriod === "AM" && newHour12 === 12) hour24 = 0;
+    if (newPeriod === "PM" && newHour12 === 12) hour24 = 12;
 
-
-  function updateTime(
-    hour: number,
-    minute: number
-  ) {
-    const formatted =
-      `${String(hour).padStart(
-        2,
-        "0"
-      )}:${String(minute).padStart(
-        2,
-        "0"
-      )}`;
-
+    const formatted = `${String(hour24).padStart(2, "0")}:${String(newMinute).padStart(2, "0")}`;
     onChange(formatted);
   }
 
-
   return (
-
     <div className="flex items-center gap-2">
-
-      {/* HOUR (00–23) */}
-
+      {/* HOUR 1–12 */}
       <select
-        value={currentHour}
+        value={hour12}
         onChange={(e) =>
-          updateTime(
-            Number(e.target.value),
-            currentMinute
-          )
+          updateTime(Number(e.target.value), minute, period)
         }
         className="rounded-lg border px-3 py-2"
         style={{
-          background:
-            "var(--background)",
-          borderColor:
-            "var(--border)",
+          background: "var(--background)",
+          borderColor: "var(--border)",
         }}
       >
-
-        {Array.from(
-          {
-            length: 24,
-          },
-          (_, i) => i
-        ).map(
-          (hour) => (
-
-            <option
-              key={hour}
-              value={hour}
-            >
-              {String(hour).padStart(
-                2,
-                "0"
-              )}
-            </option>
-
-          )
-        )}
-
+        {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+          <option key={h} value={h}>
+            {String(h).padStart(2, "0")}
+          </option>
+        ))}
       </select>
 
+      <span className="font-medium">:</span>
 
-      <span className="font-medium">
-        :
-      </span>
-
-
-      {/* MINUTE (00–59) */}
-
+      {/* MINUTE 00–59 */}
       <select
-        value={currentMinute}
+        value={minute}
         onChange={(e) =>
-          updateTime(
-            currentHour,
-            Number(e.target.value)
-          )
+          updateTime(hour12, Number(e.target.value), period)
         }
         className="rounded-lg border px-3 py-2"
         style={{
-          background:
-            "var(--background)",
-          borderColor:
-            "var(--border)",
+          background: "var(--background)",
+          borderColor: "var(--border)",
         }}
       >
-
-        {Array.from(
-          {
-            length: 60,
-          },
-          (_, i) => i
-        ).map(
-          (minute) => (
-
-            <option
-              key={minute}
-              value={minute}
-            >
-              {String(minute).padStart(
-                2,
-                "0"
-              )}
-            </option>
-
-          )
-        )}
-
+        {Array.from({ length: 60 }, (_, i) => i).map((m) => (
+          <option key={m} value={m}>
+            {String(m).padStart(2, "0")}
+          </option>
+        ))}
       </select>
 
+      {/* AM / PM */}
+      <select
+        value={period}
+        onChange={(e) =>
+          updateTime(hour12, minute, e.target.value as "AM" | "PM")
+        }
+        className="rounded-lg border px-3 py-2"
+        style={{
+          background: "var(--background)",
+          borderColor: "var(--border)",
+        }}
+      >
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
     </div>
-
   );
 }
