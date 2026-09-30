@@ -70,21 +70,19 @@ function getZonedTimeMinutes(
       timeZone,
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false,
+      hourCycle: "h23", // ← critical fix
     });
 
     const parts = formatter.formatToParts(date);
 
-    const hourPart = parts.find(
-      (part) => part.type === "hour"
-    )?.value;
+    const hourPart = parts.find((part) => part.type === "hour")?.value;
+    const minutePart = parts.find((part) => part.type === "minute")?.value;
 
-    const minutePart = parts.find(
-      (part) => part.type === "minute"
-    )?.value;
-
-    const hour = hourPart === "24" ? 0 : Number(hourPart);
+    let hour = Number(hourPart);
     const minute = Number(minutePart);
+
+    // Guard against any remaining "24" edge case
+    if (hour === 24) hour = 0;
 
     return (
       (Number.isFinite(hour) ? hour : 0) * 60 +
