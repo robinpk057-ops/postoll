@@ -19,7 +19,7 @@ import {
  */
 export const maxDuration = 60;
 
-const WINDOW_MINUTES = 5;
+const WINDOW_MINUTES = 15;
 
 /*
  * Fallback for workflows created before the per-workflow
