@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
                 workflow_id: workflowId,
                 type: fileType,
                 title: uploadDescription || null,
-                caption: null,
+                caption: uploadDescription || null,   // ← add this
                 hashtags: [],
                 image_url: publicUrl,
                 status: "queued",
