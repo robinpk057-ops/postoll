@@ -139,10 +139,10 @@ function isWorkflowExpired(
   createdAt: string,
   settings:
     | {
-        duration_type: string | null;
-        start_date: string | null;
-        end_date: string | null;
-      }
+      duration_type: string | null;
+      start_date: string | null;
+      end_date: string | null;
+    }
     | undefined,
   todayDateString: string
 ): boolean {
@@ -454,11 +454,39 @@ async function handleScheduler(request: Request) {
     }
 
     if (dueSlots.length === 0) {
+      // TEMP diagnostic – remove after timing is fixed
+      const diagnostics = allSlots.slice(0, 5).map((slot) => {
+        const workflow = workflowMap.get(slot.workflow_id);
+        const settings = settingsMap.get(slot.workflow_id);
+        const timezone = settings?.timezone || DEFAULT_TIMEZONE;
+        const zonedDow = getZonedDayOfWeek(now, timezone);
+        const zonedMinutes = getZonedTimeMinutes(now, timezone);
+        const slotMinutes = timeStringToMinutes(slot.post_time);
+        const diff = Math.abs(zonedMinutes - slotMinutes);
+
+        return {
+          slotId: slot.id,
+          workflowId: slot.workflow_id,
+          active: workflow?.active ?? null,
+          timezone,
+          slotDay: slot.day_of_week,
+          zonedDow,
+          post_time: slot.post_time,
+          slotMinutes,
+          zonedMinutes,
+          diff,
+          window: WINDOW_MINUTES,
+          dayMatch: slot.day_of_week === zonedDow,
+          timeMatch: diff <= WINDOW_MINUTES,
+        };
+      });
+
       return NextResponse.json({
         success: true,
         checkedAt: now.toISOString(),
         dueSlotCount: 0,
         results: [],
+        diagnostics,
       });
     }
 
@@ -715,7 +743,7 @@ async function handleScheduler(request: Request) {
 
         const message =
           publishError instanceof PublishPostError ||
-          publishError instanceof Error
+            publishError instanceof Error
             ? publishError.message
             : "Unable to publish content.";
 
