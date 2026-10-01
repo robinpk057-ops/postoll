@@ -454,32 +454,41 @@ async function handleScheduler(request: Request) {
     }
 
     if (dueSlots.length === 0) {
-      // TEMP diagnostic – remove after timing is fixed
-      const diagnostics = allSlots.slice(0, 5).map((slot) => {
-        const workflow = workflowMap.get(slot.workflow_id);
-        const settings = settingsMap.get(slot.workflow_id);
-        const timezone = settings?.timezone || DEFAULT_TIMEZONE;
-        const zonedDow = getZonedDayOfWeek(now, timezone);
-        const zonedMinutes = getZonedTimeMinutes(now, timezone);
-        const slotMinutes = timeStringToMinutes(slot.post_time);
-        const diff = Math.abs(zonedMinutes - slotMinutes);
+      // TEMP diagnostic – focuses on recent / matching candidates
+      const diagnostics = allSlots
+        .map((slot) => {
+          const workflow = workflowMap.get(slot.workflow_id);
+          const settings = settingsMap.get(slot.workflow_id);
+          const timezone = settings?.timezone || DEFAULT_TIMEZONE;
+          const zonedDow = getZonedDayOfWeek(now, timezone);
+          const zonedMinutes = getZonedTimeMinutes(now, timezone);
+          const slotMinutes = timeStringToMinutes(slot.post_time);
+          const diff = Math.abs(zonedMinutes - slotMinutes);
 
-        return {
-          slotId: slot.id,
-          workflowId: slot.workflow_id,
-          active: workflow?.active ?? null,
-          timezone,
-          slotDay: slot.day_of_week,
-          zonedDow,
-          post_time: slot.post_time,
-          slotMinutes,
-          zonedMinutes,
-          diff,
-          window: WINDOW_MINUTES,
-          dayMatch: slot.day_of_week === zonedDow,
-          timeMatch: diff <= WINDOW_MINUTES,
-        };
-      });
+          return {
+            slotId: slot.id,
+            workflowId: slot.workflow_id,
+            active: workflow?.active ?? null,
+            timezone,
+            slotDay: slot.day_of_week,
+            zonedDow,
+            post_time: slot.post_time,
+            slotMinutes,
+            zonedMinutes,
+            diff,
+            window: WINDOW_MINUTES,
+            dayMatch: slot.day_of_week === zonedDow,
+            timeMatch: diff <= WINDOW_MINUTES,
+          };
+        })
+        .filter(
+          (d) =>
+            d.timezone === "Asia/Calcutta" ||
+            d.dayMatch ||
+            d.post_time === "10:55:00" ||
+            d.post_time?.startsWith("10:55")
+        )
+        .slice(0, 10);
 
       return NextResponse.json({
         success: true,
