@@ -70,7 +70,7 @@ function getZonedTimeMinutes(
       timeZone,
       hour: "2-digit",
       minute: "2-digit",
-      hourCycle: "h23", // ← critical fix
+      hourCycle: "h23",
     });
 
     const parts = formatter.formatToParts(date);
@@ -81,7 +81,6 @@ function getZonedTimeMinutes(
     let hour = Number(hourPart);
     const minute = Number(minutePart);
 
-    // Guard against any remaining "24" edge case
     if (hour === 24) hour = 0;
 
     return (
