@@ -469,7 +469,9 @@ async function handleScheduler(request: Request) {
             slotId: slot.id,
             workflowId: slot.workflow_id,
             active: workflow?.active ?? null,
-            timezone,
+            settingsFound: !!settings,
+            rawTimezone: settings?.timezone ?? null,
+            timezone, // value after fallback to DEFAULT_TIMEZONE
             slotDay: slot.day_of_week,
             zonedDow,
             post_time: slot.post_time,
@@ -483,10 +485,11 @@ async function handleScheduler(request: Request) {
         })
         .filter(
           (d) =>
+            d.rawTimezone === "Asia/Calcutta" ||
             d.timezone === "Asia/Calcutta" ||
-            d.dayMatch ||
             d.post_time === "10:55:00" ||
-            d.post_time?.startsWith("10:55")
+            (d.post_time && d.post_time.startsWith("10:55")) ||
+            d.dayMatch
         )
         .slice(0, 10);
 
