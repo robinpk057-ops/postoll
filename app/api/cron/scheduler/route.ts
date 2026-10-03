@@ -19,7 +19,7 @@ import {
  */
 export const maxDuration = 60;
 
-const WINDOW_MINUTES = 120;   // 2 hours – for testing only
+const WINDOW_MINUTES = 15;
 
 /*
  * Fallback for workflows created before the per-workflow
@@ -454,52 +454,11 @@ async function handleScheduler(request: Request) {
     }
 
     if (dueSlots.length === 0) {
-      const diagnostics = allSlots
-        .map((slot) => {
-          const workflow = workflowMap.get(slot.workflow_id);
-          const settings = settingsMap.get(slot.workflow_id);
-          const timezone = settings?.timezone || DEFAULT_TIMEZONE;
-          const zonedDow = getZonedDayOfWeek(now, timezone);
-          const zonedMinutes = getZonedTimeMinutes(now, timezone);
-          const slotMinutes = timeStringToMinutes(slot.post_time);
-          const diff = Math.abs(zonedMinutes - slotMinutes);
-
-          return {
-            slotId: slot.id,
-            workflowId: slot.workflow_id,
-            active: workflow?.active ?? null,
-            settingsFound: !!settings,
-            rawTimezone: settings?.timezone ?? null,
-            timezone,
-            slotDay: slot.day_of_week,
-            zonedDow,
-            post_time: slot.post_time,
-            slotMinutes,
-            zonedMinutes,
-            diff,
-            window: WINDOW_MINUTES,
-            dayMatch: slot.day_of_week === zonedDow,
-            timeMatch: diff <= WINDOW_MINUTES,
-          };
-        })
-        .filter(
-          (d) =>
-            d.rawTimezone === "Asia/Calcutta" ||
-            d.timezone === "Asia/Calcutta" ||
-            (d.post_time && d.post_time.startsWith("10:55")) ||
-            d.dayMatch
-        )
-        .slice(0, 10);
-
       return NextResponse.json({
         success: true,
         checkedAt: now.toISOString(),
         dueSlotCount: 0,
         results: [],
-        settingsCount: settingsRows?.length ?? 0,
-        settingsError: settingsError?.message ?? null,
-        workflowIdsCount: workflowIds.length,
-        diagnostics,
       });
     }
 
