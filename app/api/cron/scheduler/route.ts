@@ -454,7 +454,6 @@ async function handleScheduler(request: Request) {
     }
 
     if (dueSlots.length === 0) {
-      // TEMP diagnostic – focuses on recent / matching candidates
       const diagnostics = allSlots
         .map((slot) => {
           const workflow = workflowMap.get(slot.workflow_id);
@@ -471,7 +470,7 @@ async function handleScheduler(request: Request) {
             active: workflow?.active ?? null,
             settingsFound: !!settings,
             rawTimezone: settings?.timezone ?? null,
-            timezone, // value after fallback to DEFAULT_TIMEZONE
+            timezone,
             slotDay: slot.day_of_week,
             zonedDow,
             post_time: slot.post_time,
@@ -487,7 +486,6 @@ async function handleScheduler(request: Request) {
           (d) =>
             d.rawTimezone === "Asia/Calcutta" ||
             d.timezone === "Asia/Calcutta" ||
-            d.post_time === "10:55:00" ||
             (d.post_time && d.post_time.startsWith("10:55")) ||
             d.dayMatch
         )
@@ -498,6 +496,9 @@ async function handleScheduler(request: Request) {
         checkedAt: now.toISOString(),
         dueSlotCount: 0,
         results: [],
+        settingsCount: settingsRows?.length ?? 0,
+        settingsError: settingsError?.message ?? null,
+        workflowIdsCount: workflowIds.length,
         diagnostics,
       });
     }
