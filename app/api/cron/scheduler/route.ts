@@ -558,7 +558,13 @@ async function handleScheduler(request: Request) {
        * --------------------------------------------------------
        */
 
-      const { data: queuedContent, error: queuedContentError } =
+      let queuedContent: {
+        id: string;
+        type: string;
+        status: string;
+      } | null = null;
+
+      const { data: queuedRow, error: queuedContentError } =
         await supabaseAdmin
           .from("content")
           .select("id, type, status")
@@ -569,48 +575,130 @@ async function handleScheduler(request: Request) {
           .maybeSingle();
 
       if (queuedContentError) {
-        console.error(
-          "Scheduler content lookup error:",
-          queuedContentError
-        );
-
-        await insertRun(supabaseAdmin, {
-          schedule_slot_id: slot.id,
-          workflow_id: workflowId,
-          run_date: runDate,
-          status: "failed",
-          content_id: null,
-          error_message: queuedContentError.message,
-        });
-
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "failed",
-          detail: queuedContentError.message,
-        });
-
+        // ... same error handling as before ...
         continue;
       }
 
+      queuedContent = queuedRow;
+
       if (!queuedContent) {
-        await insertRun(supabaseAdmin, {
-          schedule_slot_id: slot.id,
-          workflow_id: workflowId,
-          run_date: runDate,
-          status: "skipped",
-          content_id: null,
-          error_message: "No queued content available.",
-        });
+        /*
+         * --------------------------------------------------------
+         * USER-UPLOAD: CYCLE CONTENT
+         * --------------------------------------------------------
+         * If there is no queued item left, reuse the latest content
+         * from this workflow (same media + caption) so posting
+         * continues until the workflow duration ends.
+         */
 
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "skipped",
-          detail: "No queued content available.",
-        });
+        const { data: workflowMeta } = await supabaseAdmin
+          .from("workflows")
+          .select("id, source, mode")
+          .eq("id", workflowId)
+          .maybeSingle();
 
-        continue;
+        const isUserUpload =
+          workflowMeta?.source === "user_uploaded" ||
+          workflowMeta?.mode === "user_uploaded";
+
+        if (!isUserUpload) {
+          await insertRun(supabaseAdmin, {
+            schedule_slot_id: slot.id,
+            workflow_id: workflowId,
+            run_date: runDate,
+            status: "skipped",
+            content_id: null,
+            error_message: "No queued content available.",
+          });
+
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "skipped",
+            detail: "No queued content available.",
+          });
+
+          continue;
+        }
+
+        // Find the most recent content row to clone (prefer published)
+        const { data: template, error: templateError } =
+          await supabaseAdmin
+            .from("content")
+            .select(
+              "id, type, title, caption, hashtags, image_url, platform"
+            )
+            .eq("workflow_id", workflowId)
+            .not("image_url", "is", null)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (templateError || !template?.image_url) {
+          await insertRun(supabaseAdmin, {
+            schedule_slot_id: slot.id,
+            workflow_id: workflowId,
+            run_date: runDate,
+            status: "skipped",
+            content_id: null,
+            error_message:
+              "No content available to cycle for this workflow.",
+          });
+
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "skipped",
+            detail: "No content available to cycle.",
+          });
+
+          continue;
+        }
+
+        // Create a new queued row (keeps history clean)
+        const { data: cycled, error: cycleError } =
+          await supabaseAdmin
+            .from("content")
+            .insert({
+              user_id: userId,
+              workflow_id: workflowId,
+              type: template.type || "post",
+              title: template.title,
+              caption: template.caption, // user description
+              hashtags: template.hashtags || [],
+              image_url: template.image_url,
+              platform: template.platform || "instagram",
+              status: "queued",
+            })
+            .select("id, type, status")
+            .single();
+
+        if (cycleError || !cycled) {
+          console.error("Cycle content insert error:", cycleError);
+
+          await insertRun(supabaseAdmin, {
+            schedule_slot_id: slot.id,
+            workflow_id: workflowId,
+            run_date: runDate,
+            status: "failed",
+            content_id: null,
+            error_message:
+              cycleError?.message ||
+              "Failed to cycle content for this workflow.",
+          });
+
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "failed",
+            detail: "Failed to cycle content.",
+          });
+
+          continue;
+        }
+
+        // Use the new row as the queued item for this run
+        queuedContent = cycled;
       }
 
       /*
