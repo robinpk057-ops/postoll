@@ -53,7 +53,7 @@ export class PublishPostError extends Error {
 async function waitForContainerReady(
   creationId: string,
   accessToken: string,
-  maxAttempts = 8,
+  maxAttempts = 20,   // was 8 — reels can take 1–2+ minutes
   delayMs = 3000
 ): Promise<void> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -155,8 +155,6 @@ export async function publishInstagramPost(
    * ------------------------------------------------------------
    * SERVER-ONLY SUPABASE ADMIN CLIENT
    * ------------------------------------------------------------
-   *
-   * The service role key never goes to the browser.
    */
 
   const supabaseAdmin = createSupabaseClient(
@@ -212,20 +210,7 @@ export async function publishInstagramPost(
 
   /*
    * ------------------------------------------------------------
-   * CONTENT TYPE
-   * ------------------------------------------------------------
-   */
-
-  if (content.type === "reel") {
-    throw new PublishPostError(
-      "Reel publishing is not handled by the Instagram post publisher yet.",
-      400
-    );
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * IMAGE URL
+   * MEDIA URL
    * ------------------------------------------------------------
    */
 
@@ -234,10 +219,12 @@ export async function publishInstagramPost(
     !content.image_url.startsWith("http")
   ) {
     throw new PublishPostError(
-      "This content does not have a public image URL.",
+      "This content does not have a public media URL.",
       400
     );
   }
+
+  const isReel = content.type === "reel";
 
   /*
    * ------------------------------------------------------------
@@ -265,10 +252,7 @@ export async function publishInstagramPost(
       )
       .map((tag) => {
         const cleaned = tag.trim();
-
-        return cleaned.startsWith("#")
-          ? cleaned
-          : `#${cleaned}`;
+        return cleaned.startsWith("#") ? cleaned : `#${cleaned}`;
       });
 
     if (hashtags.length > 0) {
@@ -279,14 +263,14 @@ export async function publishInstagramPost(
   const caption = captionParts.join("\n\n");
 
   /*
- * ------------------------------------------------------------
- * FIND CONNECTED INSTAGRAM ACCOUNT
- * ------------------------------------------------------------
- *
- * Preference order:
- * 1. The specific account linked to this workflow via workflow_accounts
- * 2. Fallback to any connected Instagram account (legacy workflows)
- */
+   * ------------------------------------------------------------
+   * FIND CONNECTED INSTAGRAM ACCOUNT
+   * ------------------------------------------------------------
+   *
+   * Preference order:
+   * 1. The specific account linked to this workflow via workflow_accounts
+   * 2. Fallback to any connected Instagram account (legacy workflows)
+   */
 
   let account: {
     id: string;
@@ -297,22 +281,21 @@ export async function publishInstagramPost(
     connected: boolean;
   } | null = null;
 
-  // 1. Try the account that was explicitly chosen for this workflow
   if (content.workflow_id) {
     const { data: linked, error: linkedError } = await supabaseAdmin
       .from("workflow_accounts")
       .select(
         `
-            account_id,
-            accounts (
-              id,
-              platform,
-              account_id,
-              account_name,
-              access_token,
-              connected
-            )
-          `
+        account_id,
+        accounts (
+          id,
+          platform,
+          account_id,
+          account_name,
+          access_token,
+          connected
+        )
+      `
       )
       .eq("workflow_id", content.workflow_id)
       .eq("platform", "instagram")
@@ -325,7 +308,6 @@ export async function publishInstagramPost(
         linkedError.message
       );
     } else if (linked?.accounts) {
-      // Supabase returns the joined row as an object (or array depending on relation)
       const acc = Array.isArray(linked.accounts)
         ? linked.accounts[0]
         : linked.accounts;
@@ -336,19 +318,18 @@ export async function publishInstagramPost(
     }
   }
 
-  // 2. Fallback for older workflows that have no workflow_accounts row
   if (!account) {
     const { data: fallback, error: accountError } = await supabaseAdmin
       .from("accounts")
       .select(
         `
-            id,
-            platform,
-            account_id,
-            account_name,
-            access_token,
-            connected
-          `
+        id,
+        platform,
+        account_id,
+        account_name,
+        access_token,
+        connected
+      `
       )
       .eq("user_id", userId)
       .eq("platform", "instagram")
@@ -375,14 +356,6 @@ export async function publishInstagramPost(
     );
   }
 
-
-
-  /*
-   * ------------------------------------------------------------
-   * ACCESS TOKEN
-   * ------------------------------------------------------------
-   */
-
   if (!account.access_token) {
     throw new PublishPostError(
       "The connected Instagram account does not have an access token.",
@@ -398,13 +371,20 @@ export async function publishInstagramPost(
 
   console.log("Creating Instagram media container:", {
     contentId: content.id,
+    type: content.type,
     account: account.account_name,
-    imageUrl: content.image_url,
+    mediaUrl: content.image_url,
   });
 
   const containerBody = new URLSearchParams();
 
-  containerBody.set("image_url", content.image_url);
+  if (isReel) {
+    containerBody.set("media_type", "REELS");
+    containerBody.set("video_url", content.image_url);
+    containerBody.set("share_to_feed", "true");
+  } else {
+    containerBody.set("image_url", content.image_url);
+  }
 
   if (caption) {
     containerBody.set("caption", caption);
@@ -427,10 +407,7 @@ export async function publishInstagramPost(
   const containerData = await containerResponse.json();
 
   if (!containerResponse.ok) {
-    console.error(
-      "Instagram media container error:",
-      containerData
-    );
+    console.error("Instagram media container error:", containerData);
 
     throw new PublishPostError(
       containerData?.error?.message ||
@@ -453,14 +430,9 @@ export async function publishInstagramPost(
    * ------------------------------------------------------------
    * WAIT FOR THE CONTAINER TO FINISH PROCESSING
    * ------------------------------------------------------------
-   *
-   * Publishing too early causes "Media ID is not available".
    */
 
-  await waitForContainerReady(
-    creationId,
-    account.access_token
-  );
+  await waitForContainerReady(creationId, account.access_token);
 
   /*
    * ------------------------------------------------------------
@@ -507,12 +479,6 @@ export async function publishInstagramPost(
     mediaId,
     account: account.account_name,
   });
-
-  /*
-   * ------------------------------------------------------------
-   * SUCCESS
-   * ------------------------------------------------------------
-   */
 
   return {
     success: true,

@@ -17,7 +17,7 @@ import {
  * may need to move to a queue instead of one synchronous request
  * — fine for the current volume, worth revisiting if that grows.
  */
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const WINDOW_MINUTES = 15;
 
@@ -608,33 +608,6 @@ async function handleScheduler(request: Request) {
           workflowId,
           status: "skipped",
           detail: "No queued content available.",
-        });
-
-        continue;
-      }
-
-      /*
-       * --------------------------------------------------------
-       * REELS NOT SUPPORTED YET
-       * --------------------------------------------------------
-       */
-
-      if (queuedContent.type === "reel") {
-        await insertRun(supabaseAdmin, {
-          schedule_slot_id: slot.id,
-          workflow_id: workflowId,
-          run_date: runDate,
-          status: "failed",
-          content_id: queuedContent.id,
-          error_message:
-            "Reel publishing is not implemented yet.",
-        });
-
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "failed",
-          detail: "Reel publishing is not implemented yet.",
         });
 
         continue;
