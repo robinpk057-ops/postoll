@@ -20,14 +20,27 @@ export default function UploadContentPage() {
     workflow.uploadDescription.trim().length > 0;
 
 
-  function handleFiles(
-    files: File[]
-  ) {
+  function handleFiles(files: File[]) {
+    if (files.length === 0) return;
 
-    updateWorkflow({
-      uploadFiles: files,
-    });
+    // Append new files (don't replace)
+    const existing = workflow.uploadFiles || [];
+    const combined = [...existing, ...files];
 
+    // Avoid exact same name+size duplicates
+    const unique = combined.filter(
+      (file, index, arr) =>
+        arr.findIndex(
+          (f) => f.name === file.name && f.size === file.size
+        ) === index
+    );
+
+    updateWorkflow({ uploadFiles: unique });
+  }
+
+  function removeFile(index: number) {
+    const next = workflow.uploadFiles.filter((_, i) => i !== index);
+    updateWorkflow({ uploadFiles: next });
   }
 
 
@@ -81,8 +94,8 @@ export default function UploadContentPage() {
               color: "var(--muted)",
             }}
           >
-            Upload your video or image and tell
-            Postoll what the content is about.
+            Upload one or more images/videos. Postoll will publish
+            them in order and repeat until the schedule ends.
           </p>
 
         </div>
@@ -191,7 +204,16 @@ export default function UploadContentPage() {
 
 
               <p className="mt-3 text-sm font-medium">
-                Click to upload
+                Click to upload (select multiple files)
+              </p>
+
+              <p
+                className="mt-1 text-xs"
+                style={{
+                  color: "var(--muted)",
+                }}
+              >
+                MP4, MOV, JPG, PNG — you can select several at once
               </p>
 
 
@@ -229,58 +251,60 @@ export default function UploadContentPage() {
             {/* SELECTED FILES */}
 
             {workflow.uploadFiles.length > 0 && (
-
               <div
                 className="mt-4 rounded-xl border p-4"
                 style={{
                   borderColor: "var(--border)",
                 }}
               >
-
                 <p className="font-medium">
-                  Selected Files
+                  Selected Files ({workflow.uploadFiles.length})
                 </p>
 
-
                 <div className="mt-3 space-y-2">
+                  {workflow.uploadFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}-${index}`}
+                      className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
+                      style={{
+                        background: "var(--background)",
+                      }}
+                    >
+                      <span className="truncate pr-3">
+                        {file.name}
+                      </span>
 
-                  {workflow.uploadFiles.map(
-                    (file, index) => (
-
-                      <div
-                        key={`${file.name}-${index}`}
-                        className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
-                        style={{
-                          background:
-                            "var(--background)",
-                        }}
-                      >
-
-                        <span>
-                          {file.name}
-                        </span>
-
-
+                      <div className="flex shrink-0 items-center gap-3">
                         <span
                           className="text-xs"
                           style={{
                             color: "var(--muted)",
                           }}
                         >
-                          {(file.size / 1024 / 1024).toFixed(2)}
-                          {" "}
-                          MB
+                          {(file.size / 1024 / 1024).toFixed(2)} MB
                         </span>
 
+                        <button
+                          type="button"
+                          onClick={() => removeFile(index)}
+                          className="text-xs text-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
                       </div>
-
-                    )
-                  )}
-
+                    </div>
+                  ))}
                 </div>
 
+                <p
+                  className="mt-3 text-xs"
+                  style={{
+                    color: "var(--muted)",
+                  }}
+                >
+                  Publishing order: first file → last file → repeat
+                </p>
               </div>
-
             )}
 
           </div>
