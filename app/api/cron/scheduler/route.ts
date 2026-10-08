@@ -584,11 +584,11 @@ async function handleScheduler(request: Request) {
       if (!queuedContent) {
         /*
          * --------------------------------------------------------
-         * USER-UPLOAD: CYCLE CONTENT
+         * USER-UPLOAD: ROTATE CONTENT
          * --------------------------------------------------------
-         * If there is no queued item left, reuse the latest content
-         * from this workflow (same media + caption) so posting
-         * continues until the workflow duration ends.
+         * When the queue is empty, pick the next unique media in
+         * upload order (A → B → C → A …) and enqueue a new row
+         * so posting continues until the workflow duration ends.
          */
 
         const { data: workflowMeta } = await supabaseAdmin
@@ -621,20 +621,18 @@ async function handleScheduler(request: Request) {
           continue;
         }
 
-        // Find the most recent content row to clone (prefer published)
-        const { data: template, error: templateError } =
+        // All content for this workflow (oldest first = upload order)
+        const { data: allContent, error: allContentError } =
           await supabaseAdmin
             .from("content")
             .select(
-              "id, type, title, caption, hashtags, image_url, platform"
+              "id, type, title, caption, hashtags, image_url, platform, status, created_at"
             )
             .eq("workflow_id", workflowId)
             .not("image_url", "is", null)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .order("created_at", { ascending: true });
 
-        if (templateError || !template?.image_url) {
+        if (allContentError || !allContent || allContent.length === 0) {
           await insertRun(supabaseAdmin, {
             schedule_slot_id: slot.id,
             workflow_id: workflowId,
@@ -642,39 +640,106 @@ async function handleScheduler(request: Request) {
             status: "skipped",
             content_id: null,
             error_message:
-              "No content available to cycle for this workflow.",
+              "No content available to rotate for this workflow.",
           });
 
           results.push({
             scheduleSlotId: slot.id,
             workflowId,
             status: "skipped",
-            detail: "No content available to cycle.",
+            detail: "No content available to rotate.",
           });
 
           continue;
         }
 
-        // Create a new queued row (keeps history clean)
-        const { data: cycled, error: cycleError } =
-          await supabaseAdmin
-            .from("content")
-            .insert({
-              user_id: userId,
-              workflow_id: workflowId,
-              type: template.type || "post",
-              title: template.title,
-              caption: template.caption, // user description
-              hashtags: template.hashtags || [],
-              image_url: template.image_url,
-              platform: template.platform || "instagram",
-              status: "queued",
-            })
-            .select("id, type, status")
-            .single();
+        // Unique media library in first-seen (upload) order
+        type MediaTemplate = {
+          type: string;
+          title: string | null;
+          caption: string | null;
+          hashtags: string[] | null;
+          image_url: string;
+          platform: string | null;
+        };
+
+        const library: MediaTemplate[] = [];
+        const seenUrls = new Set<string>();
+
+        for (const row of allContent) {
+          if (!row.image_url || seenUrls.has(row.image_url)) {
+            continue;
+          }
+          seenUrls.add(row.image_url);
+          library.push({
+            type: row.type || "post",
+            title: row.title ?? null,
+            caption: row.caption ?? null,
+            hashtags: Array.isArray(row.hashtags) ? row.hashtags : [],
+            image_url: row.image_url,
+            platform: row.platform ?? "instagram",
+          });
+        }
+
+        if (library.length === 0) {
+          await insertRun(supabaseAdmin, {
+            schedule_slot_id: slot.id,
+            workflow_id: workflowId,
+            run_date: runDate,
+            status: "skipped",
+            content_id: null,
+            error_message: "No media library to rotate.",
+          });
+
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "skipped",
+            detail: "No media library to rotate.",
+          });
+
+          continue;
+        }
+
+        // Last published URL → next in rotation
+        const published = allContent
+          .filter((row) => row.status === "published")
+          .sort((a, b) =>
+            String(b.created_at).localeCompare(String(a.created_at))
+          );
+
+        const lastUrl = published[0]?.image_url ?? null;
+        let nextIndex = 0;
+
+        if (lastUrl) {
+          const lastIndex = library.findIndex(
+            (item) => item.image_url === lastUrl
+          );
+          if (lastIndex >= 0) {
+            nextIndex = (lastIndex + 1) % library.length;
+          }
+        }
+
+        const template = library[nextIndex];
+
+        const { data: cycled, error: cycleError } = await supabaseAdmin
+          .from("content")
+          .insert({
+            user_id: userId,
+            workflow_id: workflowId,
+            type: template.type,
+            title: template.title,
+            caption: template.caption,
+            hashtags: template.hashtags || [],
+            image_url: template.image_url,
+            platform: template.platform || "instagram",
+            status: "queued",
+          })
+          .select("id, type, status")
+          .single();
 
         if (cycleError || !cycled) {
-          console.error("Cycle content insert error:", cycleError);
+          console.error("Rotate content insert error:", cycleError);
 
           await insertRun(supabaseAdmin, {
             schedule_slot_id: slot.id,
@@ -684,20 +749,19 @@ async function handleScheduler(request: Request) {
             content_id: null,
             error_message:
               cycleError?.message ||
-              "Failed to cycle content for this workflow.",
+              "Failed to rotate content for this workflow.",
           });
 
           results.push({
             scheduleSlotId: slot.id,
             workflowId,
             status: "failed",
-            detail: "Failed to cycle content.",
+            detail: "Failed to rotate content.",
           });
 
           continue;
         }
 
-        // Use the new row as the queued item for this run
         queuedContent = cycled;
       }
 
