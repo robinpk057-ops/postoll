@@ -418,7 +418,7 @@ async function handleScheduler(request: Request) {
       runDate: string;
     };
 
-    const dueSlots: DueSlot[] = [];
+        const dueSlots: DueSlot[] = [];
 
     for (const slot of allSlots) {
       const workflow = workflowMap.get(slot.workflow_id);
@@ -453,40 +453,21 @@ async function handleScheduler(request: Request) {
       });
     }
 
-    if (dueSlots.length === 0) {
-      return NextResponse.json({
-        success: true,
-        checkedAt: now.toISOString(),
-        dueSlotCount: 0,
-        results: [],
-      });
-    }
-
     /*
      * ------------------------------------------------------------
-     * PROCESS EACH DUE SLOT
+     * PROCESS EACH DUE WORKFLOW SLOT
      * ------------------------------------------------------------
+     * If dueSlots is empty, this loop simply does nothing.
+     * Do NOT return early — calendar posts may still be due.
      */
 
     for (const due of dueSlots) {
       const { slot, workflowId, userId, runDate } = due;
       const workflow = workflowMap.get(workflowId)!;
 
-      /*
-       * --------------------------------------------------------
-       * CHECK WORKFLOW DURATION
-       * --------------------------------------------------------
-       */
-
       const settings = settingsMap.get(workflowId);
 
-      if (
-        isWorkflowExpired(
-          workflow.created_at,
-          settings,
-          runDate
-        )
-      ) {
+      if (isWorkflowExpired(workflow.created_at, settings, runDate)) {
         await supabaseAdmin
           .from("workflows")
           .update({ active: false, status: "completed" })
@@ -511,12 +492,6 @@ async function handleScheduler(request: Request) {
 
         continue;
       }
-
-      /*
-       * --------------------------------------------------------
-       * SKIP IF ALREADY RUN TODAY (in this workflow's timezone)
-       * --------------------------------------------------------
-       */
 
       const { data: existingRun, error: existingRunError } =
         await supabaseAdmin
@@ -552,12 +527,6 @@ async function handleScheduler(request: Request) {
         continue;
       }
 
-      /*
-       * --------------------------------------------------------
-       * FIND OLDEST QUEUED CONTENT FOR THIS WORKFLOW
-       * --------------------------------------------------------
-       */
-
       let queuedContent: {
         id: string;
         type: string;
@@ -575,22 +544,33 @@ async function handleScheduler(request: Request) {
           .maybeSingle();
 
       if (queuedContentError) {
-        // ... same error handling as before ...
+        console.error(
+          "Scheduler content lookup error:",
+          queuedContentError
+        );
+
+        await insertRun(supabaseAdmin, {
+          schedule_slot_id: slot.id,
+          workflow_id: workflowId,
+          run_date: runDate,
+          status: "failed",
+          content_id: null,
+          error_message: queuedContentError.message,
+        });
+
+        results.push({
+          scheduleSlotId: slot.id,
+          workflowId,
+          status: "failed",
+          detail: queuedContentError.message,
+        });
+
         continue;
       }
 
       queuedContent = queuedRow;
 
       if (!queuedContent) {
-        /*
-         * --------------------------------------------------------
-         * USER-UPLOAD: ROTATE CONTENT
-         * --------------------------------------------------------
-         * When the queue is empty, pick the next unique media in
-         * upload order (A → B → C → A …) and enqueue a new row
-         * so posting continues until the workflow duration ends.
-         */
-
         const { data: workflowMeta } = await supabaseAdmin
           .from("workflows")
           .select("id, source, mode")
@@ -621,7 +601,6 @@ async function handleScheduler(request: Request) {
           continue;
         }
 
-        // All content for this workflow (oldest first = upload order)
         const { data: allContent, error: allContentError } =
           await supabaseAdmin
             .from("content")
@@ -653,7 +632,6 @@ async function handleScheduler(request: Request) {
           continue;
         }
 
-        // Unique media library in first-seen (upload) order
         type MediaTemplate = {
           type: string;
           title: string | null;
@@ -667,9 +645,7 @@ async function handleScheduler(request: Request) {
         const seenUrls = new Set<string>();
 
         for (const row of allContent) {
-          if (!row.image_url || seenUrls.has(row.image_url)) {
-            continue;
-          }
+          if (!row.image_url || seenUrls.has(row.image_url)) continue;
           seenUrls.add(row.image_url);
           library.push({
             type: row.type || "post",
@@ -701,7 +677,6 @@ async function handleScheduler(request: Request) {
           continue;
         }
 
-        // Last published URL → next in rotation
         const published = allContent
           .filter((row) => row.status === "published")
           .sort((a, b) =>
@@ -765,12 +740,6 @@ async function handleScheduler(request: Request) {
         queuedContent = cycled;
       }
 
-      /*
-       * --------------------------------------------------------
-       * CLAIM THE CONTENT
-       * --------------------------------------------------------
-       */
-
       const { data: claimedContent, error: claimError } =
         await supabaseAdmin
           .from("content")
@@ -800,12 +769,6 @@ async function handleScheduler(request: Request) {
 
         continue;
       }
-
-      /*
-       * --------------------------------------------------------
-       * PUBLISH
-       * --------------------------------------------------------
-       */
 
       try {
         await publishInstagramPost(userId, claimedContent.id);
@@ -840,7 +803,7 @@ async function handleScheduler(request: Request) {
 
         const message =
           publishError instanceof PublishPostError ||
-            publishError instanceof Error
+          publishError instanceof Error
             ? publishError.message
             : "Unable to publish content.";
 
@@ -862,12 +825,130 @@ async function handleScheduler(request: Request) {
       }
     }
 
+    /*
+     * ------------------------------------------------------------
+     * CALENDAR POSTS (Medium plan)
+     * ------------------------------------------------------------
+     */
+
+    const calendarResults: Array<{
+      id: string;
+      status: string;
+      detail?: string;
+    }> = [];
+
+    const { data: calendarRows, error: calendarError } = await supabaseAdmin
+      .from("calendar_posts")
+      .select(
+        "id, user_id, account_id, platform, scheduled_date, scheduled_time, timezone, media_url, caption, status"
+      )
+      .eq("status", "scheduled")
+      .eq("platform", "instagram");
+
+    if (calendarError) {
+      console.error("Calendar posts lookup error:", calendarError);
+    } else {
+      for (const row of calendarRows ?? []) {
+        const tz = row.timezone || DEFAULT_TIMEZONE;
+        const localDate = getZonedDateString(now, tz);
+        const localMinutes = getZonedTimeMinutes(now, tz);
+        const slotMinutes = timeStringToMinutes(
+          String(row.scheduled_time).slice(0, 5)
+        );
+        const diff = Math.abs(localMinutes - slotMinutes);
+
+        if (row.scheduled_date !== localDate) continue;
+        if (diff > WINDOW_MINUTES) continue;
+
+        const { data: claimed, error: claimErr } = await supabaseAdmin
+          .from("calendar_posts")
+          .update({ status: "publishing" })
+          .eq("id", row.id)
+          .eq("status", "scheduled")
+          .select()
+          .maybeSingle();
+
+        if (claimErr || !claimed) {
+          calendarResults.push({
+            id: row.id,
+            status: "skipped",
+            detail: "Already claimed",
+          });
+          continue;
+        }
+
+        try {
+          const { data: contentRow, error: contentErr } = await supabaseAdmin
+            .from("content")
+            .insert({
+              user_id: row.user_id,
+              workflow_id: null,
+              type: "post",
+              caption: row.caption,
+              hashtags: [],
+              image_url: row.media_url,
+              status: "queued",
+              platform: "instagram",
+            })
+            .select("id")
+            .single();
+
+          if (contentErr || !contentRow) {
+            throw new Error(
+              contentErr?.message ||
+                "Failed to create content for calendar post"
+            );
+          }
+
+          await publishInstagramPost(row.user_id, contentRow.id);
+
+          await supabaseAdmin
+            .from("content")
+            .update({
+              status: "published",
+              published_at: new Date().toISOString(),
+            })
+            .eq("id", contentRow.id);
+
+          await supabaseAdmin
+            .from("calendar_posts")
+            .update({
+              status: "published",
+              published_at: new Date().toISOString(),
+              error_message: null,
+            })
+            .eq("id", row.id);
+
+          calendarResults.push({ id: row.id, status: "success" });
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Calendar publish failed";
+
+          await supabaseAdmin
+            .from("calendar_posts")
+            .update({
+              status: "failed",
+              error_message: message,
+            })
+            .eq("id", row.id);
+
+          calendarResults.push({
+            id: row.id,
+            status: "failed",
+            detail: message,
+          });
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       checkedAt: now.toISOString(),
       dueSlotCount: dueSlots.length,
       results,
+      calendarResults,
     });
+    
   } catch (error) {
     console.error("Scheduler run error:", error);
 
@@ -882,6 +963,9 @@ async function handleScheduler(request: Request) {
     );
   }
 }
+
+
+
 
 /*
  * ================================================================
