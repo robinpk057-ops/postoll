@@ -746,7 +746,8 @@ export default function SchedulePage() {
               style={{ color: "var(--muted)" }}
             >
               24-hour format (e.g. 13:00 = 1:00 PM), in the timezone selected above.
-              These times will automatically apply to all selected days.
+              Base plan: the same content posts on every selected day at these
+              times until the duration ends.
             </p>
 
 

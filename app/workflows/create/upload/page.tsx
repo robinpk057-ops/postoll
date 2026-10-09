@@ -86,16 +86,13 @@ export default function UploadContentPage() {
           <h1 className="mt-2 text-4xl font-bold">
             Upload Your Content
           </h1>
-
-
           <p
-            className="mt-3 text-sm"
+            className="mt-2 text-sm"
             style={{
               color: "var(--muted)",
             }}
           >
-            Upload one or more images/videos. Postoll will publish
-            them in order and repeat until the schedule ends.
+            Upload the image or video Postoll should publish on your schedule.
           </p>
 
         </div>
