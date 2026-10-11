@@ -3,17 +3,20 @@
 import { useRouter } from "next/navigation";
 import AppShell from "../../../AppShell";
 import { useWorkflow } from "../context";
+import { useState } from "react";
 
 
 export default function UploadContentPage() {
 
   const router = useRouter();
 
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+
   const {
     workflow,
     updateWorkflow,
   } = useWorkflow();
-
 
   const canContinue =
     workflow.uploadFiles.length > 0 &&
@@ -362,6 +365,63 @@ export default function UploadContentPage() {
 
             />
 
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={
+                  aiLoading ||
+                  workflow.uploadDescription.trim().length < 10
+                }
+                onClick={async () => {
+                  setAiError("");
+                  setAiLoading(true);
+                  try {
+                    const res = await fetch("/api/ai/caption", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        description: workflow.uploadDescription,
+                        contentType: "post",
+                      }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      throw new Error(data.error || "Generate failed");
+                    }
+                    // Put AI caption into the description field for now
+                    // (activate already maps uploadDescription → caption)
+                    const tags = (data.hashtags || [])
+                      .map((t: string) =>
+                        t.startsWith("#") ? t : `#${t}`
+                      )
+                      .join(" ");
+                    updateWorkflow({
+                      uploadDescription: [data.caption, tags]
+                        .filter(Boolean)
+                        .join("\n\n"),
+                    });
+                  } catch (e) {
+                    setAiError(
+                      e instanceof Error ? e.message : "Generate failed"
+                    );
+                  } finally {
+                    setAiLoading(false);
+                  }
+                }}
+                className="rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-40"
+                style={{
+                  background: "#8b5cf6",
+                  color: "#fff",
+                }}
+              >
+                {aiLoading
+                  ? "Generating…"
+                  : "✨ Generate caption & hashtags"}
+              </button>
+              {aiError && (
+                <span className="text-xs text-red-400">{aiError}</span>
+              )}
+            </div>
 
             <p
               className="mt-2 text-xs"
