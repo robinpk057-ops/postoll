@@ -120,7 +120,7 @@ export default function AccountsPage() {
       if (!response.ok) {
         throw new Error(
           data.error ||
-            "Unable to load connected accounts."
+          "Unable to load connected accounts."
         );
       }
 
@@ -162,11 +162,11 @@ export default function AccountsPage() {
   async function connectInstagram() {
     try {
       setConnecting("instagram");
-  
+
       setError("");
       setMessage("");
       setPublishResult("");
-  
+
       const response = await fetch(
         "/api/accounts/instagram/connect",
         {
@@ -177,17 +177,17 @@ export default function AccountsPage() {
           },
         }
       );
-  
+
       const data =
         await response.json();
-  
+
       if (!response.ok) {
         throw new Error(
           data.error ||
-            "Unable to start Instagram connection."
+          "Unable to start Instagram connection."
         );
       }
-  
+
       if (
         !data.authorizationUrl
       ) {
@@ -195,7 +195,7 @@ export default function AccountsPage() {
           "Instagram authorization URL was not returned."
         );
       }
-  
+
       window.location.href =
         data.authorizationUrl;
     } catch (err) {
@@ -203,16 +203,50 @@ export default function AccountsPage() {
         "Instagram connection error:",
         err
       );
-  
+
       setError(
         err instanceof Error
           ? err.message
           : "Unable to connect Instagram."
       );
-  
+
       setConnecting(null);
     }
   }
+
+  async function connectFacebook() {
+    try {
+      setConnecting("facebook");
+      setError("");
+      setMessage("");
+      setPublishResult("");
+
+      const response = await fetch("/api/accounts/facebook/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to start Facebook connection."
+        );
+      }
+
+      if (!data.authorizationUrl) {
+        throw new Error("Facebook authorization URL was not returned.");
+      }
+
+      window.location.href = data.authorizationUrl;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Facebook connect failed."
+      );
+      setConnecting(null);
+    }
+  }
+
 
   /*
   |--------------------------------------------------------------------------
@@ -220,13 +254,14 @@ export default function AccountsPage() {
   |--------------------------------------------------------------------------
   */
 
-  function handleConnect(
-    platformId: PlatformId
-  ) {
-    if (
-      platformId === "instagram"
-    ) {
+  function handleConnect(platformId: PlatformId) {
+    if (platformId === "instagram") {
       connectInstagram();
+      return;
+    }
+
+    if (platformId === "facebook") {
+      connectFacebook();
       return;
     }
 
@@ -274,7 +309,7 @@ export default function AccountsPage() {
       if (!response.ok) {
         throw new Error(
           data.error ||
-            "Unable to disconnect account."
+          "Unable to disconnect account."
         );
       }
 
@@ -355,7 +390,7 @@ export default function AccountsPage() {
       if (!response.ok) {
         throw new Error(
           data.error ||
-            "Unable to publish to Instagram."
+          "Unable to publish to Instagram."
         );
       }
 
@@ -398,7 +433,7 @@ export default function AccountsPage() {
     return accounts.find(
       (account) =>
         account.platform ===
-          platformId &&
+        platformId &&
         account.connected
     );
   }
@@ -618,14 +653,12 @@ export default function AccountsPage() {
               >
                 {loading
                   ? "Checking connections..."
-                  : `${
-                      accounts.filter(
-                        (account) =>
-                          account.connected
-                      ).length
-                    } of ${
-                      platforms.length
-                    } accounts connected`}
+                  : `${accounts.filter(
+                    (account) =>
+                      account.connected
+                  ).length
+                  } of ${platforms.length
+                  } accounts connected`}
               </p>
             </div>
 
@@ -795,7 +828,7 @@ export default function AccountsPage() {
                     <div className="shrink-0">
 
                       {isConnected &&
-                      account ? (
+                        account ? (
                         <button
                           type="button"
                           onClick={() =>
