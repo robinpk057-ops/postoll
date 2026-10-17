@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 
 export async function DELETE(
   _req: NextRequest,
@@ -16,26 +17,30 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Own workflow only
-    const { data: workflow, error: wfError } = await supabase
+    const { data: workflow } = await supabase
       .from("workflows")
       .select("id")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (wfError || !workflow) {
+    if (!workflow) {
       return NextResponse.json({ error: "Workflow not found" }, { status: 404 });
     }
 
-    // Delete children first (if no ON DELETE CASCADE)
-    await supabase.from("workflow_schedule_runs").delete().eq("workflow_id", id);
-    await supabase.from("workflow_schedule_slots").delete().eq("workflow_id", id);
-    await supabase.from("workflow_accounts").delete().eq("workflow_id", id);
-    await supabase.from("workflow_settings").delete().eq("workflow_id", id);
-    await supabase.from("content").delete().eq("workflow_id", id);
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const admin = createServiceClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
-    const { error: delError } = await supabase
+    await admin.from("workflow_schedule_runs").delete().eq("workflow_id", id);
+    await admin.from("workflow_schedule_slots").delete().eq("workflow_id", id);
+    await admin.from("workflow_accounts").delete().eq("workflow_id", id);
+    await admin.from("workflow_settings").delete().eq("workflow_id", id);
+    await admin.from("content").delete().eq("workflow_id", id);
+
+    const { error: delError } = await admin
       .from("workflows")
       .delete()
       .eq("id", id)
