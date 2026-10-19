@@ -1,9 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "../../AppShell";
 import { useWorkflow } from "./context";
-
 
 export default function CreateWorkflowPage() {
 
@@ -20,16 +20,16 @@ export default function CreateWorkflowPage() {
 
 
 function CreateWorkflowContent() {
-
-
   const router = useRouter();
-
-
   const {
     workflow,
     updateWorkflow,
+    resetWorkflow,
   } = useWorkflow();
 
+  useEffect(() => {
+    resetWorkflow();
+  }, []);
 
 
 
