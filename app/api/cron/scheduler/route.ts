@@ -3,10 +3,16 @@ import {
   createClient as createSupabaseClient,
   SupabaseClient,
 } from "@supabase/supabase-js";
+
 import {
   publishInstagramPost,
   PublishPostError,
 } from "@/lib/instagram/publishPost";
+
+import {
+  publishFacebookPost,
+  PublishFacebookError,
+} from "@/lib/facebook/publishPost";
 
 /*
  * Publishing a single item can take up to ~24s while polling
@@ -150,27 +156,32 @@ function isWorkflowExpired(
     return false;
   }
 
-  const { duration_type, end_date } = settings;
+  const { duration_type, start_date, end_date } = settings;
 
   if (duration_type === "unlimited") {
     return false;
   }
 
-  if (duration_type === "custom") {
-    if (!end_date) {
-      return false;
-    }
-
+  // Prefer explicit end_date whenever it exists (custom OR 1_month etc.)
+  if (end_date) {
     return todayDateString > end_date;
   }
 
-  const months = DURATION_MONTHS[duration_type];
+  if (duration_type === "custom") {
+    // custom with no end_date → do not expire
+    return false;
+  }
 
+  const months = DURATION_MONTHS[duration_type];
   if (!months) {
     return false;
   }
 
-  const start = new Date(createdAt);
+  // Prefer start_date, else workflow createdAt
+  const startSource = start_date || createdAt;
+  const start = new Date(
+    start_date ? `${start_date}T00:00:00Z` : startSource
+  );
 
   if (Number.isNaN(start.getTime())) {
     return false;
@@ -180,7 +191,6 @@ function isWorkflowExpired(
   expiry.setUTCMonth(expiry.getUTCMonth() + months);
 
   const today = new Date(`${todayDateString}T00:00:00Z`);
-
   return today.getTime() > expiry.getTime();
 }
 
@@ -418,7 +428,7 @@ async function handleScheduler(request: Request) {
       runDate: string;
     };
 
-        const dueSlots: DueSlot[] = [];
+    const dueSlots: DueSlot[] = [];
 
     for (const slot of allSlots) {
       const workflow = workflowMap.get(slot.workflow_id);
@@ -771,7 +781,53 @@ async function handleScheduler(request: Request) {
       }
 
       try {
-        await publishInstagramPost(userId, claimedContent.id);
+        // Accounts linked to this workflow
+        const { data: workflowAccounts, error: waError } =
+          await supabaseAdmin
+            .from("workflow_accounts")
+            .select("platform, account_id")
+            .eq("workflow_id", workflowId);
+
+        if (waError) {
+          throw new Error(waError.message);
+        }
+
+        const accounts = workflowAccounts ?? [];
+
+        // Fallback: if no workflow_accounts rows, keep old Instagram behavior
+        const targets =
+          accounts.length > 0
+            ? accounts
+            : [{ platform: "instagram", account_id: null }];
+
+        const publishErrors: string[] = [];
+
+        for (const target of targets) {
+          const platform = (target.platform || "").toLowerCase();
+
+          try {
+            if (platform === "facebook") {
+              await publishFacebookPost(userId, claimedContent.id);
+            } else if (platform === "instagram") {
+              await publishInstagramPost(userId, claimedContent.id);
+            } else {
+              publishErrors.push(`Unsupported platform: ${platform}`);
+            }
+          } catch (platformError) {
+            const msg =
+              platformError instanceof PublishFacebookError ||
+                platformError instanceof PublishPostError ||
+                platformError instanceof Error
+                ? platformError.message
+                : "Publish failed";
+            publishErrors.push(`${platform}: ${msg}`);
+          }
+        }
+
+        if (publishErrors.length === targets.length) {
+          // Every target failed
+          throw new Error(publishErrors.join(" | "));
+        }
 
         await supabaseAdmin
           .from("content")
@@ -787,13 +843,20 @@ async function handleScheduler(request: Request) {
           run_date: runDate,
           status: "success",
           content_id: claimedContent.id,
-          error_message: null,
+          error_message:
+            publishErrors.length > 0
+              ? `Partial: ${publishErrors.join(" | ")}`
+              : null,
         });
 
         results.push({
           scheduleSlotId: slot.id,
           workflowId,
           status: "success",
+          detail:
+            publishErrors.length > 0
+              ? `Partial: ${publishErrors.join(" | ")}`
+              : undefined,
         });
       } catch (publishError) {
         await supabaseAdmin
@@ -802,8 +865,9 @@ async function handleScheduler(request: Request) {
           .eq("id", claimedContent.id);
 
         const message =
-          publishError instanceof PublishPostError ||
-          publishError instanceof Error
+          publishError instanceof PublishFacebookError ||
+            publishError instanceof PublishPostError ||
+            publishError instanceof Error
             ? publishError.message
             : "Unable to publish content.";
 
@@ -896,7 +960,7 @@ async function handleScheduler(request: Request) {
           if (contentErr || !contentRow) {
             throw new Error(
               contentErr?.message ||
-                "Failed to create content for calendar post"
+              "Failed to create content for calendar post"
             );
           }
 
@@ -948,7 +1012,7 @@ async function handleScheduler(request: Request) {
       results,
       calendarResults,
     });
-    
+
   } catch (error) {
     console.error("Scheduler run error:", error);
 
