@@ -152,7 +152,7 @@ function isWorkflowExpired(
     | undefined,
   todayDateString: string
 ): boolean {
-  if (!settings || !settings.duration_type) {
+  if (!settings?.duration_type) {
     return false;
   }
 
@@ -162,13 +162,12 @@ function isWorkflowExpired(
     return false;
   }
 
-  // Prefer explicit end_date whenever it exists (custom OR 1_month etc.)
+  // Explicit end_date always wins
   if (end_date) {
     return todayDateString > end_date;
   }
 
   if (duration_type === "custom") {
-    // custom with no end_date → do not expire
     return false;
   }
 
@@ -177,12 +176,11 @@ function isWorkflowExpired(
     return false;
   }
 
-  // Prefer start_date, else workflow createdAt
-  const startSource = start_date || createdAt;
-  const start = new Date(
-    start_date ? `${start_date}T00:00:00Z` : startSource
-  );
+  const startIso = start_date
+    ? `${start_date}T00:00:00.000Z`
+    : createdAt;
 
+  const start = new Date(startIso);
   if (Number.isNaN(start.getTime())) {
     return false;
   }
@@ -190,7 +188,7 @@ function isWorkflowExpired(
   const expiry = new Date(start);
   expiry.setUTCMonth(expiry.getUTCMonth() + months);
 
-  const today = new Date(`${todayDateString}T00:00:00Z`);
+  const today = new Date(`${todayDateString}T00:00:00.000Z`);
   return today.getTime() > expiry.getTime();
 }
 

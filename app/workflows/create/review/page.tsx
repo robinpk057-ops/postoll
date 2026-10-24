@@ -235,12 +235,12 @@ export default function ReviewPage() {
   |--------------------------------------------------------------------------
   */
 
-  function getStartDate(): string | null {
-    if (!workflow?.customStartDate) {
-      return null;
+  function getStartDate(): string {
+    const custom = (workflow as { customStartDate?: string }).customStartDate;
+    if (custom) {
+      return custom;
     }
-
-    return workflow.customStartDate;
+    return new Date().toISOString().slice(0, 10);
   }
 
   /*
@@ -250,11 +250,55 @@ export default function ReviewPage() {
   */
 
   function getEndDate(): string | null {
-    if (!workflow?.customEndDate) {
+    const durationType = getDurationType();
+    const customEnd = (workflow as { customEndDate?: string }).customEndDate;
+
+    if (durationType === "unlimited") {
       return null;
     }
 
-    return workflow.customEndDate;
+    if (durationType === "custom") {
+      return customEnd ?? null;
+    }
+
+    if (customEnd) {
+      return customEnd;
+    }
+
+    const monthsMap: Record<string, number> = {
+      "1_month": 1,
+      "3_months": 3,
+      "6_months": 6,
+      "12_months": 12,
+    };
+
+    const months = monthsMap[durationType] ?? 1;
+    const end = new Date();
+    end.setMonth(end.getMonth() + months);
+    return end.toISOString().slice(0, 10);
+  }
+
+
+  function computeEndDate(
+    durationType: string,
+    start: Date,
+    customEnd?: string | null
+  ): string | null {
+    if (durationType === "unlimited") return null;
+    if (durationType === "custom") {
+      return customEnd || null;
+    }
+
+    const months: Record<string, number> = {
+      "1_month": 1,
+      "3_months": 3,
+      "6_months": 6,
+      "12_months": 12,
+    };
+    const m = months[durationType] ?? 1;
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + m);
+    return end.toISOString().slice(0, 10);
   }
 
   /*
