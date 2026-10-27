@@ -6,6 +6,8 @@ import AppShell from "../AppShell";
 import { createClient } from "@/lib/supabase/client";
 
 
+
+
 type Workflow = {
   id: string;
   name: string;
@@ -57,13 +59,13 @@ export default function WorkflowsPage() {
         .from("workflows")
         .select(
           `
-          id,
-          name,
-          mode,
-          description,
-          active,
-          created_at
-          `
+        id,
+        name,
+        mode,
+        description,
+        active,
+        created_at
+        `
         )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
@@ -74,8 +76,13 @@ export default function WorkflowsPage() {
 
       const list = data || [];
 
+      // One card per workflow id (never duplicate)
+      const unique = Array.from(
+        new Map(list.map((w) => [w.id, w])).values()
+      );
+
       const withThumbs: Workflow[] = await Promise.all(
-        list.map(async (w) => {
+        unique.map(async (w) => {
           const { data: content } = await supabase
             .from("content")
             .select("image_url")
@@ -199,10 +206,6 @@ export default function WorkflowsPage() {
         )}
 
 
-
-
-
-
         {loading && (
 
           <div className="grid gap-5 md:grid-cols-3">
@@ -225,170 +228,82 @@ export default function WorkflowsPage() {
         )}
 
 
+        {!loading && workflows.length > 0 && (
+          <div className="grid gap-6 md:grid-cols-3">
+            {workflows.map((workflow) => (
+              <div
+                key={workflow.id}
+                className="rounded-2xl border p-6 transition hover:-translate-y-1"
+                style={{
+                  background: "var(--card)",
+                  borderColor: "var(--border)",
+                }}
+              >
+                <div className="flex gap-4">
+                  <div
+                    className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    {workflow.thumbnail_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={workflow.thumbnail_url}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[10px] opacity-50">
+                        No image
+                      </div>
+                    )}
+                  </div>
 
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <h2 className="text-xl font-semibold truncate">
+                        {workflow.name}
+                      </h2>
+                      <span
+                        className="shrink-0 rounded-full px-3 py-1 text-xs"
+                        style={{
+                          background: workflow.active
+                            ? "rgba(34,197,94,.15)"
+                            : "rgba(156,163,175,.15)",
+                          color: workflow.active ? "#22c55e" : "#9ca3af",
+                        }}
+                      >
+                        {workflow.active ? "Active" : "Paused"}
+                      </span>
+                    </div>
 
-
-
-        {!loading &&
-          workflows.length === 0 && (
-
-
-            <div
-              className="flex min-h-[420px] items-center justify-center rounded-2xl border border-dashed text-center"
-              style={{
-                background: "var(--card)",
-                borderColor: "var(--border)"
-              }}
-            >
-
-              <div>
-
-
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-500/10 text-2xl">
-                  ✦
+                    <p
+                      className="mt-2 text-sm line-clamp-2"
+                      style={{ color: "var(--muted)" }}
+                    >
+                      {workflow.description || "AI generated content workflow"}
+                    </p>
+                  </div>
                 </div>
 
+                <div className="mt-6 text-sm">
+                  Mode:
+                  <span className="ml-2 font-medium">{workflow.mode}</span>
+                </div>
 
-
-                <h2 className="mt-5 text-xl font-semibold">
-                  No workflows yet
-                </h2>
-
-
-                <p
-                  className="mt-2 max-w-md text-sm"
-                  style={{
-                    color: "var(--muted)"
-                  }}
-                >
-                  Create your first automated AI content workflow.
-                </p>
-
-
-
-                <Link
-                  href="/workflows/create"
-                  className="mt-6 inline-flex rounded-xl px-5 py-3 text-sm font-semibold"
-                  style={{
-                    background: "var(--foreground)",
-                    color: "var(--background)"
-                  }}
-                >
-                  Create Workflow
-                </Link>
-
-
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmId(workflow.id)}
+                    className="rounded-lg border px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
-
-
-            </div>
-
-
-          )}
-
-
-
-
-
-
-        {!loading &&
-          workflows.length > 0 && (
-
-
-            <div className="grid gap-6 md:grid-cols-3">
-
-
-              {
-                workflows.map(workflow => (
-
-
-                  workflows.map((workflow) => (
-                    <div
-                      key={workflow.id}
-                      className="rounded-2xl border p-6 transition hover:-translate-y-1"
-                      style={{
-                        background: "var(--card)",
-                        borderColor: "var(--border)",
-                      }}
-                    >
-                      <div className="flex gap-4">
-                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border"
-                          style={{ borderColor: "var(--border)" }}
-                        >
-                          {workflow.thumbnail_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={workflow.thumbnail_url}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-[10px] opacity-50">
-                              No image
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <h2 className="text-xl font-semibold truncate">
-                              {workflow.name}
-                            </h2>
-                            <span
-                              className="shrink-0 rounded-full px-3 py-1 text-xs"
-                              style={{
-                                background: workflow.active
-                                  ? "rgba(34,197,94,.15)"
-                                  : "rgba(156,163,175,.15)",
-                                color: workflow.active
-                                  ? "#22c55e"
-                                  : "#9ca3af",
-                              }}
-                            >
-                              {workflow.active ? "Active" : "Paused"}
-                            </span>
-                          </div>
-
-                          <p
-                            className="mt-2 text-sm line-clamp-2"
-                            style={{ color: "var(--muted)" }}
-                          >
-                            {workflow.description ||
-                              "AI generated content workflow"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-6 text-sm">
-                        Mode:
-                        <span className="ml-2 font-medium">
-                          {workflow.mode}
-                        </span>
-                      </div>
-
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => setConfirmId(workflow.id)}
-                          className="rounded-lg border px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
-                          style={{ borderColor: "var(--border)" }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))
-
-
-                ))
-              }
-
-
-            </div>
-
-
-          )}
-
+            ))}
+          </div>
+        )}
 
 
       </div>
