@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+
 export const maxDuration = 30;
 
 type Body = {
@@ -39,12 +40,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const model = process.env.GEMINI_PLAN_MODEL || "gemini-2.0-flash";
+    const model = process.env.GEMINI_PLAN_MODEL || "gemini-3.8-flash";
 
     const prompt = `You are a social media copywriter for Instagram.
-Given the user's content description, write:
-1) A short engaging caption (2-4 sentences max, natural tone, no quote marks around the whole caption)
-2) 8-12 relevant hashtags without the # symbol in a JSON array
+Write a short caption (max 2 sentences) and 8-12 hashtags (no # symbol).
 
 Content type: ${contentType}
 User description:
@@ -52,7 +51,7 @@ User description:
 ${description}
 """
 
-Respond with ONLY valid JSON in this exact shape:
+Respond with ONLY valid JSON:
 {"caption":"...","hashtags":["tag1","tag2"]}`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -64,7 +63,7 @@ Respond with ONLY valid JSON in this exact shape:
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 512,
+          maxOutputTokens: 2048,
           responseMimeType: "application/json",
         },
       }),
@@ -104,7 +103,7 @@ Respond with ONLY valid JSON in this exact shape:
             finishReason === "SAFETY"
               ? "Gemini blocked the response (safety)."
               : geminiData?.error?.message ||
-                "Gemini returned an empty response. Check API quota/billing and model name.",
+              "Gemini returned an empty response. Check API quota/billing and model name.",
           detail: { finishReason, blockReason },
         },
         { status: 502 }
@@ -141,9 +140,9 @@ Respond with ONLY valid JSON in this exact shape:
     const caption = String(parsed.caption || "").trim();
     const hashtags = Array.isArray(parsed.hashtags)
       ? parsed.hashtags
-          .map((t) => String(t).replace(/^#/, "").trim())
-          .filter(Boolean)
-          .slice(0, 15)
+        .map((t) => String(t).replace(/^#/, "").trim())
+        .filter(Boolean)
+        .slice(0, 15)
       : [];
 
     if (!caption) {
