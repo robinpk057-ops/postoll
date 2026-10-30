@@ -39,8 +39,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const model =
-      process.env.GEMINI_PLAN_MODEL || "gemini-2.0-flash";
+    const model = process.env.GEMINI_PLAN_MODEL || "gemini-2.0-flash";
 
     const prompt = `You are a social media copywriter for Instagram.
 Given the user's content description, write:
@@ -78,26 +77,62 @@ Respond with ONLY valid JSON in this exact shape:
       return NextResponse.json(
         {
           error:
-            geminiData?.error?.message ||
-            "Gemini request failed",
+            geminiData?.error?.message || "Gemini request failed",
         },
         { status: 502 }
       );
     }
 
-    const text =
-      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const parts = geminiData?.candidates?.[0]?.content?.parts;
+    const text = Array.isArray(parts)
+      ? parts.map((p: { text?: string }) => p.text || "").join("")
+      : "";
+
+    const finishReason = geminiData?.candidates?.[0]?.finishReason;
+    const blockReason =
+      geminiData?.promptFeedback?.blockReason ||
+      geminiData?.candidates?.[0]?.safetyRatings;
+
+    if (!text.trim()) {
+      console.error(
+        "Gemini empty response:",
+        JSON.stringify(geminiData).slice(0, 2000)
+      );
+      return NextResponse.json(
+        {
+          error:
+            finishReason === "SAFETY"
+              ? "Gemini blocked the response (safety)."
+              : geminiData?.error?.message ||
+                "Gemini returned an empty response. Check API quota/billing and model name.",
+          detail: { finishReason, blockReason },
+        },
+        { status: 502 }
+      );
+    }
 
     let parsed: { caption?: string; hashtags?: string[] } = {};
     try {
-      parsed = JSON.parse(text);
+      const cleaned = text
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+      parsed = JSON.parse(cleaned);
     } catch {
       const match = text.match(/\{[\s\S]*\}/);
       if (match) {
-        parsed = JSON.parse(match[0]);
+        try {
+          parsed = JSON.parse(match[0]);
+        } catch {
+          return NextResponse.json(
+            { error: "Could not parse AI response", raw: text.slice(0, 500) },
+            { status: 502 }
+          );
+        }
       } else {
         return NextResponse.json(
-          { error: "Could not parse AI response" },
+          { error: "Could not parse AI response", raw: text.slice(0, 500) },
           { status: 502 }
         );
       }
