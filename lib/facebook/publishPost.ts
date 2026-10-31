@@ -60,7 +60,7 @@ export async function publishFacebookPost(
     );
   }
 
-  // Prefer account linked via workflow_accounts later; v1: first connected FB page
+  // v1: first connected FB page for this user
   const { data: account, error: accountError } = await supabaseAdmin
     .from("accounts")
     .select("id, account_id, account_name, access_token, connected")
@@ -82,14 +82,19 @@ export async function publishFacebookPost(
     ? content.hashtags
         .map((t: string) => (String(t).startsWith("#") ? t : `#${t}`))
         .join(" ")
-    : "";
+    : typeof content.hashtags === "string"
+      ? content.hashtags
+      : "";
 
-  const message = [content.caption || "", hashtags].filter(Boolean).join("\n\n");
+  const message = [content.caption || "", hashtags]
+    .filter(Boolean)
+    .join("\n\n");
 
   // Publish photo to Page
   const body = new URLSearchParams();
   body.set("url", content.image_url);
   body.set("caption", message);
+  body.set("published", "true");
   body.set("access_token", account.access_token);
 
   const res = await fetch(`${GRAPH}/${account.account_id}/photos`, {
@@ -103,11 +108,11 @@ export async function publishFacebookPost(
 
   if (!res.ok) {
     console.error("Facebook publish error:", data);
-    throw new PublishFacebookError(
-      data?.error?.message || "Facebook could not publish the photo.",
-      400,
-      data
-    );
+    const fbMsg =
+      data?.error?.error_user_msg ||
+      data?.error?.message ||
+      "Facebook could not publish the photo.";
+    throw new PublishFacebookError(fbMsg, 400, data);
   }
 
   const postId = data?.id || data?.post_id || null;
