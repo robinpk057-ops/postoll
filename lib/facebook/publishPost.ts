@@ -41,7 +41,6 @@ export async function publishFacebookPost(
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Content
   const { data: content, error: contentError } = await supabaseAdmin
     .from("content")
     .select("id, user_id, image_url, caption, hashtags, type")
@@ -55,12 +54,15 @@ export async function publishFacebookPost(
 
   if (!content.image_url || !content.image_url.startsWith("http")) {
     throw new PublishFacebookError(
-      "Content needs a public image_url for Facebook photo posts.",
+      "Content needs a public media URL for Facebook posts.",
       400
     );
   }
 
-  // v1: first connected FB page for this user
+  const isVideo =
+    content.type === "reel" ||
+    /\.(mp4|mov|webm)(\?|$)/i.test(content.image_url || "");
+
   const { data: account, error: accountError } = await supabaseAdmin
     .from("accounts")
     .select("id, account_id, account_name, access_token, connected")
@@ -90,7 +92,48 @@ export async function publishFacebookPost(
     .filter(Boolean)
     .join("\n\n");
 
-  // Publish photo to Page
+  // VIDEO / REEL
+  if (isVideo) {
+    const body = new URLSearchParams();
+    body.set("file_url", content.image_url);
+    body.set("description", message);
+    body.set("published", "true");
+    body.set("access_token", account.access_token);
+
+    const res = await fetch(`${GRAPH}/${account.account_id}/videos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      cache: "no-store",
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.error("Facebook video publish error:", data);
+      throw new PublishFacebookError(
+        data?.error?.error_user_msg ||
+          data?.error?.message ||
+          "Facebook could not publish the video.",
+        400,
+        data
+      );
+    }
+
+    return {
+      success: true,
+      platform: "facebook",
+      contentId: content.id,
+      postId: data?.id || data?.post_id || null,
+      account: {
+        id: account.id,
+        account_id: account.account_id,
+        account_name: account.account_name,
+      },
+    };
+  }
+
+  // PHOTO / IMAGE
   const body = new URLSearchParams();
   body.set("url", content.image_url);
   body.set("caption", message);
@@ -108,20 +151,20 @@ export async function publishFacebookPost(
 
   if (!res.ok) {
     console.error("Facebook publish error:", data);
-    const fbMsg =
+    throw new PublishFacebookError(
       data?.error?.error_user_msg ||
-      data?.error?.message ||
-      "Facebook could not publish the photo.";
-    throw new PublishFacebookError(fbMsg, 400, data);
+        data?.error?.message ||
+        "Facebook could not publish the photo.",
+      400,
+      data
+    );
   }
-
-  const postId = data?.id || data?.post_id || null;
 
   return {
     success: true,
     platform: "facebook",
     contentId: content.id,
-    postId,
+    postId: data?.id || data?.post_id || null,
     account: {
       id: account.id,
       account_id: account.account_id,
