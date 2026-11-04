@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { generateCaptionFromIdea } from "@/lib/ai/generateCaption";
 
 export const maxDuration = 30;
 
@@ -83,12 +84,35 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // 4. Public URL for Instagram (and other platforms)
+        // 4. Public URL
         const {
             data: { publicUrl },
         } = supabase.storage.from("postoll-media").getPublicUrl(filePath);
 
-        // 5. Insert content row
+        // 5. Caption: AI per file, fallback to user text
+        const baseIdea = (uploadDescription || "").trim();
+
+        let caption: string | null = baseIdea || null;
+        let hashtags: string[] = [];
+
+        if (baseIdea.length >= 3) {
+            try {
+                const ai = await generateCaptionFromIdea({
+                    description: baseIdea,
+                    contentType: fileType,
+                    variationSeed: `${workflowId}-${filePath}-${Date.now()}`,
+                });
+
+                if (ai?.caption) {
+                    caption = ai.caption;
+                    hashtags = ai.hashtags || [];
+                }
+            } catch (e) {
+                console.error("AI caption failed, using user description:", e);
+            }
+        }
+
+        // 6. Insert content row
         const { data: content, error: insertError } = await supabase
             .from("content")
             .insert({
