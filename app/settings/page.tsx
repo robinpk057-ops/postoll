@@ -147,6 +147,78 @@ export default function SettingsPage() {
   const [success, setSuccess] =
     useState<string | null>(null);
 
+  type ApiKeyRow = {
+    id: string;
+    name: string;
+    key_prefix: string;
+    created_at: string;
+    last_used_at: string | null;
+  };
+
+  const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = useState(true);
+  const [apiKeyCreating, setApiKeyCreating] = useState(false);
+  const [apiKeyName, setApiKeyName] = useState("n8n");
+  const [apiKeySecretOnce, setApiKeySecretOnce] = useState<string | null>(null);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+
+
+  async function loadApiKeys() {
+    try {
+      setApiKeysLoading(true);
+      setApiKeyError(null);
+      const res = await fetch("/api/settings/api-keys");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to load API keys");
+      setApiKeys(data.keys || []);
+    } catch (e) {
+      setApiKeyError(e instanceof Error ? e.message : "Failed to load API keys");
+    } finally {
+      setApiKeysLoading(false);
+    }
+  }
+
+  async function createApiKey() {
+    try {
+      setApiKeyCreating(true);
+      setApiKeyError(null);
+      setApiKeySecretOnce(null);
+      const res = await fetch("/api/settings/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: apiKeyName.trim() || "n8n" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to create key");
+      setApiKeySecretOnce(data.secret);
+      await loadApiKeys();
+    } catch (e) {
+      setApiKeyError(e instanceof Error ? e.message : "Failed to create key");
+    } finally {
+      setApiKeyCreating(false);
+    }
+  }
+
+  async function revokeApiKey(id: string) {
+    if (!confirm("Revoke this API key? Tools using it will stop working.")) {
+      return;
+    }
+    try {
+      setApiKeyError(null);
+      const res = await fetch("/api/settings/api-keys", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to revoke key");
+      setApiKeySecretOnce(null);
+      await loadApiKeys();
+    } catch (e) {
+      setApiKeyError(e instanceof Error ? e.message : "Failed to revoke key");
+    }
+  }
+
   /*
    * --------------------------------------------------
    * LOAD SETTINGS
@@ -271,6 +343,11 @@ export default function SettingsPage() {
     loadSettings();
   }, [loadSettings]);
 
+
+  useEffect(() => {
+    loadApiKeys();
+  }, []);
+
   /*
    * --------------------------------------------------
    * SAVE MAIN SETTINGS
@@ -391,11 +468,11 @@ export default function SettingsPage() {
 
     const nextDays = isSelected
       ? selectedDays.filter(
-          (value) => value !== day
-        )
+        (value) => value !== day
+      )
       : [...selectedDays, day].sort(
-          (a, b) => a - b
-        );
+        (a, b) => a - b
+      );
 
     try {
       setSaving(true);
@@ -498,7 +575,7 @@ export default function SettingsPage() {
       if (existingForDay.length > 0) {
         const last =
           existingForDay[
-            existingForDay.length - 1
+          existingForDay.length - 1
           ];
 
         const [hour, minute] =
@@ -606,9 +683,9 @@ export default function SettingsPage() {
         current.map((slot) =>
           slot.id === id
             ? {
-                ...slot,
-                ...updates,
-              }
+              ...slot,
+              ...updates,
+            }
             : slot
         )
       );
@@ -834,18 +911,16 @@ export default function SettingsPage() {
                 className="flex shrink-0 items-center gap-3"
               >
                 <span
-                  className={`relative h-8 w-14 rounded-full transition ${
-                    automaticScheduling
-                      ? "bg-violet-600"
-                      : "bg-white/10"
-                  }`}
+                  className={`relative h-8 w-14 rounded-full transition ${automaticScheduling
+                    ? "bg-violet-600"
+                    : "bg-white/10"
+                    }`}
                 >
                   <span
-                    className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition ${
-                      automaticScheduling
-                        ? "left-7"
-                        : "left-1"
-                    }`}
+                    className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition ${automaticScheduling
+                      ? "left-7"
+                      : "left-1"
+                      }`}
                   />
                 </span>
 
@@ -1093,14 +1168,13 @@ export default function SettingsPage() {
                             }}
                           >
                             {daySlots.length ===
-                            0
+                              0
                               ? "No posting times"
-                              : `${daySlots.length} ${
-                                  daySlots.length ===
-                                  1
-                                    ? "posting time"
-                                    : "posting times"
-                                }`}
+                              : `${daySlots.length} ${daySlots.length ===
+                                1
+                                ? "posting time"
+                                : "posting times"
+                              }`}
                           </p>
                         </div>
                       </div>
@@ -1123,7 +1197,7 @@ export default function SettingsPage() {
                         }}
                       >
                         {addingDay ===
-                        day.value
+                          day.value
                           ? "Adding..."
                           : "+ Add time"}
                       </button>
@@ -1197,9 +1271,9 @@ export default function SettingsPage() {
                                         event
                                           .target
                                           .value as
-                                          | "all"
-                                          | "post"
-                                          | "reel",
+                                        | "all"
+                                        | "post"
+                                        | "reel",
                                     }
                                   )
                                 }
@@ -1249,12 +1323,12 @@ export default function SettingsPage() {
                                   }}
                                 >
                                   {slot.content_type ===
-                                  "all"
+                                    "all"
                                     ? "All content"
                                     : slot.content_type ===
                                       "post"
-                                    ? "Post"
-                                    : "Reel"}
+                                      ? "Post"
+                                      : "Reel"}
                                 </span>
                               </div>
 
@@ -1285,20 +1359,20 @@ export default function SettingsPage() {
 
                     {daySlots.length ===
                       0 && (
-                      <div
-                        className="mt-4 rounded-lg border border-dashed px-4 py-5 text-center text-xs"
-                        style={{
-                          borderColor:
-                            "var(--border)",
-                          color:
-                            "var(--muted)",
-                        }}
-                      >
-                        No automatic posting
-                        time configured for{" "}
-                        {day.label}.
-                      </div>
-                    )}
+                        <div
+                          className="mt-4 rounded-lg border border-dashed px-4 py-5 text-center text-xs"
+                          style={{
+                            borderColor:
+                              "var(--border)",
+                            color:
+                              "var(--muted)",
+                          }}
+                        >
+                          No automatic posting
+                          time configured for{" "}
+                          {day.label}.
+                        </div>
+                      )}
                   </div>
                 );
               })}
@@ -1400,6 +1474,124 @@ export default function SettingsPage() {
                   time.
                 </p>
               </div>
+            </div>
+          </section>
+
+          {/* ================================================= */}
+          {/* API KEYS (n8n / webhook ingest) */}
+          {/* ================================================= */}
+
+          <section
+            className="mt-10 rounded-2xl border p-6"
+            style={{
+              background: "var(--card)",
+              borderColor: "var(--border)",
+            }}
+          >
+            <h2 className="text-lg font-semibold">Ingest API keys</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+              For n8n, Zapier, or any tool that sends videos into Postoll.
+              Header:{" "}
+              <code className="text-xs">Authorization: Bearer pk_live_…</code>
+            </p>
+
+            {apiKeyError && (
+              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                {apiKeyError}
+              </div>
+            )}
+
+            {apiKeySecretOnce && (
+              <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+                <p className="text-sm font-medium text-amber-200">
+                  Copy this key now — it will not be shown again.
+                </p>
+                <code className="mt-3 block break-all rounded-lg bg-black/40 p-3 text-xs sm:text-sm">
+                  {apiKeySecretOnce}
+                </code>
+                <button
+                  type="button"
+                  className="mt-3 rounded-lg border px-3 py-1.5 text-sm"
+                  style={{ borderColor: "var(--border)" }}
+                  onClick={() => navigator.clipboard.writeText(apiKeySecretOnce)}
+                >
+                  Copy
+                </button>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <input
+                value={apiKeyName}
+                onChange={(e) => setApiKeyName(e.target.value)}
+                placeholder="Key name"
+                className="rounded-xl border px-3 py-2 text-sm"
+                style={{
+                  background: "var(--background)",
+                  borderColor: "var(--border)",
+                }}
+              />
+              <button
+                type="button"
+                disabled={apiKeyCreating}
+                onClick={createApiKey}
+                className="rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                style={{
+                  background: "var(--foreground)",
+                  color: "var(--background)",
+                }}
+              >
+                {apiKeyCreating ? "Creating…" : "Create API key"}
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-3">
+              {apiKeysLoading && (
+                <p className="text-sm" style={{ color: "var(--muted)" }}>
+                  Loading keys…
+                </p>
+              )}
+              {!apiKeysLoading && apiKeys.length === 0 && (
+                <p className="text-sm" style={{ color: "var(--muted)" }}>
+                  No API keys yet.
+                </p>
+              )}
+              {apiKeys.map((k) => (
+                <div
+                  key={k.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <div>
+                    <p className="text-sm font-medium">{k.name}</p>
+                    <p className="text-xs" style={{ color: "var(--muted)" }}>
+                      {k.key_prefix}… ·{" "}
+                      {new Date(k.created_at).toLocaleString()}
+                      {k.last_used_at
+                        ? ` · last used ${new Date(k.last_used_at).toLocaleString()}`
+                        : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => revokeApiKey(k.id)}
+                    className="rounded-lg border px-3 py-1.5 text-sm text-red-400"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    Revoke
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div
+              className="mt-6 rounded-xl border border-dashed p-4 text-sm"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <p className="font-medium">Webhook URL</p>
+              <code className="mt-2 block break-all text-xs">
+                https://postoll.vercel.app/api/ingest/webhook
+              </code>
             </div>
           </section>
 
