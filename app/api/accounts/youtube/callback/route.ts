@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
   }
 
   const accessToken = tokenData.access_token as string;
+  const refreshToken = tokenData.refresh_token as string | undefined;
 
   // 2) Fetch the user's YouTube Channel details
   const channelRes = await fetch(
@@ -72,7 +73,7 @@ export async function GET(req: NextRequest) {
   const channelId = String(channel.id);
   const channelName = String(channel.snippet?.title || "YouTube Channel");
 
-  // 3) Upsert into your existing `accounts` table
+  // 3) Check for existing account
   const { data: existing } = await supabase
     .from("accounts")
     .select("id")
@@ -81,24 +82,46 @@ export async function GET(req: NextRequest) {
     .eq("account_id", channelId)
     .maybeSingle();
 
+  let dbError = null;
+
   if (existing?.id) {
-    await supabase
+    const updatePayload: any = {
+      account_name: channelName,
+      access_token: accessToken,
+      connected: true,
+    };
+    if (refreshToken) {
+      updatePayload.refresh_token = refreshToken;
+    }
+
+    const { error: updateErr } = await supabase
       .from("accounts")
-      .update({
-        account_name: channelName,
-        access_token: accessToken,
-        connected: true,
-      })
+      .update(updatePayload)
       .eq("id", existing.id);
+    dbError = updateErr;
   } else {
-    await supabase.from("accounts").insert({
+    const insertPayload: any = {
       user_id: user.id,
       platform: "youtube",
       account_id: channelId,
       account_name: channelName,
       access_token: accessToken,
       connected: true,
-    });
+    };
+    if (refreshToken) {
+      insertPayload.refresh_token = refreshToken;
+    }
+
+    const { error: insertErr } = await supabase
+      .from("accounts")
+      .insert(insertPayload);
+    dbError = insertErr;
+  }
+
+  // 4) Catch and log database errors so they don't fail silently
+  if (dbError) {
+    console.error("Supabase accounts save error:", dbError);
+    return NextResponse.redirect(new URL("/accounts?error=database_save_failed", SITE));
   }
 
   return NextResponse.redirect(new URL("/accounts?connected=youtube", SITE));
