@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import AppShell from "../../../AppShell";
 import { useWorkflow } from "../context";
+import { createClient } from "@/lib/supabase/client";
 
 type ConnectedAccount = {
   id: string;
@@ -13,323 +13,187 @@ type ConnectedAccount = {
   connected: boolean;
 };
 
-const PLATFORM_META: Record<
-  string,
-  { name: string; icon: string; description: string }
-> = {
-  instagram: {
-    name: "Instagram",
-    icon: "📸",
-    description: "Post reels, images and captions automatically.",
-  },
-  facebook: {
-    name: "Facebook",
-    icon: "📘",
-    description: "Publish content to your Facebook pages.",
-  },
-  linkedin: {
-    name: "LinkedIn",
-    icon: "💼",
-    description: "Share professional content automatically.",
-  },
-  twitter: {
-    name: "X / Twitter",
-    icon: "𝕏",
-    description: "Publish updates and threads.",
-  },
-};
-
-export default function AccountsPage() {
+export default function WorkflowAccountsPage() {
   const router = useRouter();
+  const supabase = createClient();
   const { workflow, updateWorkflow } = useWorkflow();
 
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Load connected accounts
-  useEffect(() => {
-    let cancelled = false;
+  const [selectedAccounts, setSelectedAccounts] = useState<
+    { platform: string; accountId: string; accountName: string; platformAccountId: string }[]
+  >(workflow.selectedAccounts || []);
 
-    async function load() {
+  useEffect(() => {
+    async function fetchAccounts() {
       try {
         setLoading(true);
-        setError("");
-
-        const res = await fetch("/api/accounts");
-        const data = await res.json().catch(() => null);
-
-        if (!res.ok) {
-          throw new Error(data?.error || "Failed to load accounts");
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push("/login");
+          return;
         }
 
-        if (!cancelled) {
-          setAccounts(Array.isArray(data) ? data : data?.accounts ?? []);
-        }
+        const { data, error: fetchError } = await supabase
+          .from("accounts")
+          .select("id, platform, account_id, account_name, connected")
+          .eq("user_id", user.id)
+          .eq("connected", true);
+
+        if (fetchError) throw fetchError;
+        setAccounts(data || []);
       } catch (err: any) {
-        if (!cancelled) {
-          setError(err?.message || "Unable to load connected accounts");
-        }
+        console.error("Failed to load connected accounts:", err);
+        setError("Could not load your connected social accounts.");
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
     }
 
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    fetchAccounts();
+  }, [router, supabase]);
 
-  // Group accounts by platform
-  const accountsByPlatform = accounts.reduce<
-    Record<string, ConnectedAccount[]>
-  >((acc, a) => {
-    if (!a.connected) return acc;
-    const key = a.platform.toLowerCase();
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(a);
-    return acc;
-  }, {});
+  const toggleAccount = (acc: ConnectedAccount) => {
+    setSelectedAccounts((prev) => {
+      const exists = prev.some((item) => item.accountId === acc.id);
 
-  function isSelected(accountId: string) {
-    return (workflow.selectedAccounts || []).some(
-      (a) => a.accountId === accountId
-    );
-  }
+      if (exists) {
+        return prev.filter((item) => item.accountId !== acc.id);
+      } else {
+        return [
+          ...prev,
+          {
+            platform: acc.platform.toLowerCase(),
+            accountId: acc.id,
+            accountName: acc.account_name || "Account",
+            platformAccountId: acc.account_id,
+          },
+        ];
+      }
+    });
+  };
 
-  function toggleAccount(account: ConnectedAccount) {
-    const current = workflow.selectedAccounts || [];
-    const already = current.find((a) => a.accountId === account.id);
+  const handleNext = (e: React.FormEvent) => {
+    e.preventDefault();
 
-    let next: typeof current;
-
-    if (already) {
-      // deselect
-      next = current.filter((a) => a.accountId !== account.id);
-    } else {
-      // select (for now allow only one account per platform)
-      next = [
-        ...current.filter(
-          (a) => a.platform !== account.platform.toLowerCase()
-        ),
-        {
-          platform: account.platform.toLowerCase(),
-          accountId: account.id,
-          accountName: account.account_name || account.account_id,
-          platformAccountId: account.account_id,
-        },
-      ];
+    if (selectedAccounts.length === 0) {
+      setError("Please select at least one connected account for this workflow.");
+      return;
     }
 
-    // also keep the platforms[] array in sync
-    const platforms = Array.from(
-      new Set(next.map((a) => a.platform))
-    );
+    const activePlatforms = Array.from(new Set(selectedAccounts.map((a) => a.platform)));
 
     updateWorkflow({
-      selectedAccounts: next,
-      platforms,
+      selectedAccounts,
+      platforms: activePlatforms,
     });
-  }
 
-  async function connectInstagram() {
-    try {
-      // remember that we came from the workflow builder
-      sessionStorage.setItem("postoll_return_to_workflow", "1");
+    router.push("/workflows/create/approval");
+  };
 
-      const res = await fetch("/api/accounts/instagram/connect", {
-        method: "POST",
-      });
-      const data = await res.json();
-
-      if (!res.ok || !data?.authorizationUrl) {
-        throw new Error(data?.error || "Could not start Instagram connect");
-      }
-
-      window.location.href = data.authorizationUrl;
-    } catch (err: any) {
-      setError(err?.message || "Failed to start Instagram connection");
-    }
-  }
-
-  const canContinue = (workflow.selectedAccounts || []).length > 0;
+  // Added "youtube" here to support rendering and selection
+  const platformsList = ["instagram", "facebook", "youtube", "linkedin", "x"];
 
   return (
-    <AppShell>
-      <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
-        {/* HEADER */}
-        <div className="mb-10">
-          <p className="text-sm font-medium" style={{ color: "#a78bfa" }}>
-            ✦ Workflow Builder
-          </p>
-          <h1 className="mt-2 text-4xl font-bold">Connect Social Accounts</h1>
-          <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
-            Choose which connected accounts this workflow should publish to.
-          </p>
+    <div className="mx-auto max-w-2xl py-8">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold tracking-tight">Select Target Accounts</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Choose which connected social media accounts will publish content for this workflow.
+        </p>
+      </div>
+
+      {error && (
+        <div className="mb-6 rounded-xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+          {error}
         </div>
+      )}
 
-        {/* MAIN CARD */}
-        <div
-          className="rounded-2xl border p-8"
-          style={{
-            background: "var(--card)",
-            borderColor: "var(--border)",
-          }}
-        >
-          <h2 className="text-xl font-semibold">Select Accounts</h2>
-          <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
-            Only accounts you have already connected are shown. You can connect
-            more below.
-          </p>
+      {loading ? (
+        <div className="py-12 text-center text-sm text-muted-foreground">
+          Loading your connected accounts...
+        </div>
+      ) : (
+        <form onSubmit={handleNext} className="space-y-6">
+          {platformsList.map((platform) => {
+            const platformAccounts = accounts.filter(
+              (acc) => acc.platform.toLowerCase() === platform
+            );
 
-          {loading && (
-            <p className="mt-8 text-sm" style={{ color: "var(--muted)" }}>
-              Loading connected accounts…
-            </p>
-          )}
+            return (
+              <div key={platform} className="rounded-2xl border p-6 space-y-4" style={{ borderColor: "var(--border)" }}>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold capitalize text-base">{platform}</h3>
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
+                    {platformAccounts.length} connected
+                  </span>
+                </div>
 
-          {error && (
-            <div
-              className="mt-6 rounded-xl border p-4 text-sm"
-              style={{
-                borderColor: "rgba(239,68,68,.3)",
-                background: "rgba(239,68,68,.1)",
-                color: "#f87171",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          {!loading && (
-            <div className="mt-8 space-y-8">
-              {Object.keys(PLATFORM_META).map((platformId) => {
-                const meta = PLATFORM_META[platformId];
-                const platformAccounts = accountsByPlatform[platformId] || [];
-
-                return (
-                  <div key={platformId}>
-                    <div className="mb-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{meta.icon}</span>
-                        <div>
-                          <h3 className="font-semibold">{meta.name}</h3>
-                          <p
-                            className="text-xs"
-                            style={{ color: "var(--muted)" }}
-                          >
-                            {meta.description}
-                          </p>
-                        </div>
-                      </div>
-
-                      {platformId === "instagram" && (
-                        <button
-                          type="button"
-                          onClick={connectInstagram}
-                          className="rounded-xl border px-4 py-2 text-sm font-medium transition hover:bg-white/5"
-                          style={{ borderColor: "var(--border)" }}
-                        >
-                          + Connect another
-                        </button>
-                      )}
-                    </div>
-
-                    {platformAccounts.length === 0 ? (
-                      <div
-                        className="rounded-xl border border-dashed p-5 text-sm"
-                        style={{
-                          borderColor: "var(--border)",
-                          color: "var(--muted)",
-                        }}
-                      >
-                        No {meta.name} accounts connected yet.
-                        {platformId === "instagram" && (
-                          <button
-                            type="button"
-                            onClick={connectInstagram}
-                            className="ml-2 font-medium underline"
-                            style={{ color: "#a78bfa" }}
-                          >
-                            Connect Instagram
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {platformAccounts.map((acc) => {
-                          const selected = isSelected(acc.id);
-                          return (
-                            <button
-                              key={acc.id}
-                              type="button"
-                              onClick={() => toggleAccount(acc)}
-                              className="rounded-2xl border p-5 text-left transition hover:-translate-y-0.5"
-                              style={{
-                                background: selected
-                                  ? "rgba(139,92,246,.12)"
-                                  : "var(--background)",
-                                borderColor: selected
-                                  ? "#8b5cf6"
-                                  : "var(--border)",
-                              }}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="font-medium">
-                                    {acc.account_name || acc.account_id}
-                                  </p>
-                                  <p
-                                    className="mt-1 text-xs"
-                                    style={{ color: "var(--muted)" }}
-                                  >
-                                    {acc.account_id}
-                                  </p>
-                                </div>
-                                <span className="text-sm">
-                                  {selected ? "✓" : "+"}
-                                </span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                {platformAccounts.length === 0 ? (
+                  <div className="text-sm text-muted-foreground flex items-center justify-between py-2">
+                    <span>No {platform} accounts connected yet.</span>
+                    <a
+                      href="/accounts"
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Connect account &rarr;
+                    </a>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                ) : (
+                  <div className="space-y-2">
+                    {platformAccounts.map((acc) => {
+                      const isSelected = selectedAccounts.some((item) => item.accountId === acc.id);
+                      return (
+                        <div
+                          key={acc.id}
+                          onClick={() => toggleAccount(acc)}
+                          className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
+                            isSelected
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-muted-foreground/50"
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} 
+                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                            <span className="text-sm font-medium">
+                              {acc.account_name || `Account ID: ${acc.account_id}`}
+                            </span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">Ready</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
-          {/* BUTTONS */}
-          <div
-            className="mt-10 flex justify-between border-t pt-6"
-            style={{ borderColor: "var(--border)" }}
-          >
+          <div className="flex items-center justify-between pt-4">
             <button
               type="button"
               onClick={() => router.back()}
-              className="rounded-xl border px-6 py-3"
+              className="rounded-xl border px-6 py-3 text-sm font-medium"
+              style={{ borderColor: "var(--border)" }}
             >
-              ← Back
+              Back
             </button>
-
             <button
-              type="button"
-              disabled={!canContinue}
-              onClick={() => router.push("/workflows/create/approval")}
-              className="rounded-xl px-6 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-40"
-              style={{
-                background: "var(--foreground)",
-                color: "var(--background)",
-              }}
+              type="submit"
+              className="rounded-xl bg-primary px-6 py-3 text-sm font-medium text-primary-foreground shadow hover:opacity-90"
             >
-              Continue →
+              Continue to Approval &rarr;
             </button>
           </div>
-        </div>
-      </div>
-    </AppShell>
+        </form>
+      )}
+    </div>
   );
 }

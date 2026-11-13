@@ -581,6 +581,53 @@ export default function ReviewPage() {
         throw scheduleError;
       }
 
+      /*
+|--------------------------------------------------------------------------
+| SAVE WORKFLOW ACCOUNTS
+|--------------------------------------------------------------------------
+*/
+      const selectedAccounts = workflow.selectedAccounts ?? [];
+
+      if (selectedAccounts.length > 0) {
+        const accountRows = selectedAccounts.map((acc) => ({
+          workflow_id: workflowId,
+          platform: acc.platform,
+          account_id: acc.accountId, // UUID from public.accounts
+        }));
+
+        const { error: accountsError } = await supabase
+          .from("workflow_accounts")
+          .insert(accountRows);
+
+        if (accountsError) {
+          // Full rollback if saving accounts fails
+          if (uploadedContentIds.length > 0) {
+            await fetch("/api/workflows/register-content", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contentIds: uploadedContentIds }),
+            }).catch(() => { });
+          }
+
+          await supabase
+            .from("workflow_schedule_slots")
+            .delete()
+            .eq("workflow_id", workflowId);
+
+          await supabase
+            .from("workflow_settings")
+            .delete()
+            .eq("workflow_id", workflowId);
+
+          await supabase
+            .from("workflows")
+            .delete()
+            .eq("id", workflowId);
+
+          throw accountsError;
+        }
+      }
+
       console.log("7. Schedule slots created – success!");
 
       setMessage("Workflow activated successfully 🚀");
@@ -930,37 +977,20 @@ export default function ReviewPage() {
             )}
         </ReviewCard>
 
-        {/* PLATFORMS */}
-
-        <ReviewCard title="Platforms">
-          {workflow?.platforms?.length ? (
-            <div className="flex flex-wrap gap-2">
-              {workflow.platforms.map(
-                (platform: string) => (
-                  <span
-                    key={platform}
-                    className="rounded-full border px-3 py-1.5 text-xs"
-                    style={{
-                      borderColor:
-                        "var(--border)",
-                      background:
-                        "var(--background)",
-                    }}
-                  >
-                    {platform}
-                  </span>
-                )
-              )}
+        {/* PLATFORMS & ACCOUNTS */}
+        <ReviewCard title="Target Accounts">
+          {workflow?.selectedAccounts?.length ? (
+            <div className="space-y-2">
+              {workflow.selectedAccounts.map((acc) => (
+                <ReviewRow
+                  key={acc.accountId}
+                  label={acc.platform.toUpperCase()}
+                  value={acc.accountName}
+                />
+              ))}
             </div>
           ) : (
-            <p
-              className="text-sm"
-              style={{
-                color: "var(--muted)",
-              }}
-            >
-              No platforms selected.
-            </p>
+            <p className="text-sm text-muted-foreground">No accounts selected.</p>
           )}
         </ReviewCard>
 
