@@ -43,7 +43,7 @@ export async function publishFacebookPost(
 
   const { data: content, error: contentError } = await supabaseAdmin
     .from("content")
-    .select("id, user_id, image_url, caption, hashtags, type")
+    .select("id, user_id, workflow_id, image_url, caption, hashtags, type")
     .eq("id", contentId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -63,20 +63,82 @@ export async function publishFacebookPost(
     content.type === "reel" ||
     /\.(mp4|mov|webm)(\?|$)/i.test(content.image_url || "");
 
-  const { data: account, error: accountError } = await supabaseAdmin
-    .from("accounts")
-    .select("id, account_id, account_name, access_token, connected")
-    .eq("user_id", userId)
-    .eq("platform", "facebook")
-    .eq("connected", true)
-    .limit(1)
-    .maybeSingle();
+  /*
+   * ------------------------------------------------------------
+   * FIND CONNECTED FACEBOOK ACCOUNT (WITH WORKFLOW PREFERENCE)
+   * ------------------------------------------------------------
+   */
+  let account: {
+    id: string;
+    platform: string;
+    account_id: string;
+    account_name: string;
+    access_token: string;
+    connected: boolean;
+  } | null = null;
 
-  if (accountError || !account?.access_token || !account.account_id) {
+  if (content.workflow_id) {
+    const { data: linked, error: linkedError } = await supabaseAdmin
+      .from("workflow_accounts")
+      .select(
+        `
+        account_id,
+        accounts (
+          id,
+          platform,
+          account_id,
+          account_name,
+          access_token,
+          connected
+        )
+      `
+      )
+      .eq("workflow_id", content.workflow_id)
+      .eq("platform", "facebook")
+      .limit(1)
+      .maybeSingle();
+
+    if (linkedError) {
+      console.warn(
+        "workflow_accounts facebook lookup failed, falling back:",
+        linkedError.message
+      );
+    } else if (linked?.accounts) {
+      const acc = Array.isArray(linked.accounts)
+        ? linked.accounts[0]
+        : linked.accounts;
+
+      if (acc && acc.connected && acc.access_token) {
+        account = acc;
+      }
+    }
+  }
+
+  if (!account) {
+    const { data: fallback, error: accountError } = await supabaseAdmin
+      .from("accounts")
+      .select("id, platform, account_id, account_name, access_token, connected")
+      .eq("user_id", userId)
+      .eq("platform", "facebook")
+      .eq("connected", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (accountError) {
+      throw new PublishFacebookError(
+        accountError.message || "Unable to load the connected Facebook account.",
+        500,
+        accountError
+      );
+    }
+
+    account = fallback;
+  }
+
+  if (!account || !account.access_token || !account.account_id) {
     throw new PublishFacebookError(
-      "No connected Facebook Page found.",
-      400,
-      accountError
+      "No connected Facebook Page found for this workflow.",
+      400
     );
   }
 
