@@ -463,7 +463,6 @@ export default function ReviewPage() {
                 user_id: user.id,
                 file_url: typeof fileUrl === "string" ? fileUrl : "",
                 type: fileType,
-                description: workflow.uploadDescription || null,
               })
               .select()
               .single();
