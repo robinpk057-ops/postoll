@@ -1027,11 +1027,14 @@ export default function ReviewPage() {
                 value={
                   workflow?.uploadFiles?.length
                     ? workflow.uploadFiles
-                      .map(
-                        (file: {
-                          name: string;
-                        }) => file.name
-                      )
+                      .map((file: any) => {
+                        if (typeof file === "string") {
+                          // Extract filename from URL or show general name
+                          const parts = file.split("/");
+                          return parts[parts.length - 1] || "Uploaded File";
+                        }
+                        return file.name;
+                      })
                       .join(", ")
                     : "No files selected"
                 }
