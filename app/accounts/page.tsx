@@ -6,6 +6,7 @@ import AppShell from "../AppShell";
 type PlatformId =
   | "instagram"
   | "facebook"
+  | "youtube"
   | "linkedin"
   | "x";
 
@@ -40,6 +41,13 @@ const platforms: Platform[] = [
     icon: "f",
   },
   {
+    id: "youtube",
+    name: "YouTube",
+    description:
+      "Publish videos and Shorts directly to your YouTube channel.",
+    icon: "▶",
+  },
+  {
     id: "linkedin",
     name: "LinkedIn",
     description:
@@ -54,18 +62,6 @@ const platforms: Platform[] = [
     icon: "𝕏",
   },
 ];
-
-/*
-|--------------------------------------------------------------------------
-| TEMPORARY INSTAGRAM TEST CONTENT
-|--------------------------------------------------------------------------
-|
-| This is ONLY for testing the Instagram publishing API.
-|
-| After the first successful publication, this section will be removed
-| and publishing will be connected to the normal Postoll workflow.
-|
-*/
 
 const TEST_CONTENT_ID =
   "46305625-e2cf-44de-94d6-3836924852b4";
@@ -143,26 +139,19 @@ export default function AccountsPage() {
     }
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | INITIAL LOAD
-  |--------------------------------------------------------------------------
-  */
-
   useEffect(() => {
     loadAccounts();
   }, []);
 
   /*
   |--------------------------------------------------------------------------
-  | CONNECT INSTAGRAM
+  | CONNECT PLATFORMS
   |--------------------------------------------------------------------------
   */
 
   async function connectInstagram() {
     try {
       setConnecting("instagram");
-
       setError("");
       setMessage("");
       setPublishResult("");
@@ -188,9 +177,7 @@ export default function AccountsPage() {
         );
       }
 
-      if (
-        !data.authorizationUrl
-      ) {
+      if (!data.authorizationUrl) {
         throw new Error(
           "Instagram authorization URL was not returned."
         );
@@ -199,17 +186,11 @@ export default function AccountsPage() {
       window.location.href =
         data.authorizationUrl;
     } catch (err) {
-      console.error(
-        "Instagram connection error:",
-        err
-      );
-
       setError(
         err instanceof Error
           ? err.message
           : "Unable to connect Instagram."
       );
-
       setConnecting(null);
     }
   }
@@ -247,12 +228,38 @@ export default function AccountsPage() {
     }
   }
 
+  async function connectYouTube() {
+    try {
+      setConnecting("youtube");
+      setError("");
+      setMessage("");
+      setPublishResult("");
 
-  /*
-  |--------------------------------------------------------------------------
-  | CONNECT OTHER PLATFORMS
-  |--------------------------------------------------------------------------
-  */
+      const response = await fetch("/api/accounts/youtube/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to start YouTube connection."
+        );
+      }
+
+      if (!data.authorizationUrl) {
+        throw new Error("YouTube authorization URL was not returned.");
+      }
+
+      window.location.href = data.authorizationUrl;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "YouTube connect failed."
+      );
+      setConnecting(null);
+    }
+  }
 
   function handleConnect(platformId: PlatformId) {
     if (platformId === "instagram") {
@@ -262,6 +269,11 @@ export default function AccountsPage() {
 
     if (platformId === "facebook") {
       connectFacebook();
+      return;
+    }
+
+    if (platformId === "youtube") {
+      connectYouTube();
       return;
     }
 
@@ -284,7 +296,6 @@ export default function AccountsPage() {
   ) {
     try {
       setDisconnecting(account.id);
-
       setError("");
       setMessage("");
       setPublishResult("");
@@ -319,11 +330,6 @@ export default function AccountsPage() {
 
       await loadAccounts();
     } catch (err) {
-      console.error(
-        "Disconnect account error:",
-        err
-      );
-
       setError(
         err instanceof Error
           ? err.message
@@ -338,26 +344,11 @@ export default function AccountsPage() {
   |--------------------------------------------------------------------------
   | TEMPORARY INSTAGRAM PUBLISH TEST
   |--------------------------------------------------------------------------
-  |
-  | This sends ONLY the content ID.
-  |
-  | The server then:
-  |
-  | 1. Loads the content from Supabase.
-  | 2. Verifies ownership.
-  | 3. Gets the public image URL.
-  | 4. Gets the connected Instagram account.
-  | 5. Creates the Instagram media container.
-  | 6. Publishes the media.
-  |
-  | The Instagram access token never reaches the browser.
-  |--------------------------------------------------------------------------
   */
 
   async function testInstagramPublish() {
     try {
       setPublishing(true);
-
       setError("");
       setMessage("");
       setPublishResult("");
@@ -366,26 +357,18 @@ export default function AccountsPage() {
         "/api/publish/instagram",
         {
           method: "POST",
-
           headers: {
             "Content-Type":
               "application/json",
           },
-
           body: JSON.stringify({
-            contentId:
-              TEST_CONTENT_ID,
+            contentId: TEST_CONTENT_ID,
           }),
         }
       );
 
       const data =
         await response.json();
-
-      console.log(
-        "Instagram publish response:",
-        data
-      );
 
       if (!response.ok) {
         throw new Error(
@@ -406,11 +389,6 @@ export default function AccountsPage() {
         "Your Postoll test content was successfully published to Instagram."
       );
     } catch (err) {
-      console.error(
-        "Instagram publish test error:",
-        err
-      );
-
       setError(
         err instanceof Error
           ? err.message
@@ -420,12 +398,6 @@ export default function AccountsPage() {
       setPublishing(false);
     }
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | HELPERS
-  |--------------------------------------------------------------------------
-  */
 
   function getAccount(
     platformId: PlatformId
@@ -438,12 +410,6 @@ export default function AccountsPage() {
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | PAGE
-  |--------------------------------------------------------------------------
-  */
-
   const instagramAccount =
     getAccount("instagram");
 
@@ -452,7 +418,6 @@ export default function AccountsPage() {
       <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-10 md:px-10 md:py-12">
 
         {/* HEADER */}
-
         <div className="mb-10">
           <p
             className="text-sm font-medium"
@@ -480,7 +445,6 @@ export default function AccountsPage() {
         </div>
 
         {/* SUCCESS */}
-
         {message && (
           <div
             className="mb-6 rounded-2xl border p-4 text-sm"
@@ -497,7 +461,6 @@ export default function AccountsPage() {
         )}
 
         {/* ERROR */}
-
         {error && (
           <div
             className="mb-6 rounded-2xl border p-4 text-sm"
@@ -514,7 +477,6 @@ export default function AccountsPage() {
         )}
 
         {/* TEMPORARY INSTAGRAM TEST */}
-
         {instagramAccount && (
           <div
             className="mb-8 rounded-2xl border p-6"
@@ -525,7 +487,6 @@ export default function AccountsPage() {
             }}
           >
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-
               <div>
                 <p
                   className="text-xs font-semibold uppercase tracking-wider"
@@ -557,16 +518,6 @@ export default function AccountsPage() {
                     {instagramAccount.account_name}
                   </strong>
                   .
-                </p>
-
-                <p
-                  className="mt-2 text-xs"
-                  style={{
-                    color: "var(--muted)",
-                  }}
-                >
-                  Content ID:{" "}
-                  {TEST_CONTENT_ID}
                 </p>
               </div>
 
@@ -604,33 +555,10 @@ export default function AccountsPage() {
                 {publishResult}
               </div>
             )}
-
-            <div
-              className="mt-5 rounded-xl border p-4 text-xs leading-5"
-              style={{
-                borderColor:
-                  "var(--border)",
-                color: "var(--muted)",
-              }}
-            >
-              <strong
-                style={{
-                  color:
-                    "var(--foreground)",
-                }}
-              >
-                Test only:
-              </strong>{" "}
-              This button publishes the specific saved
-              content record above. It is temporary and
-              will be removed after we confirm Instagram
-              publishing works.
-            </div>
           </div>
         )}
 
         {/* CONNECTED SUMMARY */}
-
         <div
           className="mb-8 rounded-2xl border p-6"
           style={{
@@ -639,7 +567,6 @@ export default function AccountsPage() {
           }}
         >
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-
             <div>
               <p className="text-sm font-medium">
                 Connected accounts
@@ -702,9 +629,7 @@ export default function AccountsPage() {
         </div>
 
         {/* PLATFORM CARDS */}
-
         <div className="space-y-4">
-
           {platforms.map(
             (platform) => {
               const account =
@@ -737,11 +662,7 @@ export default function AccountsPage() {
                   }}
                 >
                   <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-
-                    {/* PLATFORM INFO */}
-
                     <div className="flex items-start gap-4">
-
                       <div
                         className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border text-xl font-bold"
                         style={{
@@ -757,9 +678,7 @@ export default function AccountsPage() {
                       </div>
 
                       <div>
-
                         <div className="flex flex-wrap items-center gap-3">
-
                           <h2 className="text-lg font-semibold">
                             {
                               platform.name
@@ -779,7 +698,6 @@ export default function AccountsPage() {
                               Connected
                             </span>
                           )}
-
                         </div>
 
                         <p
@@ -797,7 +715,6 @@ export default function AccountsPage() {
                         {isConnected &&
                           account && (
                             <div className="mt-3">
-
                               <p className="text-sm font-medium">
                                 {
                                   account.account_name
@@ -816,17 +733,12 @@ export default function AccountsPage() {
                                   account.account_id
                                 }
                               </p>
-
                             </div>
                           )}
-
                       </div>
                     </div>
 
-                    {/* ACTION */}
-
                     <div className="shrink-0">
-
                       {isConnected &&
                         account ? (
                         <button
@@ -877,53 +789,12 @@ export default function AccountsPage() {
                             : "Connect"}
                         </button>
                       )}
-
                     </div>
-
                   </div>
                 </div>
               );
             }
           )}
-
-        </div>
-
-        {/* SECURITY */}
-
-        <div
-          className="mt-8 rounded-2xl border p-6"
-          style={{
-            background: "var(--card)",
-            borderColor: "var(--border)",
-          }}
-        >
-          <div className="flex gap-4">
-
-            <div className="text-xl">
-              🔒
-            </div>
-
-            <div>
-
-              <h3 className="font-semibold">
-                Your accounts stay yours
-              </h3>
-
-              <p
-                className="mt-2 text-sm leading-6"
-                style={{
-                  color: "var(--muted)",
-                }}
-              >
-                Postoll only stores the
-                credentials required to connect
-                your social accounts. Your
-                credentials are never displayed
-                in the browser.
-              </p>
-
-            </div>
-          </div>
         </div>
 
       </div>
