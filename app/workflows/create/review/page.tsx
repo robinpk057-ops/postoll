@@ -445,7 +445,7 @@ export default function ReviewPage() {
       }
       console.log("5. workflow_accounts created");
 
-      // 4. Upload user content (if any)
+      // 4. Register user content directly in Supabase (bypassing serverless timeouts)
       let uploadedContentIds: string[] = [];
 
       if (
@@ -454,52 +454,32 @@ export default function ReviewPage() {
         workflow.uploadFiles.length > 0
       ) {
         try {
-          for (const file of workflow.uploadFiles) {
-            const fileType = getClientContentCategory(file);
-            const extension = getClientExtension(file);
-            const filePath = `${user.id}/${workflowId}/${crypto.randomUUID()}.${extension}`;
+          for (const fileUrl of workflow.uploadFiles) {
+            const fileType = typeof fileUrl === "string" && (fileUrl as string).match(/\.(mp4|mov|webm|avi)$/i) ? "reel" : "post";
+            const { data: contentData, error: contentError } = await supabase
+              .from("content")
+              .insert({
+                workflow_id: workflowId,
+                user_id: user.id,
+                file_url: typeof fileUrl === "string" ? fileUrl : "",
+                type: fileType,
+                description: workflow.uploadDescription || null,
+              })
+              .select()
+              .single();
 
-            const { error: uploadError } = await supabase.storage
-              .from("postoll-media")
-              .upload(filePath, file, {
-                contentType: file.type || "application/octet-stream",
-                upsert: false,
-                cacheControl: "3600",
-              });
-
-            if (uploadError) {
-              throw new Error(uploadError.message || `Failed to upload file: ${file.name}`);
+            if (contentError) {
+              throw new Error("Failed to register content: " + contentError.message);
             }
 
-            const registerResponse = await fetch("/api/workflows/register-content", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                workflowId,
-                filePath,
-                fileType,
-                uploadDescription: workflow.uploadDescription || null,
-              }),
-            });
-
-            const registerResult = await registerResponse.json().catch(() => null);
-
-            if (!registerResponse.ok || !registerResult?.success) {
-              throw new Error(
-                registerResult?.error || "Unable to save uploaded content for this workflow."
-              );
+            if (contentData?.id) {
+              uploadedContentIds.push(contentData.id);
             }
-
-            uploadedContentIds.push(registerResult.contentId);
           }
         } catch (uploadLoopError) {
-          // rollback
+          // Rollback if anything fails
           if (uploadedContentIds.length > 0) {
-            await fetch("/api/workflows/register-content", {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ contentIds: uploadedContentIds }),
-            }).catch(() => { });
+            await supabase.from("content").delete().in("id", uploadedContentIds);
           }
 
           await supabase.from("workflow_accounts").delete().eq("workflow_id", workflowId);
@@ -509,7 +489,7 @@ export default function ReviewPage() {
           throw uploadLoopError;
         }
       }
-      console.log("6. Content upload finished");
+      console.log("6. Content registration finished");
 
       // 5. Create schedule slots
       const dayToNumber: Record<string, number> = {
