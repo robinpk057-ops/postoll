@@ -4,14 +4,16 @@ import { useRouter } from "next/navigation";
 import AppShell from "../../../AppShell";
 import { useWorkflow } from "../context";
 import { useState } from "react";
-
+import { createClient } from "@/lib/supabase/client";
 
 export default function UploadContentPage() {
-
   const router = useRouter();
+  const supabase = createClient();
 
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   const {
     workflow,
@@ -21,7 +23,6 @@ export default function UploadContentPage() {
   const canContinue =
     workflow.uploadFiles.length > 0 &&
     workflow.uploadDescription.trim().length > 0;
-
 
   function handleFiles(files: File[]) {
     if (files.length === 0) return;
@@ -34,7 +35,11 @@ export default function UploadContentPage() {
     const unique = combined.filter(
       (file, index, arr) =>
         arr.findIndex(
-          (f) => f.name === file.name && f.size === file.size
+          (f) =>
+            typeof f !== "string" &&
+            typeof file !== "string" &&
+            f.name === file.name &&
+            f.size === file.size
         ) === index
     );
 
@@ -46,36 +51,68 @@ export default function UploadContentPage() {
     updateWorkflow({ uploadFiles: next });
   }
 
-
-  function continueNext() {
-
-    if (!canContinue) {
+  async function continueNext() {
+    if (!canContinue || uploading) {
       return;
     }
 
+    try {
+      setUploading(true);
+      setUploadError("");
 
-    updateWorkflow({
-      source: "user_uploaded",
-    });
+      const processedFiles: (File | string)[] = [];
 
+      // Loop through files and upload raw File objects directly to Supabase Storage
+      for (const file of workflow.uploadFiles) {
+        // If it's already a string URL from a previous upload, keep it
+        if (typeof file === "string") {
+          processedFiles.push(file);
+          continue;
+        }
 
-    router.push(
-      "/workflows/create/schedule"
-    );
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const filePath = `videos/${fileName}`;
 
+        const { error: storageError } = await supabase.storage
+          .from("workflow-media")
+          .upload(filePath, file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (storageError) {
+          throw new Error(`Failed to upload ${file.name}: ${storageError.message}`);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("workflow-media")
+          .getPublicUrl(filePath);
+
+        // Store public URL directly in place of the File object
+        processedFiles.push(publicUrl);
+      }
+
+      // Update workflow source and save processed file URLs back to uploadFiles
+      updateWorkflow({
+        source: "user_uploaded",
+        uploadFiles: processedFiles as any,
+      });
+
+      router.push("/workflows/create/schedule");
+    } catch (err: any) {
+      console.error("Direct upload error:", err);
+      setUploadError(err.message || "Failed to upload files to storage.");
+    } finally {
+      setUploading(false);
+    }
   }
 
-
   return (
-
     <AppShell>
-
       <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
-
         {/* HEADER */}
-
         <div className="mb-10">
-
           <p
             className="text-sm font-medium"
             style={{
@@ -84,7 +121,6 @@ export default function UploadContentPage() {
           >
             ✦ Workflow Builder
           </p>
-
 
           <h1 className="mt-2 text-4xl font-bold">
             Upload Your Content
@@ -97,14 +133,10 @@ export default function UploadContentPage() {
           >
             Upload the image or video Postoll should publish on your schedule.
           </p>
-
         </div>
 
-
         {/* STEP */}
-
         <div className="mb-10 flex items-center gap-3">
-
           <div
             className="rounded-full border px-4 py-2 text-sm"
             style={{
@@ -115,7 +147,6 @@ export default function UploadContentPage() {
             1
           </div>
 
-
           <span
             className="text-sm"
             style={{
@@ -125,14 +156,12 @@ export default function UploadContentPage() {
             Source
           </span>
 
-
           <div
             className="h-px flex-1"
             style={{
               background: "var(--border)",
             }}
           />
-
 
           <div
             className="rounded-full px-4 py-2 text-sm font-medium"
@@ -144,16 +173,12 @@ export default function UploadContentPage() {
             2
           </div>
 
-
           <span className="text-sm">
             Upload Content
           </span>
-
         </div>
 
-
         {/* MAIN CARD */}
-
         <div
           className="space-y-8 rounded-2xl border p-8"
           style={{
@@ -161,16 +186,11 @@ export default function UploadContentPage() {
             borderColor: "var(--border)",
           }}
         >
-
-
           {/* UPLOAD */}
-
           <div>
-
             <h2 className="text-xl font-semibold">
               Upload Files
             </h2>
-
 
             <p
               className="mt-2 text-sm"
@@ -178,10 +198,8 @@ export default function UploadContentPage() {
                 color: "var(--muted)",
               }}
             >
-              Upload the original video or image
-              that you want Postoll to publish.
+              Upload the original video or image that you want Postoll to publish.
             </p>
-
 
             <label
               className="mt-5 flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed transition hover:border-purple-500"
@@ -197,11 +215,9 @@ export default function UploadContentPage() {
                     : "var(--background)",
               }}
             >
-
               <div className="text-4xl">
                 📤
               </div>
-
 
               <p className="mt-3 text-sm font-medium">
                 Click to upload (select multiple files)
@@ -216,40 +232,19 @@ export default function UploadContentPage() {
                 MP4, MOV, JPG, PNG — you can select several at once
               </p>
 
-
-              <p
-                className="mt-1 text-xs"
-                style={{
-                  color: "var(--muted)",
-                }}
-              >
-                MP4, MOV, JPG, PNG
-              </p>
-
-
               <input
                 type="file"
                 multiple
                 accept="video/*,image/*"
                 className="hidden"
                 onChange={(e) => {
-
-                  const files =
-                    Array.from(
-                      e.target.files || []
-                    );
-
-
+                  const files = Array.from(e.target.files || []);
                   handleFiles(files);
-
                 }}
               />
-
             </label>
 
-
             {/* SELECTED FILES */}
-
             {workflow.uploadFiles.length > 0 && (
               <div
                 className="mt-4 rounded-xl border p-4"
@@ -264,25 +259,27 @@ export default function UploadContentPage() {
                 <div className="mt-3 space-y-2">
                   {workflow.uploadFiles.map((file, index) => (
                     <div
-                      key={`${file.name}-${index}`}
+                      key={`${typeof file === "string" ? file : file.name}-${index}`}
                       className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
                       style={{
                         background: "var(--background)",
                       }}
                     >
                       <span className="truncate pr-3">
-                        {file.name}
+                        {typeof file === "string" ? file : file.name}
                       </span>
 
                       <div className="flex shrink-0 items-center gap-3">
-                        <span
-                          className="text-xs"
-                          style={{
-                            color: "var(--muted)",
-                          }}
-                        >
-                          {(file.size / 1024 / 1024).toFixed(2)} MB
-                        </span>
+                        {typeof file !== "string" && (
+                          <span
+                            className="text-xs"
+                            style={{
+                              color: "var(--muted)",
+                            }}
+                          >
+                            {(file.size / 1024 / 1024).toFixed(2)} MB
+                          </span>
+                        )}
 
                         <button
                           type="button"
@@ -306,20 +303,14 @@ export default function UploadContentPage() {
                 </p>
               </div>
             )}
-
           </div>
 
-
           {/* DESCRIPTION */}
-
           <div>
-
             <div className="flex items-center justify-between">
-
               <label className="text-sm font-medium">
                 Tell Postoll about this content
               </label>
-
 
               <span
                 className="text-xs"
@@ -332,27 +323,20 @@ export default function UploadContentPage() {
               >
                 Required
               </span>
-
             </div>
 
-
             <textarea
-
               value={
                 workflow.uploadDescription
               }
-
               onChange={(e) =>
                 updateWorkflow({
                   uploadDescription:
                     e.target.value,
                 })
               }
-
               placeholder="Example: This is a new product launch video for our luxury watch collection. The video shows the watch, its design and premium features."
-
               className="mt-3 min-h-36 w-full rounded-xl border p-4 outline-none transition focus:border-purple-500"
-
               style={{
                 background:
                   "var(--background)",
@@ -362,7 +346,6 @@ export default function UploadContentPage() {
                     ? "#8b5cf6"
                     : "var(--border)",
               }}
-
             />
 
             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -388,8 +371,6 @@ export default function UploadContentPage() {
                     if (!res.ok) {
                       throw new Error(data.error || "Generate failed");
                     }
-                    // Put AI caption into the description field for now
-                    // (activate already maps uploadDescription → caption)
                     const tags = (data.hashtags || [])
                       .map((t: string) =>
                         t.startsWith("#") ? t : `#${t}`
@@ -422,74 +403,21 @@ export default function UploadContentPage() {
                 <span className="text-xs text-red-400">{aiError}</span>
               )}
             </div>
-
-            <p
-              className="mt-2 text-xs"
-              style={{
-                color: "var(--muted)",
-              }}
-            >
-              This information will later be used by
-              Postoll to understand the content and
-              create the appropriate publishing workflow.
-            </p>
-
           </div>
 
-
-          {/* ORIGINAL CONTENT NOTICE */}
-
-          <div
-            className="rounded-xl border p-4"
-            style={{
-              background:
-                "rgba(139,92,246,.06)",
-              borderColor:
-                "rgba(139,92,246,.3)",
-            }}
-          >
-
-            <div className="flex gap-3">
-
-              <span className="text-lg">
-                🔒
-              </span>
-
-
-              <div>
-
-                <p className="text-sm font-medium">
-                  Your original content stays unchanged
-                </p>
-
-
-                <p
-                  className="mt-1 text-xs"
-                  style={{
-                    color: "var(--muted)",
-                  }}
-                >
-                  Postoll will not automatically add
-                  logos, brand names, subtitles or other
-                  edits to your uploaded content.
-                </p>
-
-              </div>
-
+          {uploadError && (
+            <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+              {uploadError}
             </div>
-
-          </div>
-
+          )}
 
           {/* BUTTONS */}
-
           <div
             className="flex justify-between border-t pt-6"
             style={{
               borderColor: "var(--border)",
             }}
           >
-
             <button
               type="button"
               onClick={() =>
@@ -504,10 +432,9 @@ export default function UploadContentPage() {
               ← Back
             </button>
 
-
             <button
               type="button"
-              disabled={!canContinue}
+              disabled={!canContinue || uploading}
               onClick={continueNext}
               className="rounded-xl px-6 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
               style={{
@@ -518,17 +445,11 @@ export default function UploadContentPage() {
                   "var(--background)",
               }}
             >
-              Continue →
+              {uploading ? "Uploading files..." : "Continue →"}
             </button>
-
           </div>
-
         </div>
-
       </div>
-
     </AppShell>
-
   );
-
 }
