@@ -425,7 +425,7 @@ export default function ReviewPage() {
       }
       console.log("4. Settings created");
 
-      // 3. Create workflow_accounts
+      // 3. Create workflow_accounts (Inserted ONCE here)
       if (workflow.selectedAccounts.length > 0) {
         const accountRows = workflow.selectedAccounts.map((acc) => ({
           workflow_id: workflowId,
@@ -567,53 +567,6 @@ export default function ReviewPage() {
         await supabase.from("workflows").delete().eq("id", workflowId);
 
         throw scheduleError;
-      }
-
-      /*
-|--------------------------------------------------------------------------
-| SAVE WORKFLOW ACCOUNTS
-|--------------------------------------------------------------------------
-*/
-      const selectedAccounts = workflow.selectedAccounts ?? [];
-
-      if (selectedAccounts.length > 0) {
-        const accountRows = selectedAccounts.map((acc) => ({
-          workflow_id: workflowId,
-          platform: acc.platform,
-          account_id: acc.accountId, // UUID from public.accounts
-        }));
-
-        const { error: accountsError } = await supabase
-          .from("workflow_accounts")
-          .insert(accountRows);
-
-        if (accountsError) {
-          // Full rollback if saving accounts fails
-          if (uploadedContentIds.length > 0) {
-            await fetch("/api/workflows/register-content", {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ contentIds: uploadedContentIds }),
-            }).catch(() => { });
-          }
-
-          await supabase
-            .from("workflow_schedule_slots")
-            .delete()
-            .eq("workflow_id", workflowId);
-
-          await supabase
-            .from("workflow_settings")
-            .delete()
-            .eq("workflow_id", workflowId);
-
-          await supabase
-            .from("workflows")
-            .delete()
-            .eq("id", workflowId);
-
-          throw accountsError;
-        }
       }
 
       console.log("7. Schedule slots created – success!");
