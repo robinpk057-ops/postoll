@@ -26,15 +26,18 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
   "video/webm": "webm",
 };
 
-function getClientExtension(file: File): string {
-  const mapped = MIME_EXTENSION_MAP[file.type];
+function getClientExtension(file: any): string {
+  if (typeof file === "string") {
+    const parts = file.split("?")[0].split(".");
+    return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "mp4";
+  }
 
+  const mapped = MIME_EXTENSION_MAP[file.type];
   if (mapped) {
     return mapped;
   }
 
   const parts = file.name.split(".");
-
   if (parts.length > 1) {
     return parts[parts.length - 1].toLowerCase();
   }
@@ -42,10 +45,16 @@ function getClientExtension(file: File): string {
   return "bin";
 }
 
-function getClientContentCategory(
-  file: File
-): "post" | "reel" {
-  if (file.type.startsWith("video/")) {
+function getClientContentCategory(file: any): "post" | "reel" {
+  if (typeof file === "string") {
+    // If it's a video file URL extension or default to reel for videos
+    if (file.match(/\.(mp4|mov|webm|avi)$/i)) {
+      return "reel";
+    }
+    return "post";
+  }
+
+  if (file.type && file.type.startsWith("video/")) {
     return "reel";
   }
 
