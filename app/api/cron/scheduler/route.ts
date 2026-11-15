@@ -14,6 +14,11 @@ import {
   PublishFacebookError,
 } from "@/lib/facebook/publishPost";
 
+import {
+  publishYouTubeVideo,
+  PublishYouTubeError,
+} from "@/lib/youtube/publishPost";
+
 /*
  * Publishing a single item can take up to ~24s while polling
  * Instagram's media container status. This route can process
@@ -808,6 +813,8 @@ async function handleScheduler(request: Request) {
               await publishFacebookPost(userId, claimedContent.id);
             } else if (platform === "instagram") {
               await publishInstagramPost(userId, claimedContent.id);
+            } else if (platform === "youtube") {
+              await publishYouTubeVideo(userId, claimedContent.id);
             } else {
               publishErrors.push(`Unsupported platform: ${platform}`);
             }
