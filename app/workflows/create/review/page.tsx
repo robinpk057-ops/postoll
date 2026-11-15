@@ -462,6 +462,7 @@ export default function ReviewPage() {
                 workflow_id: workflowId,
                 user_id: user.id,
                 file_url: typeof fileUrl === "string" ? fileUrl : "",
+                image_url: typeof fileUrl === "string" ? fileUrl : "", // <-- Add this line!
                 type: fileType,
               })
               .select()
