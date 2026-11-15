@@ -491,7 +491,7 @@ export default function ReviewPage() {
       }
       console.log("6. Content registration finished");
 
-      // 5. Create schedule slots
+      // 5. Create schedule slotsgit push origin main
       const dayToNumber: Record<string, number> = {
         sunday: 0, sun: 0,
         monday: 1, mon: 1,
