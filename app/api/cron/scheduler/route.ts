@@ -819,9 +819,11 @@ async function handleScheduler(request: Request) {
               publishErrors.push(`Unsupported platform: ${platform}`);
             }
           } catch (platformError) {
+            // ---> PLACE THE CATCH BLOCK HERE <---
             const msg =
               platformError instanceof PublishFacebookError ||
                 platformError instanceof PublishPostError ||
+                platformError instanceof PublishYouTubeError ||
                 platformError instanceof Error
                 ? platformError.message
                 : "Publish failed";
