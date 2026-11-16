@@ -429,7 +429,7 @@ export default function ReviewPage() {
       if (workflow.selectedAccounts.length > 0) {
         const accountRows = workflow.selectedAccounts.map((acc) => ({
           workflow_id: workflowId,
-          platform: acc.platform,
+          platform: (acc.platform || "").toLowerCase(),
           account_id: acc.accountId,
         }));
 
