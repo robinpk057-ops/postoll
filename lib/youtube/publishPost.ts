@@ -128,23 +128,20 @@ export async function publishYouTubeVideo(userId: string, contentId: string) {
     } | null = null;
 
     if (content.workflow_id) {
-        const { data: link } = await supabase
+        const { data: linkData } = await supabase
             .from("workflow_accounts")
-            .select("account_id, platform")
+            .select("account_id")
             .eq("workflow_id", content.workflow_id)
             .ilike("platform", "youtube")
-            .limit(1)
             .maybeSingle();
 
-        if (link?.account_id) {
+        if (linkData?.account_id) {
             const { data } = await supabase
                 .from("accounts")
                 .select(
                     "id, account_id, account_name, access_token, refresh_token, token_expires_at"
                 )
-                .eq("id", link.account_id)
-                .eq("platform", "youtube")
-
+                .eq("id", linkData.account_id)
                 .maybeSingle();
             account = data;
         }
@@ -157,8 +154,7 @@ export async function publishYouTubeVideo(userId: string, contentId: string) {
                 "id, account_id, account_name, access_token, refresh_token, token_expires_at"
             )
             .eq("user_id", userId)
-            .eq("platform", "youtube")
-
+            .ilike("platform", "youtube")
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
