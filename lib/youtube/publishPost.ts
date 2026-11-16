@@ -155,7 +155,6 @@ export async function publishYouTubeVideo(userId: string, contentId: string) {
             )
             .eq("user_id", userId)
             .ilike("platform", "youtube")
-            .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
         account = data;
