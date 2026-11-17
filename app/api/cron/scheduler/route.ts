@@ -814,12 +814,11 @@ async function handleScheduler(request: Request) {
             } else if (platform === "instagram") {
               await publishInstagramPost(userId, claimedContent.id);
             } else if (platform === "youtube") {
-              await publishYouTubeVideo(userId, claimedContent.id);
+              await publishYouTubeVideo(userId, claimedContent.id, workflowId);
             } else {
               publishErrors.push(`Unsupported platform: ${platform}`);
             }
           } catch (platformError) {
-            // ---> PLACE THE CATCH BLOCK HERE <---
             const msg =
               platformError instanceof PublishFacebookError ||
                 platformError instanceof PublishPostError ||
@@ -1034,9 +1033,6 @@ async function handleScheduler(request: Request) {
     );
   }
 }
-
-
-
 
 /*
  * ================================================================
