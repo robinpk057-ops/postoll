@@ -98,7 +98,8 @@ async function getValidAccessToken(account: {
 export async function publishYouTubeVideo(
     userId: string, 
     contentId: string, 
-    overrideWorkflowId?: string | null
+    overrideWorkflowId?: string | null,
+    overrideAccountId?: string | null
 ) {
     const supabase = admin();
 
@@ -122,8 +123,6 @@ export async function publishYouTubeVideo(
         );
     }
 
-    const targetWorkflowId = overrideWorkflowId || content.workflow_id;
-
     let account: {
         id: string;
         account_id: string;
@@ -133,7 +132,21 @@ export async function publishYouTubeVideo(
         token_expires_at: string | null;
     } | null = null;
 
-    if (targetWorkflowId) {
+    // 1. Try overrideAccountId if provided directly
+    if (overrideAccountId) {
+        const { data } = await supabase
+            .from("accounts")
+            .select(
+                "id, account_id, account_name, access_token, refresh_token, token_expires_at"
+            )
+            .eq("id", overrideAccountId)
+            .maybeSingle();
+        account = data;
+    }
+
+    // 2. Try workflow_accounts link lookup if account not found yet
+    const targetWorkflowId = overrideWorkflowId || content.workflow_id;
+    if (!account && targetWorkflowId) {
         const { data: linkData } = await supabase
             .from("workflow_accounts")
             .select("account_id")
@@ -153,6 +166,7 @@ export async function publishYouTubeVideo(
         }
     }
 
+    // 3. Fallback to user's first youtube account
     if (!account) {
         const { data } = await supabase
             .from("accounts")

@@ -814,7 +814,7 @@ async function handleScheduler(request: Request) {
             } else if (platform === "instagram") {
               await publishInstagramPost(userId, claimedContent.id);
             } else if (platform === "youtube") {
-              await publishYouTubeVideo(userId, claimedContent.id, workflowId);
+              await publishYouTubeVideo(userId, claimedContent.id, workflowId, target.account_id);
             } else {
               publishErrors.push(`Unsupported platform: ${platform}`);
             }
