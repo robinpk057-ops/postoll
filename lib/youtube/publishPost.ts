@@ -95,7 +95,11 @@ async function getValidAccessToken(account: {
     return accessToken;
 }
 
-export async function publishYouTubeVideo(userId: string, contentId: string) {
+export async function publishYouTubeVideo(
+    userId: string, 
+    contentId: string, 
+    overrideWorkflowId?: string | null
+) {
     const supabase = admin();
 
     const { data: content, error: contentError } = await supabase
@@ -118,6 +122,8 @@ export async function publishYouTubeVideo(userId: string, contentId: string) {
         );
     }
 
+    const targetWorkflowId = overrideWorkflowId || content.workflow_id;
+
     let account: {
         id: string;
         account_id: string;
@@ -127,11 +133,11 @@ export async function publishYouTubeVideo(userId: string, contentId: string) {
         token_expires_at: string | null;
     } | null = null;
 
-    if (content.workflow_id) {
+    if (targetWorkflowId) {
         const { data: linkData } = await supabase
             .from("workflow_accounts")
             .select("account_id")
-            .eq("workflow_id", content.workflow_id)
+            .eq("workflow_id", targetWorkflowId)
             .ilike("platform", "youtube")
             .maybeSingle();
 
