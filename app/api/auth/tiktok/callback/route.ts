@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-const USER_ID = "60df30e2-f588-4f25-ae81-04104223e9a8";
+import { createClient } from "@/lib/supabase/server"; // Use your authenticated server client
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,6 +14,12 @@ export async function GET(request: NextRequest) {
     if (!code) {
       return NextResponse.redirect(new URL("/accounts?error=Missing_TikTok_authorization_code", request.url));
     }
+
+    const supabase = await createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    // Fallback or use the authenticated user ID
+    const USER_ID = user?.id || "60df30e2-f588-4f25-ae81-04104223e9a8";
 
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     if (!tokenResponse.ok || !tokenData.access_token) {
       console.error("TikTok token exchange failed:", tokenData);
-      return NextResponse.redirect(new URL(`/accounts?error=Token_Exchange_Failed_${encodeURIComponent(JSON.stringify(tokenData))}`, request.url));
+      return NextResponse.redirect(new URL("/accounts?error=TikTok_Token_Exchange_Failed", request.url));
     }
 
     const accessToken = tokenData.access_token;
@@ -53,22 +53,20 @@ export async function GET(request: NextRequest) {
 
     let accountName = "TikTok Account";
     try {
-      const userInfoResponse = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=display_name,avatar_url,username", {
+      const userInfoResponse = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=display_name,username", {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
 
       const userInfoData = await userInfoResponse.json();
       if (userInfoResponse.ok && userInfoData.data?.user) {
         accountName = userInfoData.data.user.display_name || userInfoData.data.user.username || "TikTok Account";
       }
-    } catch (profileErr) {
-      console.warn("Could not fetch TikTok user profile details:", profileErr);
+    } catch (e) {
+      console.warn("Could not fetch TikTok username:", e);
     }
 
-    // Attempt insert/upsert and capture exact DB error message
+    // Upsert using the correct dynamic user ID
     const { error: dbError } = await supabase.from("accounts").upsert({
       user_id: USER_ID,
       platform: "tiktok",
@@ -76,16 +74,17 @@ export async function GET(request: NextRequest) {
       account_id: openId,
       access_token: accessToken,
       refresh_token: tokenData.refresh_token || null,
+      updated_at: new Date().toISOString(),
     }, { onConflict: "user_id,platform,account_id" });
 
     if (dbError) {
       console.error("Database save error for TikTok:", dbError);
-      return NextResponse.redirect(new URL(`/accounts?error=DB_Error_${encodeURIComponent(dbError.message)}`, request.url));
+      return NextResponse.redirect(new URL(`/accounts?error=${encodeURIComponent(dbError.message)}`, request.url));
     }
 
     return NextResponse.redirect(new URL("/accounts?connected=tiktok", request.url));
   } catch (err) {
     console.error("TikTok callback exception:", err);
-    return NextResponse.redirect(new URL(`/accounts?error=Callback_Exception_${encodeURIComponent(err instanceof Error ? err.message : String(err))}`, request.url));
+    return NextResponse.redirect(new URL("/accounts?error=TikTok_Callback_Exception", request.url));
   }
 }
