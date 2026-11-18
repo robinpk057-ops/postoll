@@ -9,7 +9,8 @@ type PlatformId =
   | "facebook"
   | "youtube"
   | "linkedin"
-  | "x";
+  | "x"
+  | "tiktok";
 
 type Platform = {
   id: PlatformId;
@@ -61,6 +62,13 @@ const platforms: Platform[] = [
     description:
       "Publish text, images and supported media to X.",
     icon: "𝕏",
+  },
+  {
+    id: "tiktok",
+    name: "TikTok",
+    description:
+      "Publish short-form videos directly to your TikTok account.",
+    icon: "🎵",
   },
 ];
 
@@ -212,6 +220,37 @@ function AccountsContent() {
     }
   }
 
+  async function connectTikTok() {
+    try {
+      setConnecting("tiktok");
+      setError("");
+      setMessage("");
+      setPublishResult("");
+
+      const response = await fetch("/api/accounts/tiktok/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to start TikTok connection.");
+      }
+
+      if (!data.authorizationUrl) {
+        throw new Error("TikTok authorization URL was not returned.");
+      }
+
+      window.location.href = data.authorizationUrl;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "TikTok connect failed."
+      );
+      setConnecting(null);
+    }
+  }
+
   function handleConnect(platformId: PlatformId) {
     if (platformId === "instagram") {
       connectInstagram();
@@ -225,6 +264,11 @@ function AccountsContent() {
 
     if (platformId === "youtube") {
       connectYouTube();
+      return;
+    }
+
+    if (platformId === "tiktok") {
+      connectTikTok();
       return;
     }
 
@@ -263,44 +307,11 @@ function AccountsContent() {
     }
   }
 
-  async function testInstagramPublish() {
-    try {
-      setPublishing(true);
-      setError("");
-      setMessage("");
-      setPublishResult("");
-
-      const response = await fetch("/api/publish/instagram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentId: TEST_CONTENT_ID }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Unable to publish to Instagram.");
-      }
-
-      const mediaId = data.publication?.media_id || "unknown";
-      setPublishResult(`Instagram publication successful. Media ID: ${mediaId}`);
-      setMessage("Your Postoll test content was successfully published to Instagram.");
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to publish to Instagram."
-      );
-    } finally {
-      setPublishing(false);
-    }
-  }
-
   function getAccount(platformId: PlatformId) {
     return accounts.find(
       (account) => account.platform === platformId && account.connected
     );
   }
-
-  const instagramAccount = getAccount("instagram");
 
   if (!mounted) {
     return null;
