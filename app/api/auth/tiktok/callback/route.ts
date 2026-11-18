@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server"; // Use your authenticated server client
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get("code");
+    const state = searchParams.get("state");
     const error = searchParams.get("error");
 
     if (error) {
@@ -15,11 +20,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL("/accounts?error=Missing_TikTok_authorization_code", request.url));
     }
 
-    const supabase = await createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    // Fallback or use the authenticated user ID
-    const USER_ID = user?.id || "60df30e2-f588-4f25-ae81-04104223e9a8";
+    // Extract the correct user ID passed securely through state
+    let targetUserId = "60df30e2-f588-4f25-ae81-04104223e9a8";
+    if (state) {
+      try {
+        const decodedState = JSON.parse(Buffer.from(state, "base64").toString("utf-8"));
+        if (decodedState.userId) {
+          targetUserId = decodedState.userId;
+        }
+      } catch (e) {
+        console.warn("Could not parse state parameter:", e);
+      }
+    }
 
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
@@ -66,9 +78,9 @@ export async function GET(request: NextRequest) {
       console.warn("Could not fetch TikTok username:", e);
     }
 
-    // Upsert using the correct dynamic user ID
+    // Upsert using the correct targetUserId associated with your session
     const { error: dbError } = await supabase.from("accounts").upsert({
-      user_id: USER_ID,
+      user_id: targetUserId,
       platform: "tiktok",
       account_name: accountName,
       account_id: openId,
