@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
     const redirectUri = process.env.TIKTOK_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/tiktok/callback`;
 
-    // Exchange authorization code for access token with TikTok API
+    // 1. Exchange authorization code for access token with TikTok API
     const tokenResponse = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -47,16 +47,40 @@ export async function GET(request: NextRequest) {
     }
 
     const accessToken = tokenData.access_token;
-    const openId = tokenData.open_id || "tiktok_user";
+    const openId = tokenData.open_id;
 
-    // Upsert the connected account into your public.accounts table
+    if (!openId) {
+      console.error("TikTok token response missing open_id:", tokenData);
+      return NextResponse.redirect(new URL("/accounts?error=TikTok_Missing_Open_ID", request.url));
+    }
+
+    // 2. Fetch the user's profile display name using the User Info API
+    let accountName = "TikTok Account";
+    try {
+      const userInfoResponse = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=display_name,avatar_url,username", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const userInfoData = await userInfoResponse.json();
+      if (userInfoResponse.ok && userInfoData.data?.user) {
+        accountName = userInfoData.data.user.display_name || userInfoData.data.user.username || "TikTok Account";
+      }
+    } catch (profileErr) {
+      console.warn("Could not fetch TikTok user profile details, falling back to default name:", profileErr);
+    }
+
+    // 3. Upsert the connected account into your public.accounts table safely
     const { error: dbError } = await supabase.from("accounts").upsert({
       user_id: USER_ID,
       platform: "tiktok",
-      account_name: tokenData.display_name || "TikTok Account",
+      account_name: accountName,
       account_id: openId,
       access_token: accessToken,
       refresh_token: tokenData.refresh_token || null,
+      updated_at: new Date().toISOString(),
     }, { onConflict: "user_id,platform,account_id" });
 
     if (dbError) {
