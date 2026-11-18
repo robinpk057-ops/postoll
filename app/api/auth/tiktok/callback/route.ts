@@ -20,7 +20,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL("/accounts?error=Missing_TikTok_authorization_code", request.url));
     }
 
-    // Extract the correct user ID passed securely through state
     let targetUserId = "60df30e2-f588-4f25-ae81-04104223e9a8";
     if (state) {
       try {
@@ -78,7 +77,7 @@ export async function GET(request: NextRequest) {
       console.warn("Could not fetch TikTok username:", e);
     }
 
-    // Upsert using the correct targetUserId associated with your session
+    // Upsert without updated_at column
     const { error: dbError } = await supabase.from("accounts").upsert({
       user_id: targetUserId,
       platform: "tiktok",
@@ -86,7 +85,6 @@ export async function GET(request: NextRequest) {
       account_id: openId,
       access_token: accessToken,
       refresh_token: tokenData.refresh_token || null,
-      updated_at: new Date().toISOString(),
     }, { onConflict: "user_id,platform,account_id" });
 
     if (dbError) {
