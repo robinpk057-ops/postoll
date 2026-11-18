@@ -309,7 +309,7 @@ function AccountsContent() {
 
   function getAccount(platformId: PlatformId) {
     return accounts.find(
-      (account) => account.platform === platformId && account.connected
+      (account) => account.platform === platformId
     );
   }
 
