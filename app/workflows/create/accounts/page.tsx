@@ -10,7 +10,7 @@ type ConnectedAccount = {
   platform: string;
   account_id: string;
   account_name: string;
-  connected: boolean;
+  connected?: boolean | null;
 };
 
 export default function WorkflowAccountsPage() {
@@ -39,11 +39,10 @@ export default function WorkflowAccountsPage() {
         const { data, error: fetchError } = await supabase
           .from("accounts")
           .select("id, platform, account_id, account_name, connected")
-          .eq("user_id", user.id)
-          .eq("connected", true);
+          .eq("user_id", user.id);
 
         if (fetchError) throw fetchError;
-        setAccounts(data || []);
+        setAccounts((data || []).filter((acc) => acc.connected !== false));
       } catch (err: any) {
         console.error("Failed to load connected accounts:", err);
         setError("Could not load your connected social accounts.");
@@ -93,8 +92,14 @@ export default function WorkflowAccountsPage() {
     router.push("/workflows/create/approval");
   };
 
-  // Added "youtube" here to support rendering and selection
-  const platformsList = ["instagram", "facebook", "youtube", "linkedin", "x"];
+  const platformsList = ["instagram", "facebook", "youtube", "linkedin", "x", "tiktok"];
+
+  const formatPlatformName = (platform: string) => {
+    if (platform === "tiktok") return "TikTok";
+    if (platform === "youtube") return "YouTube";
+    if (platform === "linkedin") return "LinkedIn";
+    return platform.charAt(0).toUpperCase() + platform.slice(1);
+  };
 
   return (
     <div className="mx-auto max-w-2xl py-8">
@@ -125,7 +130,7 @@ export default function WorkflowAccountsPage() {
             return (
               <div key={platform} className="rounded-2xl border p-6 space-y-4" style={{ borderColor: "var(--border)" }}>
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold capitalize text-base">{platform}</h3>
+                  <h3 className="font-semibold text-base">{formatPlatformName(platform)}</h3>
                   <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
                     {platformAccounts.length} connected
                   </span>
@@ -133,7 +138,7 @@ export default function WorkflowAccountsPage() {
 
                 {platformAccounts.length === 0 ? (
                   <div className="text-sm text-muted-foreground flex items-center justify-between py-2">
-                    <span>No {platform} accounts connected yet.</span>
+                    <span>No {formatPlatformName(platform)} accounts connected yet.</span>
                     <a
                       href="/accounts"
                       className="text-xs font-medium text-primary hover:underline"
@@ -159,7 +164,7 @@ export default function WorkflowAccountsPage() {
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              onChange={() => {}} 
+                              onChange={() => {}}
                               className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                             />
                             <span className="text-sm font-medium">
