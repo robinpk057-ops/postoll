@@ -19,30 +19,15 @@ import {
   PublishYouTubeError,
 } from "@/lib/youtube/publishPost";
 
-/*
- * Publishing a single item can take up to ~24s while polling
- * Instagram's media container status. This route can process
- * multiple due slots in one invocation (sequentially), so this
- * is generous, but still bounded. If many slots ever end up due
- * in the exact same 5-minute window for the same workflow, this
- * may need to move to a queue instead of one synchronous request
- * — fine for the current volume, worth revisiting if that grows.
- */
+import {
+  publishTikTokVideo,
+  PublishTikTokError,
+} from "@/lib/tiktok/publishPost";
+
 export const maxDuration = 120;
 
 const WINDOW_MINUTES = 15;
-
-/*
- * Fallback for workflows created before the per-workflow
- * timezone field existed (workflow_settings.timezone is null).
- */
 const DEFAULT_TIMEZONE = "America/New_York";
-
-/*
- * ================================================================
- * TIME HELPERS (timezone-aware)
- * ================================================================
- */
 
 const WEEKDAY_TO_NUMBER: Record<string, number> = {
   Sun: 0,
@@ -133,12 +118,6 @@ function timeStringToMinutes(time: string): number {
   );
 }
 
-/*
- * ================================================================
- * DURATION / EXPIRY CHECK
- * ================================================================
- */
-
 const DURATION_MONTHS: Record<string, number> = {
   "1_month": 1,
   "3_months": 3,
@@ -150,10 +129,10 @@ function isWorkflowExpired(
   createdAt: string,
   settings:
     | {
-      duration_type: string | null;
-      start_date: string | null;
-      end_date: string | null;
-    }
+        duration_type: string | null;
+        start_date: string | null;
+        end_date: string | null;
+      }
     | undefined,
   todayDateString: string
 ): boolean {
@@ -167,7 +146,6 @@ function isWorkflowExpired(
     return false;
   }
 
-  // Explicit end_date always wins
   if (end_date) {
     return todayDateString > end_date;
   }
@@ -197,12 +175,6 @@ function isWorkflowExpired(
   return today.getTime() > expiry.getTime();
 }
 
-/*
- * ================================================================
- * TYPES
- * ================================================================
- */
-
 type ScheduleRunInsert = {
   schedule_slot_id: string;
   workflow_id: string;
@@ -230,17 +202,6 @@ type WorkflowSettingsRow = {
   timezone: string | null;
 };
 
-/*
- * ================================================================
- * ROUTE
- * ================================================================
- *
- * Triggered externally (GitHub Actions cron) roughly every
- * 5 minutes. Requires:
- *
- *   Authorization: Bearer <CRON_SECRET>
- */
-
 export async function POST(request: Request) {
   return handleScheduler(request);
 }
@@ -250,12 +211,6 @@ export async function GET(request: Request) {
 }
 
 async function handleScheduler(request: Request) {
-  /*
-   * ------------------------------------------------------------
-   * AUTH CHECK
-   * ------------------------------------------------------------
-   */
-
   const cronSecret = process.env.CRON_SECRET;
 
   if (!cronSecret) {
@@ -274,20 +229,13 @@ async function handleScheduler(request: Request) {
     );
   }
 
-  /*
-   * ------------------------------------------------------------
-   * ENVIRONMENT
-   * ------------------------------------------------------------
-   */
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json(
       {
-        error:
-          "Server is missing required Supabase configuration.",
+        error: "Server is missing required Supabase configuration.",
       },
       { status: 500 }
     );
@@ -314,17 +262,6 @@ async function handleScheduler(request: Request) {
   }> = [];
 
   try {
-    /*
-     * ------------------------------------------------------------
-     * LOAD ALL ENABLED SLOTS
-     * ------------------------------------------------------------
-     *
-     * No day_of_week filter here anymore — which calendar day
-     * "today" is depends on each workflow's own timezone, so we
-     * can't pre-filter by a single global day before knowing
-     * that. Day/time matching happens per-slot below instead.
-     */
-
     const { data: slots, error: slotsError } = await supabaseAdmin
       .from("workflow_schedule_slots")
       .select(
@@ -355,12 +292,6 @@ async function handleScheduler(request: Request) {
         results: [],
       });
     }
-
-    /*
-     * ------------------------------------------------------------
-     * LOAD WORKFLOWS + SETTINGS FOR ALL WORKFLOWS WITH SLOTS
-     * ------------------------------------------------------------
-     */
 
     const workflowIds = Array.from(
       new Set(allSlots.map((slot) => slot.workflow_id))
@@ -417,12 +348,6 @@ async function handleScheduler(request: Request) {
       ])
     );
 
-    /*
-     * ------------------------------------------------------------
-     * DETERMINE WHICH SLOTS ARE ACTUALLY DUE, PER-WORKFLOW TIMEZONE
-     * ------------------------------------------------------------
-     */
-
     type DueSlot = {
       slot: ScheduleSlot;
       workflowId: string;
@@ -465,14 +390,6 @@ async function handleScheduler(request: Request) {
         runDate: getZonedDateString(now, timezone),
       });
     }
-
-    /*
-     * ------------------------------------------------------------
-     * PROCESS EACH DUE WORKFLOW SLOT
-     * ------------------------------------------------------------
-     * If dueSlots is empty, this loop simply does nothing.
-     * Do NOT return early — calendar posts may still be due.
-     */
 
     for (const due of dueSlots) {
       const { slot, workflowId, userId, runDate } = due;
@@ -784,7 +701,6 @@ async function handleScheduler(request: Request) {
       }
 
       try {
-        // Accounts linked to this workflow
         const { data: workflowAccounts, error: waError } =
           await supabaseAdmin
             .from("workflow_accounts")
@@ -797,7 +713,6 @@ async function handleScheduler(request: Request) {
 
         const accounts = workflowAccounts ?? [];
 
-        // Fallback: if no workflow_accounts rows, keep old Instagram behavior
         const targets =
           accounts.length > 0
             ? accounts
@@ -814,16 +729,29 @@ async function handleScheduler(request: Request) {
             } else if (platform === "instagram") {
               await publishInstagramPost(userId, claimedContent.id);
             } else if (platform === "youtube") {
-              await publishYouTubeVideo(userId, claimedContent.id, workflowId, target.account_id);
+              await publishYouTubeVideo(
+                userId,
+                claimedContent.id,
+                workflowId,
+                target.account_id
+              );
+            } else if (platform === "tiktok") {
+              await publishTikTokVideo(
+                userId,
+                claimedContent.id,
+                workflowId,
+                target.account_id
+              );
             } else {
               publishErrors.push(`Unsupported platform: ${platform}`);
             }
           } catch (platformError) {
             const msg =
               platformError instanceof PublishFacebookError ||
-                platformError instanceof PublishPostError ||
-                platformError instanceof PublishYouTubeError ||
-                platformError instanceof Error
+              platformError instanceof PublishPostError ||
+              platformError instanceof PublishYouTubeError ||
+              platformError instanceof PublishTikTokError ||
+              platformError instanceof Error
                 ? platformError.message
                 : "Publish failed";
             publishErrors.push(`${platform}: ${msg}`);
@@ -831,7 +759,6 @@ async function handleScheduler(request: Request) {
         }
 
         if (publishErrors.length === targets.length) {
-          // Every target failed
           throw new Error(publishErrors.join(" | "));
         }
 
@@ -872,8 +799,10 @@ async function handleScheduler(request: Request) {
 
         const message =
           publishError instanceof PublishFacebookError ||
-            publishError instanceof PublishPostError ||
-            publishError instanceof Error
+          publishError instanceof PublishPostError ||
+          publishError instanceof PublishYouTubeError ||
+          publishError instanceof PublishTikTokError ||
+          publishError instanceof Error
             ? publishError.message
             : "Unable to publish content.";
 
@@ -894,12 +823,6 @@ async function handleScheduler(request: Request) {
         });
       }
     }
-
-    /*
-     * ------------------------------------------------------------
-     * CALENDAR POSTS (Medium plan)
-     * ------------------------------------------------------------
-     */
 
     const calendarResults: Array<{
       id: string;
@@ -966,7 +889,7 @@ async function handleScheduler(request: Request) {
           if (contentErr || !contentRow) {
             throw new Error(
               contentErr?.message ||
-              "Failed to create content for calendar post"
+                "Failed to create content for calendar post"
             );
           }
 
@@ -1018,7 +941,6 @@ async function handleScheduler(request: Request) {
       results,
       calendarResults,
     });
-
   } catch (error) {
     console.error("Scheduler run error:", error);
 
@@ -1033,12 +955,6 @@ async function handleScheduler(request: Request) {
     );
   }
 }
-
-/*
- * ================================================================
- * INSERT RUN RECORD
- * ================================================================
- */
 
 async function insertRun(
   supabaseAdmin: SupabaseClient,
