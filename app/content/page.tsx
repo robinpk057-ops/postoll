@@ -26,8 +26,42 @@ type ContentItem = {
 };
 
 /* -------------------------------------------------------------------------- */
-/* IMAGE URL NORMALIZER                                                       */
+/* MEDIA HELPERS                                                              */
 /* -------------------------------------------------------------------------- */
+
+function isVideoMedia(
+  url: string | null,
+  contentType?: string | null
+): boolean {
+  const normalizedType = (contentType || "").trim().toLowerCase();
+  if (normalizedType === "reel" || normalizedType === "video") {
+    return true;
+  }
+
+  if (!url) {
+    return false;
+  }
+
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (trimmed.startsWith("data:video/")) {
+    return true;
+  }
+
+  const withoutQuery = trimmed.split("?")[0].split("#")[0].toLowerCase();
+  if (/\.(mp4|mov|webm|ogg|m4v|avi|mkv)$/i.test(withoutQuery)) {
+    return true;
+  }
+
+  if (withoutQuery.includes("/storage/v1/object/public/workflow/")) {
+    return true;
+  }
+
+  return false;
+}
 
 function normalizeImageUrl(
   imageUrl: string | null
@@ -42,7 +76,7 @@ function normalizeImageUrl(
     return null;
   }
 
-  /* Normal remote URL */
+  /* Normal remote URL or relative path */
   if (
     value.startsWith("http://") ||
     value.startsWith("https://") ||
@@ -79,35 +113,63 @@ function normalizeImageUrl(
     return `data:image/jpeg;base64,${value}`;
   }
 
-  /* Raw PNG/base64 */
-  return `data:image/png;base64,${value}`;
+  /* Raw PNG base64 */
+  if (value.startsWith("iVBOR")) {
+    return `data:image/png;base64,${value}`;
+  }
+
+  return null;
 }
 
 /* -------------------------------------------------------------------------- */
-/* IMAGE COMPONENT                                                            */
+/* MEDIA COMPONENT (IMAGES & VIDEOS)                                          */
 /* -------------------------------------------------------------------------- */
 
-function ContentImage({
+function ContentMedia({
   item,
 }: {
   item: ContentItem;
 }) {
   const [failed, setFailed] = useState(false);
 
-  const imageUrl = normalizeImageUrl(
-    item.image_url
-  );
+  const rawUrl = item.image_url?.trim() || null;
+  const isVideo = isVideoMedia(rawUrl, item.type);
+
+  if (rawUrl && isVideo && !failed) {
+    return (
+      <video
+        src={rawUrl}
+        muted
+        playsInline
+        preload="metadata"
+        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
+        onError={() => {
+          console.error(
+            "Failed to load content video:",
+            {
+              id: item.id,
+              videoUrlStart: rawUrl.substring(0, 100),
+            }
+          );
+
+          setFailed(true);
+        }}
+      />
+    );
+  }
+
+  const imageUrl = isVideo ? null : normalizeImageUrl(rawUrl);
 
   if (!imageUrl || failed) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#171819]">
         <div className="text-center">
           <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-xl">
-            🖼️
+            {isVideo ? "🎬" : "🖼️"}
           </div>
 
           <p className="text-sm text-white/40">
-            Image unavailable
+            {isVideo ? "Video unavailable" : "Image unavailable"}
           </p>
         </div>
       </div>
@@ -191,12 +253,9 @@ export default function ContentPage() {
 
       /*
        * IMPORTANT:
-       *
        * Do NOT load the `plan` column here.
-       *
        * Your plan JSON is extremely large and can cause
        * Supabase's statement timeout.
-       *
        * The Content page does not need `plan`.
        */
 
@@ -476,10 +535,10 @@ export default function ContentPage() {
                     className="group cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[#101112] transition hover:border-white/20 hover:bg-[#121314]"
                   >
 
-                    {/* IMAGE */}
+                    {/* MEDIA (IMAGE OR VIDEO) */}
                     <div className="relative aspect-square overflow-hidden bg-[#171819]">
 
-                      <ContentImage
+                      <ContentMedia
                         item={item}
                       />
 

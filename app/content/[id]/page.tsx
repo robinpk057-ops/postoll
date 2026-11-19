@@ -34,6 +34,40 @@ type ContentItem = {
   updated_at: string;
 };
 
+function isVideoMedia(
+  url: string | null,
+  contentType?: string | null
+): boolean {
+  const normalizedType = (contentType || "").trim().toLowerCase();
+  if (normalizedType === "reel" || normalizedType === "video") {
+    return true;
+  }
+
+  if (!url) {
+    return false;
+  }
+
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (trimmed.startsWith("data:video/")) {
+    return true;
+  }
+
+  const withoutQuery = trimmed.split("?")[0].split("#")[0].toLowerCase();
+  if (/\.(mp4|mov|webm|ogg|m4v|avi|mkv)$/i.test(withoutQuery)) {
+    return true;
+  }
+
+  if (withoutQuery.includes("/storage/v1/object/public/workflow/")) {
+    return true;
+  }
+
+  return false;
+}
+
 export default function ContentDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -74,6 +108,9 @@ export default function ContentDetailPage() {
   const [scheduleMessage, setScheduleMessage] =
     useState("");
 
+  const [mediaFailed, setMediaFailed] =
+    useState(false);
+
   const loadContent = useCallback(async () => {
     if (!id) {
       setError("Invalid content ID.");
@@ -84,6 +121,7 @@ export default function ContentDetailPage() {
     try {
       setLoading(true);
       setError(null);
+      setMediaFailed(false);
 
       const {
         data: { user },
@@ -374,6 +412,9 @@ export default function ContentDetailPage() {
     return null;
   }
 
+  const mediaUrl = content.image_url?.trim() || null;
+  const isVideo = isVideoMedia(mediaUrl, content.type);
+
   return (
     <main className="min-h-screen bg-[#08090a] text-white">
       <div className="mx-auto max-w-7xl px-6 py-10">
@@ -591,15 +632,27 @@ export default function ContentDetailPage() {
             </div>
 
             <div className="flex min-h-[500px] items-center justify-center bg-black p-5">
-              {content.image_url ? (
-                <img
-                  src={content.image_url}
-                  alt={content.title || "Postoll creative"}
-                  className="max-h-[750px] w-full rounded-xl object-contain"
-                />
+              {mediaUrl && !mediaFailed ? (
+                isVideo ? (
+                  <video
+                    src={mediaUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="max-h-[750px] w-full rounded-xl bg-black object-contain"
+                    onError={() => setMediaFailed(true)}
+                  />
+                ) : (
+                  <img
+                    src={mediaUrl}
+                    alt={content.title || "Postoll creative"}
+                    className="max-h-[750px] w-full rounded-xl object-contain"
+                    onError={() => setMediaFailed(true)}
+                  />
+                )
               ) : (
                 <div className="text-sm text-white/30">
-                  No image available
+                  {isVideo ? "No video available" : "No image available"}
                 </div>
               )}
             </div>
