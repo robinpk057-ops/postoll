@@ -137,18 +137,17 @@ export async function publishTikTokVideo(
     );
   }
 
-  let accountQuery = supabase
+  const { data: accountRows, error: accountError } = await supabase
     .from("accounts")
     .select("id, account_id, access_token")
     .eq("user_id", userId)
     .eq("platform", "tiktok");
 
-  if (accountId) {
-    accountQuery = accountQuery.eq("account_id", accountId);
-  }
-
-  const { data: accountRow, error: accountError } =
-    await accountQuery.maybeSingle();
+  const accountRow = accountId
+    ? accountRows?.find(
+        (row) => row.id === accountId || row.account_id === accountId
+      ) ?? accountRows?.[0]
+    : accountRows?.[0];
 
   if (accountError || !accountRow?.access_token) {
     throw new PublishTikTokError(
