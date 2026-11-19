@@ -37,7 +37,11 @@ function buildCaptionText(input: {
         .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
     : [];
 
-  return [baseText, tags.join(" ")].filter(Boolean).join("\n\n").trim().slice(0, 2200);
+  return [baseText, tags.join(" ")]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim()
+    .slice(0, 2200);
 }
 
 async function queryCreatorInfo(accessToken: string): Promise<string[]> {
@@ -134,13 +138,13 @@ export async function publishTikTokVideo(
   }
 
   let accountQuery = supabase
-    .from("social_accounts")
-    .select("id, access_token")
+    .from("accounts")
+    .select("id, account_id, access_token")
     .eq("user_id", userId)
     .eq("platform", "tiktok");
 
   if (accountId) {
-    accountQuery = accountQuery.eq("id", accountId);
+    accountQuery = accountQuery.eq("account_id", accountId);
   }
 
   const { data: accountRow, error: accountError } =
