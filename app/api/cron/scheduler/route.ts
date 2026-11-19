@@ -24,10 +24,30 @@ import {
   PublishTikTokError,
 } from "@/lib/tiktok/publishPost";
 
+/*
+- Publishing a single item can take up to ~24s while polling
+- Instagram's media container status. This route can process
+- multiple due slots in one invocation (sequentially), so this
+- is generous, but still bounded. If many slots ever end up due
+- in the exact same 5-minute window for the same workflow, this
+- may need to move to a queue instead of one synchronous request
+- — fine for the current volume, worth revisiting if that grows.
+ */
 export const maxDuration = 120;
 
 const WINDOW_MINUTES = 15;
+
+/*
+- Fallback for workflows created before the per-workflow
+- timezone field existed (workflow_settings.timezone is null).
+ */
 const DEFAULT_TIMEZONE = "America/New_York";
+
+/*
+- ================================================================
+- TIME HELPERS (timezone-aware)
+- ================================================================
+ */
 
 const WEEKDAY_TO_NUMBER: Record<string, number> = {
   Sun: 0,
@@ -118,6 +138,12 @@ function timeStringToMinutes(time: string): number {
   );
 }
 
+/*
+- ================================================================
+- DURATION / EXPIRY CHECK
+- ================================================================
+ */
+
 const DURATION_MONTHS: Record<string, number> = {
   "1_month": 1,
   "3_months": 3,
@@ -129,10 +155,10 @@ function isWorkflowExpired(
   createdAt: string,
   settings:
     | {
-        duration_type: string | null;
-        start_date: string | null;
-        end_date: string | null;
-      }
+      duration_type: string | null;
+      start_date: string | null;
+      end_date: string | null;
+    }
     | undefined,
   todayDateString: string
 ): boolean {
@@ -146,6 +172,7 @@ function isWorkflowExpired(
     return false;
   }
 
+  // Explicit end_date always wins
   if (end_date) {
     return todayDateString > end_date;
   }
@@ -175,6 +202,12 @@ function isWorkflowExpired(
   return today.getTime() > expiry.getTime();
 }
 
+/*
+- ================================================================
+- TYPES
+- ================================================================
+ */
+
 type ScheduleRunInsert = {
   schedule_slot_id: string;
   workflow_id: string;
@@ -201,6 +234,17 @@ type WorkflowSettingsRow = {
   end_date: string | null;
   timezone: string | null;
 };
+
+/*
+- ================================================================
+- ROUTE
+- ================================================================
+ *
+- Triggered externally (GitHub Actions cron) roughly every
+- 5 minutes. Requires:
+ *
+-   Authorization: Bearer <CRON_SECRET>
+ */
 
 export async function POST(request: Request) {
   return handleScheduler(request);
@@ -235,7 +279,8 @@ async function handleScheduler(request: Request) {
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json(
       {
-        error: "Server is missing required Supabase configuration.",
+        error:
+          "Server is missing required Supabase configuration.",
       },
       { status: 500 }
     );
@@ -748,10 +793,10 @@ async function handleScheduler(request: Request) {
           } catch (platformError) {
             const msg =
               platformError instanceof PublishFacebookError ||
-              platformError instanceof PublishPostError ||
-              platformError instanceof PublishYouTubeError ||
-              platformError instanceof PublishTikTokError ||
-              platformError instanceof Error
+                platformError instanceof PublishPostError ||
+                platformError instanceof PublishYouTubeError ||
+                platformError instanceof PublishTikTokError ||
+                platformError instanceof Error
                 ? platformError.message
                 : "Publish failed";
             publishErrors.push(`${platform}: ${msg}`);
@@ -799,10 +844,10 @@ async function handleScheduler(request: Request) {
 
         const message =
           publishError instanceof PublishFacebookError ||
-          publishError instanceof PublishPostError ||
-          publishError instanceof PublishYouTubeError ||
-          publishError instanceof PublishTikTokError ||
-          publishError instanceof Error
+            publishError instanceof PublishPostError ||
+            publishError instanceof PublishYouTubeError ||
+            publishError instanceof PublishTikTokError ||
+            publishError instanceof Error
             ? publishError.message
             : "Unable to publish content.";
 
@@ -889,7 +934,7 @@ async function handleScheduler(request: Request) {
           if (contentErr || !contentRow) {
             throw new Error(
               contentErr?.message ||
-                "Failed to create content for calendar post"
+              "Failed to create content for calendar post"
             );
           }
 
@@ -941,6 +986,7 @@ async function handleScheduler(request: Request) {
       results,
       calendarResults,
     });
+
   } catch (error) {
     console.error("Scheduler run error:", error);
 

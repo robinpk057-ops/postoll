@@ -16,7 +16,7 @@ export async function POST() {
       );
     }
 
-    const scopes = "user.info.basic,user.info.profile,video.upload,video.manage";
+    const scopes = "user.info.basic,user.info.profile,video.upload,video.manage,video.publish";
     
     // Embed both CSRF and the active user's ID into the state parameter
     const stateObj = {

@@ -7,279 +7,250 @@ export class PublishTikTokError extends Error {
   }
 }
 
+const TIKTOK_API_BASE = "https://open.tiktokapis.com/v2";
 const MAX_CHUNK_BYTES = 10 * 1024 * 1024; // 10 MB
-const MIN_CHUNK_BYTES = 5 * 1024 * 1024; // 5 MB
 
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function getSupabaseAdminClient() {
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !serviceKey) {
+  if (!supabaseUrl || !serviceRoleKey) {
     throw new PublishTikTokError(
-      "Missing Supabase URL or service role key in server environment."
+      "Missing Supabase URL or SUPABASE_SERVICE_ROLE_KEY environment variable."
     );
   }
 
-  return createClient(url, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  return createClient(supabaseUrl, serviceRoleKey);
 }
 
-async function refreshTikTokAccessToken(
-  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
-  accountId: string,
-  refreshToken: string
-): Promise<string> {
-  const clientKey = process.env.TIKTOK_CLIENT_KEY;
-  const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
-
-  if (!clientKey || !clientSecret || !refreshToken) {
-    throw new PublishTikTokError(
-      "TikTok access token expired and refresh credentials are missing."
-    );
-  }
-
-  const res = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_key: clientKey,
-      client_secret: clientSecret,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-    }),
-  });
-
-  const data = await res.json();
-
-  if (!res.ok || !data.access_token) {
-    throw new PublishTikTokError(
-      `TikTok token refresh failed: ${data?.error_description || data?.error || res.statusText}`
-    );
-  }
-
-  await supabaseAdmin
-    .from("accounts")
-    .update({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token || refreshToken,
-    })
-    .eq("id", accountId);
-
-  return data.access_token;
-}
-
-function buildCaption(
-  caption: string | null,
-  title: string | null,
-  hashtags: unknown
-): string {
-  const base = (caption || title || "").trim();
-  const tags = Array.isArray(hashtags)
-    ? hashtags
-        .map((t) => String(t).trim())
+function buildCaptionText(input: {
+  title?: string | null;
+  caption?: string | null;
+  hashtags?: string[] | null;
+}): string {
+  const baseText = (input.caption || input.title || "").trim();
+  const tags = Array.isArray(input.hashtags)
+    ? input.hashtags
+        .map((tag) => tag.trim())
         .filter(Boolean)
-        .map((t) => (t.startsWith("#") ? t : `#${t}`))
+        .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
     : [];
 
-  const combined = [base, tags.join(" ")].filter(Boolean).join("\n\n").trim();
-  return combined.slice(0, 2200);
+  return [baseText, tags.join(" ")].filter(Boolean).join("\n\n").trim().slice(0, 2200);
 }
 
-function resolveVideoUrl(contentRow: Record<string, unknown>): string | null {
-  const candidates = [
-    contentRow.video_url,
-    contentRow.media_url,
-    contentRow.image_url,
-    contentRow.file_url,
-  ];
+async function queryCreatorInfo(accessToken: string): Promise<string[]> {
+  const res = await fetch(`${TIKTOK_API_BASE}/post/publish/creator_info/query/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json; charset=UTF-8",
+    },
+  });
 
-  for (const val of candidates) {
-    if (typeof val === "string" && val.trim().startsWith("http")) {
-      return val.trim();
-    }
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || (data?.error?.code && data.error.code !== "ok")) {
+    throw new PublishTikTokError(
+      `TikTok creator_info/query failed (${res.status}): ${
+        data?.error?.message || data?.error?.code || JSON.stringify(data)
+      }`
+    );
   }
 
-  return null;
+  return Array.isArray(data?.data?.privacy_level_options)
+    ? data.data.privacy_level_options
+    : [];
+}
+
+function choosePrivacyLevel(options: string[]): string {
+  if (options.includes("PUBLIC_TO_EVERYONE")) return "PUBLIC_TO_EVERYONE";
+  if (options.includes("MUTUAL_FOLLOW_FRIENDS")) return "MUTUAL_FOLLOW_FRIENDS";
+  if (options.includes("FOLLOWER_OF_CREATOR")) return "FOLLOWER_OF_CREATOR";
+  if (options.includes("SELF_ONLY")) return "SELF_ONLY";
+  return options[0] || "SELF_ONLY";
+}
+
+async function waitForPublishCompletion(
+  accessToken: string,
+  publishId: string
+): Promise<void> {
+  for (let attempt = 1; attempt <= 12; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    const res = await fetch(`${TIKTOK_API_BASE}/post/publish/status/fetch/`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({ publish_id: publishId }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    const status = data?.data?.status as string | undefined;
+
+    if (status === "PUBLISH_COMPLETE") {
+      return;
+    }
+
+    if (status === "FAILED") {
+      throw new PublishTikTokError(
+        `TikTok Direct Post failed: ${
+          data?.data?.fail_reason || JSON.stringify(data)
+        }`
+      );
+    }
+  }
 }
 
 export async function publishTikTokVideo(
   userId: string,
   contentId: string,
   _workflowId?: string | null,
-  targetAccountId?: string | null
-): Promise<{ publishId: string }> {
-  const supabaseAdmin = getSupabaseAdmin();
+  accountId?: string | null
+): Promise<{ publishId: string; privacyLevel: string }> {
+  const supabase = getSupabaseAdminClient();
 
-  // 1. Load connected TikTok account
-  let accountQuery = supabaseAdmin
-    .from("accounts")
-    .select("id, platform, account_id, account_name, access_token, refresh_token")
+  const { data: contentRow, error: contentError } = await supabase
+    .from("content")
+    .select("id, title, idea, caption, hashtags, image_url")
+    .eq("id", contentId)
+    .eq("user_id", userId)
+    .single();
+
+  if (contentError || !contentRow) {
+    throw new PublishTikTokError(
+      `Content item ${contentId} not found for user ${userId}.`
+    );
+  }
+
+  const videoUrl = contentRow.image_url?.trim();
+  if (!videoUrl) {
+    throw new PublishTikTokError(
+      `Content item ${contentId} has no media/video URL.`
+    );
+  }
+
+  let accountQuery = supabase
+    .from("social_accounts")
+    .select("id, access_token")
     .eq("user_id", userId)
     .eq("platform", "tiktok");
 
-  if (targetAccountId) {
-    accountQuery = accountQuery.eq("id", targetAccountId);
+  if (accountId) {
+    accountQuery = accountQuery.eq("id", accountId);
   }
 
-  const { data: accounts, error: accountError } = await accountQuery.limit(1);
+  const { data: accountRow, error: accountError } =
+    await accountQuery.maybeSingle();
 
-  if (accountError) {
-    throw new PublishTikTokError(`Failed to load TikTok account: ${accountError.message}`);
-  }
-
-  const account = accounts?.[0];
-  if (!account || !account.access_token) {
-    throw new PublishTikTokError("No connected TikTok account with a valid access token was found.");
-  }
-
-  // 2. Load content item
-  const { data: content, error: contentError } = await supabaseAdmin
-    .from("content")
-    .select("*")
-    .eq("id", contentId)
-    .single();
-
-  if (contentError || !content) {
+  if (accountError || !accountRow?.access_token) {
     throw new PublishTikTokError(
-      `Failed to load content ${contentId}: ${contentError?.message || "Not found"}`
+      "Connected TikTok account or access token not found. Please reconnect TikTok on /accounts."
     );
   }
 
-  const videoUrl = resolveVideoUrl(content as Record<string, unknown>);
-  if (!videoUrl) {
+  const accessToken = accountRow.access_token as string;
+
+  const mediaRes = await fetch(videoUrl);
+  if (!mediaRes.ok) {
     throw new PublishTikTokError(
-      "TikTok video publishing requires a valid video URL on the content record."
+      `Failed to download video (${mediaRes.status}): ${videoUrl}`
     );
   }
 
-  // 3. Download video binary on server
-  const videoRes = await fetch(videoUrl);
-  if (!videoRes.ok) {
-    throw new PublishTikTokError(
-      `Failed to download video from media URL (${videoRes.status} ${videoRes.statusText}).`
-    );
-  }
-
-  const contentTypeHeader = (videoRes.headers.get("content-type") || "").toLowerCase();
-  if (contentTypeHeader.startsWith("image/")) {
-    throw new PublishTikTokError(
-      `Content media is an image (${contentTypeHeader}), not a video. TikTok video upload requires a video file.`
-    );
-  }
-
-  const arrayBuffer = await videoRes.arrayBuffer();
-  const videoBuffer = Buffer.from(arrayBuffer);
-  const videoSize = videoBuffer.length;
-
+  const videoBuffer = Buffer.from(await mediaRes.arrayBuffer());
+  const videoSize = videoBuffer.byteLength;
   if (videoSize === 0) {
-    throw new PublishTikTokError("Downloaded video file is empty (0 bytes).");
+    throw new PublishTikTokError("Downloaded video file is empty.");
   }
 
-  // TikTok FILE_UPLOAD chunking rules:
-  // - If < 5 MB: single chunk equal to videoSize
-  // - Otherwise: chunks up to 10 MB, merging any trailing remainder < 5 MB into the last chunk
-  let chunkSize = videoSize;
-  let totalChunkCount = 1;
+  const privacyOptions = await queryCreatorInfo(accessToken);
+  const privacyLevel = choosePrivacyLevel(privacyOptions);
 
-  if (videoSize >= MIN_CHUNK_BYTES) {
-    chunkSize = Math.min(MAX_CHUNK_BYTES, videoSize);
-    const fullChunks = Math.floor(videoSize / chunkSize);
-    const remainder = videoSize % chunkSize;
+  const chunkSize =
+    videoSize <= MAX_CHUNK_BYTES ? videoSize : MAX_CHUNK_BYTES;
+  const totalChunkCount = Math.floor(videoSize / chunkSize);
 
-    if (remainder === 0) {
-      totalChunkCount = fullChunks;
-    } else if (remainder >= MIN_CHUNK_BYTES) {
-      totalChunkCount = fullChunks + 1;
-    } else {
-      totalChunkCount = Math.max(1, fullChunks);
-    }
-  }
+  const title = buildCaptionText({
+    title: contentRow.title,
+    caption: contentRow.caption || contentRow.idea,
+    hashtags: contentRow.hashtags,
+  });
 
-  const caption = buildCaption(
-    typeof content.caption === "string" ? content.caption : null,
-    typeof content.title === "string" ? content.title : null,
-    content.hashtags
-  );
-
-  // 4. Initialize Inbox Video Upload (works when Direct Post is off)
-  let accessToken = account.access_token;
-
-  async function initUpload(token: string) {
-    return fetch("https://open.tiktokapis.com/v2/post/publish/inbox/video/init/", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json; charset=UTF-8",
+  const initRes = await fetch(`${TIKTOK_API_BASE}/post/publish/video/init/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json; charset=UTF-8",
+    },
+    body: JSON.stringify({
+      post_info: {
+        title,
+        privacy_level: privacyLevel,
+        disable_duet: false,
+        disable_comment: false,
+        disable_stitch: false,
       },
-      body: JSON.stringify({
-        post_info: caption ? { title: caption } : {},
-        source_info: {
-          source: "FILE_UPLOAD",
-          video_size: videoSize,
-          chunk_size: chunkSize,
-          total_chunk_count: totalChunkCount,
-        },
-      }),
-    });
-  }
+      source_info: {
+        source: "FILE_UPLOAD",
+        video_size: videoSize,
+        chunk_size: chunkSize,
+        total_chunk_count: totalChunkCount,
+      },
+    }),
+  });
 
-  let initRes = await initUpload(accessToken);
-  let initData = await initRes.json();
+  const initJson = await initRes.json().catch(() => ({}));
 
-  if (
-    initData?.error?.code === "access_token_invalid" &&
-    account.refresh_token
-  ) {
-    accessToken = await refreshTikTokAccessToken(
-      supabaseAdmin,
-      account.id,
-      account.refresh_token
-    );
-    initRes = await initUpload(accessToken);
-    initData = await initRes.json();
-  }
-
-  if (!initRes.ok || initData?.error?.code !== "ok" || !initData?.data?.upload_url) {
+  if (!initRes.ok || (initJson?.error?.code && initJson.error.code !== "ok")) {
     throw new PublishTikTokError(
-      `TikTok upload init failed: ${initData?.error?.message || initData?.error?.code || initRes.statusText}`
+      `TikTok Direct Post init failed (${initRes.status}): ${
+        initJson?.error?.message ||
+        initJson?.error?.code ||
+        JSON.stringify(initJson)
+      }`
     );
   }
 
-  const uploadUrl: string = initData.data.upload_url;
-  const publishId: string = initData.data.publish_id || "";
-  const mimeType =
-    contentTypeHeader && contentTypeHeader.startsWith("video/")
-      ? contentTypeHeader.split(";")[0]
-      : "video/mp4";
+  const publishId: string | undefined = initJson?.data?.publish_id;
+  const uploadUrl: string | undefined = initJson?.data?.upload_url;
 
-  // 5. Upload chunk(s) to TikTok upload_url
-  let offset = 0;
+  if (!publishId || !uploadUrl) {
+    throw new PublishTikTokError(
+      `TikTok Direct Post response missing publish_id or upload_url: ${JSON.stringify(
+        initJson
+      )}`
+    );
+  }
+
   for (let i = 0; i < totalChunkCount; i++) {
-    const isLastChunk = i === totalChunkCount - 1;
-    const end = isLastChunk ? videoSize : offset + chunkSize;
-    const chunkBuffer = videoBuffer.subarray(offset, end);
-    const lastByteIndex = end - 1;
+    const start = i * chunkSize;
+    const isLast = i === totalChunkCount - 1;
+    const end = isLast ? videoSize - 1 : start + chunkSize - 1;
+    const chunk = videoBuffer.subarray(start, end + 1);
 
-    const putRes = await fetch(uploadUrl, {
+    const uploadRes = await fetch(uploadUrl, {
       method: "PUT",
       headers: {
-        "Content-Type": mimeType,
-        "Content-Length": String(chunkBuffer.length),
-        "Content-Range": `bytes ${offset}-${lastByteIndex}/${videoSize}`,
+        "Content-Type": "video/mp4",
+        "Content-Length": String(chunk.byteLength),
+        "Content-Range": `bytes ${start}-${end}/${videoSize}`,
       },
-      body: chunkBuffer,
+      body: chunk,
     });
 
-    if (!putRes.ok) {
-      const putErrText = await putRes.text().catch(() => "");
+    if (!uploadRes.ok && uploadRes.status !== 201 && uploadRes.status !== 206) {
+      const errText = await uploadRes.text().catch(() => "");
       throw new PublishTikTokError(
-        `TikTok chunk upload ${i + 1}/${totalChunkCount} failed (${putRes.status}): ${putErrText || putRes.statusText}`
+        `TikTok chunk ${i + 1}/${totalChunkCount} upload failed (${uploadRes.status}): ${errText}`
       );
     }
-
-    offset = end;
   }
 
-  return { publishId };
+  await waitForPublishCompletion(accessToken, publishId);
+
+  return { publishId, privacyLevel };
 }
