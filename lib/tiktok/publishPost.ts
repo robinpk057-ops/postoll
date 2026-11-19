@@ -184,10 +184,15 @@ export async function publishTikTokVideo(
 
   if (videoSize >= MIN_CHUNK_BYTES) {
     chunkSize = Math.min(MAX_CHUNK_BYTES, videoSize);
-    totalChunkCount = Math.floor(videoSize / chunkSize);
-    if (totalChunkCount < 1) {
-      totalChunkCount = 1;
-      chunkSize = videoSize;
+    const fullChunks = Math.floor(videoSize / chunkSize);
+    const remainder = videoSize % chunkSize;
+
+    if (remainder === 0) {
+      totalChunkCount = fullChunks;
+    } else if (remainder >= MIN_CHUNK_BYTES) {
+      totalChunkCount = fullChunks + 1;
+    } else {
+      totalChunkCount = Math.max(1, fullChunks);
     }
   }
 
@@ -252,7 +257,7 @@ export async function publishTikTokVideo(
   let offset = 0;
   for (let i = 0; i < totalChunkCount; i++) {
     const isLastChunk = i === totalChunkCount - 1;
-    const end = isLastChunk ? videoSize : Math.min(offset + chunkSize, videoSize);
+    const end = isLastChunk ? videoSize : offset + chunkSize;
     const chunkBuffer = videoBuffer.subarray(offset, end);
     const lastByteIndex = end - 1;
 
