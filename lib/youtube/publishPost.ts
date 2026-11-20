@@ -12,6 +12,19 @@ export class PublishYouTubeError extends Error {
     }
 }
 
+type YouTubeAccountRow = {
+    id: string;
+    user_id?: string | null;
+    account_id: string;
+    account_name: string;
+    access_token: string | null;
+    refresh_token: string | null;
+    token_expires_at: string | null;
+};
+
+const ACCOUNT_SELECT_FIELDS =
+    "id, user_id, account_id, account_name, access_token, refresh_token, token_expires_at";
+
 function admin() {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -42,10 +55,13 @@ async function refreshAccessToken(refreshToken: string) {
         cache: "no-store",
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+        const code = data?.error ? ` [${data.error}]` : "";
         throw new PublishYouTubeError(
-            data.error_description || "Failed to refresh YouTube token",
+            `YouTube token refresh failed (${res.status})${code}: ${
+                data?.error_description || "Failed to refresh YouTube token"
+            }`,
             401,
             data
         );
@@ -59,7 +75,7 @@ async function refreshAccessToken(refreshToken: string) {
 
 async function getValidAccessToken(account: {
     id: string;
-    access_token: string;
+    access_token: string | null;
     refresh_token: string | null;
     token_expires_at: string | null;
 }) {
@@ -68,7 +84,7 @@ async function getValidAccessToken(account: {
         ? new Date(account.token_expires_at).getTime()
         : 0;
 
-    if (expiresAt - Date.now() > 2 * 60 * 1000 && account.access_token) {
+    if (account.access_token && expiresAt - Date.now() > 2 * 60 * 1000) {
         return account.access_token;
     }
 
@@ -95,9 +111,23 @@ async function getValidAccessToken(account: {
     return accessToken;
 }
 
+function getPrivacyStatus(): "public" | "unlisted" | "private" {
+    const configured = (process.env.YOUTUBE_PRIVACY_STATUS || "public")
+        .trim()
+        .toLowerCase();
+    if (
+        configured === "public" ||
+        configured === "unlisted" ||
+        configured === "private"
+    ) {
+        return configured;
+    }
+    return "public";
+}
+
 export async function publishYouTubeVideo(
-    userId: string, 
-    contentId: string, 
+    userId: string,
+    contentId: string,
     overrideWorkflowId?: string | null,
     overrideAccountId?: string | null
 ) {
@@ -123,25 +153,18 @@ export async function publishYouTubeVideo(
         );
     }
 
-    let account: {
-        id: string;
-        account_id: string;
-        account_name: string;
-        access_token: string;
-        refresh_token: string | null;
-        token_expires_at: string | null;
-    } | null = null;
+    let account: YouTubeAccountRow | null = null;
 
-    // 1. Try overrideAccountId if provided directly
+    // 1. Try overrideAccountId if provided directly and has an access_token or refresh_token
     if (overrideAccountId) {
         const { data } = await supabase
             .from("accounts")
-            .select(
-                "id, account_id, account_name, access_token, refresh_token, token_expires_at"
-            )
+            .select(ACCOUNT_SELECT_FIELDS)
             .eq("id", overrideAccountId)
             .maybeSingle();
-        account = data;
+        if (data && (data.access_token || data.refresh_token)) {
+            account = data;
+        }
     }
 
     // 2. Try workflow_accounts link lookup if account not found yet
@@ -157,30 +180,31 @@ export async function publishYouTubeVideo(
         if (linkData?.account_id) {
             const { data } = await supabase
                 .from("accounts")
-                .select(
-                    "id, account_id, account_name, access_token, refresh_token, token_expires_at"
-                )
+                .select(ACCOUNT_SELECT_FIELDS)
                 .eq("id", linkData.account_id)
                 .maybeSingle();
-            account = data;
+            if (data && (data.access_token || data.refresh_token)) {
+                account = data;
+            }
         }
     }
 
-    // 3. Fallback to user's first youtube account
+    // 3. Fallback to user's most recently updated YouTube account with a token
     if (!account) {
-        const { data } = await supabase
+        const { data: userAccounts } = await supabase
             .from("accounts")
-            .select(
-                "id, account_id, account_name, access_token, refresh_token, token_expires_at"
-            )
+            .select(ACCOUNT_SELECT_FIELDS)
             .eq("user_id", userId)
             .ilike("platform", "youtube")
-            .limit(1)
-            .maybeSingle();
-        account = data;
+            .order("updated_at", { ascending: false });
+
+        account =
+            (userAccounts || []).find(
+                (row) => Boolean(row.access_token) || Boolean(row.refresh_token)
+            ) || null;
     }
 
-    if (!account?.access_token) {
+    if (!account || (!account.access_token && !account.refresh_token)) {
         throw new PublishYouTubeError("No connected YouTube account.", 400);
     }
 
@@ -200,6 +224,7 @@ export async function publishYouTubeVideo(
     const title =
         (content.caption || "Postoll upload").slice(0, 90) || "Postoll upload";
     const description = content.caption || "";
+    const privacyStatus = getPrivacyStatus();
 
     const initRes = await fetch(
         "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
@@ -218,7 +243,7 @@ export async function publishYouTubeVideo(
                     categoryId: "22",
                 },
                 status: {
-                    privacyStatus: "public",
+                    privacyStatus,
                     selfDeclaredMadeForKids: false,
                 },
             }),
@@ -228,9 +253,14 @@ export async function publishYouTubeVideo(
 
     if (!initRes.ok) {
         const errBody = await initRes.json().catch(() => ({}));
+        const reason =
+            errBody?.error?.errors?.[0]?.reason || errBody?.error?.status || "";
+        const reasonSuffix = reason ? ` [${reason}]` : "";
         console.error("YouTube init upload error:", errBody);
         throw new PublishYouTubeError(
-            errBody?.error?.message || "YouTube upload init failed",
+            `YouTube upload init failed (${initRes.status})${reasonSuffix}: ${
+                errBody?.error?.message || "YouTube upload init failed"
+            }`,
             400,
             errBody
         );
@@ -254,9 +284,16 @@ export async function publishYouTubeVideo(
 
     const uploadData = await uploadRes.json().catch(() => ({}));
     if (!uploadRes.ok) {
+        const reason =
+            uploadData?.error?.errors?.[0]?.reason ||
+            uploadData?.error?.status ||
+            "";
+        const reasonSuffix = reason ? ` [${reason}]` : "";
         console.error("YouTube upload error:", uploadData);
         throw new PublishYouTubeError(
-            uploadData?.error?.message || "YouTube upload failed",
+            `YouTube upload failed (${uploadRes.status})${reasonSuffix}: ${
+                uploadData?.error?.message || "YouTube upload failed"
+            }`,
             400,
             uploadData
         );
