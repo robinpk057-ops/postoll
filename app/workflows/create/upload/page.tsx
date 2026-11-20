@@ -15,44 +15,28 @@ export default function UploadContentPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
 
-  const {
-    workflow,
-    updateWorkflow,
-  } = useWorkflow();
+  const { workflow, updateWorkflow } = useWorkflow();
+
+  const selectedFile = workflow.uploadFiles?.[0] ?? null;
 
   const canContinue =
-    workflow.uploadFiles.length > 0 &&
+    Boolean(selectedFile) &&
     workflow.uploadDescription.trim().length > 0;
 
-  function handleFiles(files: File[]) {
-    if (files.length === 0) return;
-
-    // Append new files (don't replace)
-    const existing = workflow.uploadFiles || [];
-    const combined = [...existing, ...files];
-
-    // Avoid exact same name+size duplicates
-    const unique = combined.filter(
-      (file, index, arr) =>
-        arr.findIndex(
-          (f) =>
-            typeof f !== "string" &&
-            typeof file !== "string" &&
-            f.name === file.name &&
-            f.size === file.size
-        ) === index
-    );
-
-    updateWorkflow({ uploadFiles: unique });
+  function handleSingleFile(file: File | undefined) {
+    if (!file) return;
+    setUploadError("");
+    // Keep only a single file for this workflow (replaces any prior selection)
+    updateWorkflow({ uploadFiles: [file] });
   }
 
-  function removeFile(index: number) {
-    const next = workflow.uploadFiles.filter((_, i) => i !== index);
-    updateWorkflow({ uploadFiles: next });
+  function removeFile() {
+    setUploadError("");
+    updateWorkflow({ uploadFiles: [] });
   }
 
   async function continueNext() {
-    if (!canContinue || uploading) {
+    if (!canContinue || uploading || !selectedFile) {
       return;
     }
 
@@ -60,49 +44,46 @@ export default function UploadContentPage() {
       setUploading(true);
       setUploadError("");
 
-      const processedFiles: (File | string)[] = [];
+      let finalUrl: string;
 
-      // Loop through files and upload raw File objects directly to Supabase Storage
-      for (const file of workflow.uploadFiles) {
-        // If it's already a string URL from a previous upload, keep it
-        if (typeof file === "string") {
-          processedFiles.push(file);
-          continue;
-        }
-
-        const fileExt = file.name.split(".").pop();
+      // If it's already a string URL from a previous upload, keep it
+      if (typeof selectedFile === "string") {
+        finalUrl = selectedFile;
+      } else {
+        const fileExt = selectedFile.name.split(".").pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
         const filePath = `videos/${fileName}`;
 
         const { error: storageError } = await supabase.storage
           .from("workflow-media")
-          .upload(filePath, file, {
+          .upload(filePath, selectedFile, {
             cacheControl: "3600",
             upsert: false,
           });
 
         if (storageError) {
-          throw new Error(`Failed to upload ${file.name}: ${storageError.message}`);
+          throw new Error(
+            `Failed to upload ${selectedFile.name}: ${storageError.message}`
+          );
         }
 
-        const { data: { publicUrl } } = supabase.storage
-          .from("workflow-media")
-          .getPublicUrl(filePath);
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("workflow-media").getPublicUrl(filePath);
 
-        // Store public URL directly in place of the File object
-        processedFiles.push(publicUrl);
+        finalUrl = publicUrl;
       }
 
-      // Update workflow source and save processed file URLs back to uploadFiles
+      // Save the single uploaded public URL in uploadFiles
       updateWorkflow({
         source: "user_uploaded",
-        uploadFiles: processedFiles as any,
+        uploadFiles: [finalUrl] as any,
       });
 
       router.push("/workflows/create/schedule");
     } catch (err: any) {
       console.error("Direct upload error:", err);
-      setUploadError(err.message || "Failed to upload files to storage.");
+      setUploadError(err.message || "Failed to upload file to storage.");
     } finally {
       setUploading(false);
     }
@@ -122,16 +103,14 @@ export default function UploadContentPage() {
             ✦ Workflow Builder
           </p>
 
-          <h1 className="mt-2 text-4xl font-bold">
-            Upload Your Content
-          </h1>
+          <h1 className="mt-2 text-4xl font-bold">Upload Your Content</h1>
           <p
             className="mt-2 text-sm"
             style={{
               color: "var(--muted)",
             }}
           >
-            Upload the image or video Postoll should publish on your schedule.
+            Upload a single video or image that Postoll should publish for this workflow.
           </p>
         </div>
 
@@ -173,9 +152,7 @@ export default function UploadContentPage() {
             2
           </div>
 
-          <span className="text-sm">
-            Upload Content
-          </span>
+          <span className="text-sm">Upload Content</span>
         </div>
 
         {/* MAIN CARD */}
@@ -188,9 +165,7 @@ export default function UploadContentPage() {
         >
           {/* UPLOAD */}
           <div>
-            <h2 className="text-xl font-semibold">
-              Upload Files
-            </h2>
+            <h2 className="text-xl font-semibold">Upload Content</h2>
 
             <p
               className="mt-2 text-sm"
@@ -198,29 +173,24 @@ export default function UploadContentPage() {
                 color: "var(--muted)",
               }}
             >
-              Upload the original video or image that you want Postoll to publish.
+              Upload one video or image file for this workflow. Selecting another file replaces the current one.
             </p>
 
             <label
               className="mt-5 flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed transition hover:border-purple-500"
               style={{
-                borderColor:
-                  workflow.uploadFiles.length > 0
-                    ? "#8b5cf6"
-                    : "var(--border)",
-
-                background:
-                  workflow.uploadFiles.length > 0
-                    ? "rgba(139,92,246,.08)"
-                    : "var(--background)",
+                borderColor: selectedFile ? "#8b5cf6" : "var(--border)",
+                background: selectedFile
+                  ? "rgba(139,92,246,.08)"
+                  : "var(--background)",
               }}
             >
-              <div className="text-4xl">
-                📤
-              </div>
+              <div className="text-4xl">📤</div>
 
               <p className="mt-3 text-sm font-medium">
-                Click to upload (select multiple files)
+                {selectedFile
+                  ? "Click to replace selected file"
+                  : "Click to upload a single file"}
               </p>
 
               <p
@@ -229,78 +199,67 @@ export default function UploadContentPage() {
                   color: "var(--muted)",
                 }}
               >
-                MP4, MOV, JPG, PNG — you can select several at once
+                MP4, MOV, JPG, PNG — 1 file per workflow
               </p>
 
               <input
                 type="file"
-                multiple
                 accept="video/*,image/*"
                 className="hidden"
                 onChange={(e) => {
-                  const files = Array.from(e.target.files || []);
-                  handleFiles(files);
+                  const file = e.target.files?.[0];
+                  handleSingleFile(file);
+                  // Reset input value so selecting the same file again still triggers onChange
+                  e.target.value = "";
                 }}
               />
             </label>
 
-            {/* SELECTED FILES */}
-            {workflow.uploadFiles.length > 0 && (
+            {/* SELECTED FILE */}
+            {selectedFile && (
               <div
                 className="mt-4 rounded-xl border p-4"
                 style={{
                   borderColor: "var(--border)",
                 }}
               >
-                <p className="font-medium">
-                  Selected Files ({workflow.uploadFiles.length})
-                </p>
+                <p className="font-medium">Selected File (1 of 1)</p>
 
-                <div className="mt-3 space-y-2">
-                  {workflow.uploadFiles.map((file, index) => (
-                    <div
-                      key={`${typeof file === "string" ? file : file.name}-${index}`}
-                      className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
-                      style={{
-                        background: "var(--background)",
-                      }}
-                    >
-                      <span className="truncate pr-3">
-                        {typeof file === "string" ? file : file.name}
-                      </span>
+                <div className="mt-3">
+                  <div
+                    className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
+                    style={{
+                      background: "var(--background)",
+                    }}
+                  >
+                    <span className="truncate pr-3">
+                      {typeof selectedFile === "string"
+                        ? selectedFile
+                        : selectedFile.name}
+                    </span>
 
-                      <div className="flex shrink-0 items-center gap-3">
-                        {typeof file !== "string" && (
-                          <span
-                            className="text-xs"
-                            style={{
-                              color: "var(--muted)",
-                            }}
-                          >
-                            {(file.size / 1024 / 1024).toFixed(2)} MB
-                          </span>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => removeFile(index)}
-                          className="text-xs text-red-400 hover:text-red-300"
+                    <div className="flex shrink-0 items-center gap-3">
+                      {typeof selectedFile !== "string" && (
+                        <span
+                          className="text-xs"
+                          style={{
+                            color: "var(--muted)",
+                          }}
                         >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                          {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                        </span>
+                      )}
 
-                <p
-                  className="mt-3 text-xs"
-                  style={{
-                    color: "var(--muted)",
-                  }}
-                >
-                  Publishing order: first file → last file → repeat
-                </p>
+                      <button
+                        type="button"
+                        onClick={removeFile}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -326,21 +285,16 @@ export default function UploadContentPage() {
             </div>
 
             <textarea
-              value={
-                workflow.uploadDescription
-              }
+              value={workflow.uploadDescription}
               onChange={(e) =>
                 updateWorkflow({
-                  uploadDescription:
-                    e.target.value,
+                  uploadDescription: e.target.value,
                 })
               }
               placeholder="Example: This is a new product launch video for our luxury watch collection. The video shows the watch, its design and premium features."
               className="mt-3 min-h-36 w-full rounded-xl border p-4 outline-none transition focus:border-purple-500"
               style={{
-                background:
-                  "var(--background)",
-
+                background: "var(--background)",
                 borderColor:
                   workflow.uploadDescription.trim().length > 0
                     ? "#8b5cf6"
@@ -372,9 +326,7 @@ export default function UploadContentPage() {
                       throw new Error(data.error || "Generate failed");
                     }
                     const tags = (data.hashtags || [])
-                      .map((t: string) =>
-                        t.startsWith("#") ? t : `#${t}`
-                      )
+                      .map((t: string) => (t.startsWith("#") ? t : `#${t}`))
                       .join(" ");
                     updateWorkflow({
                       uploadDescription: [data.caption, tags]
@@ -406,7 +358,7 @@ export default function UploadContentPage() {
           </div>
 
           {uploadError && (
-            <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+            <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
               {uploadError}
             </div>
           )}
@@ -420,13 +372,10 @@ export default function UploadContentPage() {
           >
             <button
               type="button"
-              onClick={() =>
-                router.back()
-              }
-              className="rounded-xl border px-6 py-3"
+              onClick={() => router.back()}
+              className="rounded-xl border px-6 py-3 text-sm font-medium"
               style={{
-                borderColor:
-                  "var(--border)",
+                borderColor: "var(--border)",
               }}
             >
               ← Back
@@ -436,16 +385,13 @@ export default function UploadContentPage() {
               type="button"
               disabled={!canContinue || uploading}
               onClick={continueNext}
-              className="rounded-xl px-6 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-xl px-6 py-3 text-sm font-medium disabled:opacity-40"
               style={{
-                background:
-                  "var(--foreground)",
-
-                color:
-                  "var(--background)",
+                background: "#8b5cf6",
+                color: "#fff",
               }}
             >
-              {uploading ? "Uploading files..." : "Continue →"}
+              {uploading ? "Uploading…" : "Continue →"}
             </button>
           </div>
         </div>
