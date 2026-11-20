@@ -19,11 +19,10 @@ type YouTubeAccountRow = {
     account_name: string;
     access_token: string | null;
     refresh_token: string | null;
-    token_expires_at: string | null;
 };
 
 const ACCOUNT_SELECT_FIELDS =
-    "id, user_id, account_id, account_name, access_token, refresh_token, token_expires_at";
+    "id, user_id, account_id, account_name, access_token, refresh_token";
 
 function admin() {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -73,18 +72,15 @@ async function refreshAccessToken(refreshToken: string) {
     };
 }
 
-async function getValidAccessToken(account: {
-    id: string;
-    access_token: string | null;
-    refresh_token: string | null;
-    token_expires_at: string | null;
-}) {
-    const supabase = admin();
-    const expiresAt = account.token_expires_at
-        ? new Date(account.token_expires_at).getTime()
-        : 0;
-
-    if (account.access_token && expiresAt - Date.now() > 2 * 60 * 1000) {
+async function getValidAccessToken(
+    account: {
+        id: string;
+        access_token: string | null;
+        refresh_token: string | null;
+    },
+    forceRefresh = false
+) {
+    if (!forceRefresh && account.access_token) {
         return account.access_token;
     }
 
@@ -95,15 +91,13 @@ async function getValidAccessToken(account: {
         );
     }
 
-    const { accessToken, expiresIn } = await refreshAccessToken(
-        account.refresh_token
-    );
+    const supabase = admin();
+    const { accessToken } = await refreshAccessToken(account.refresh_token);
 
     await supabase
         .from("accounts")
         .update({
             access_token: accessToken,
-            token_expires_at: new Date(Date.now() + expiresIn * 1000).toISOString(),
             updated_at: new Date().toISOString(),
         })
         .eq("id", account.id);
@@ -155,7 +149,7 @@ export async function publishYouTubeVideo(
 
     let account: YouTubeAccountRow | null = null;
 
-    // 1. Try overrideAccountId if provided directly and has an access_token or refresh_token
+    // 1. Try overrideAccountId if provided directly
     if (overrideAccountId) {
         const { data } = await supabase
             .from("accounts")
@@ -208,7 +202,7 @@ export async function publishYouTubeVideo(
         throw new PublishYouTubeError("No connected YouTube account.", 400);
     }
 
-    const accessToken = await getValidAccessToken(account);
+    let accessToken = await getValidAccessToken(account, false);
 
     const mediaRes = await fetch(content.image_url, { cache: "no-store" });
     if (!mediaRes.ok) {
@@ -226,30 +220,39 @@ export async function publishYouTubeVideo(
     const description = content.caption || "";
     const privacyStatus = getPrivacyStatus();
 
-    const initRes = await fetch(
-        "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
-        {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Content-Type": "application/json; charset=UTF-8",
-                "X-Upload-Content-Length": String(videoBuffer.length),
-                "X-Upload-Content-Type": contentType,
-            },
-            body: JSON.stringify({
-                snippet: {
-                    title,
-                    description,
-                    categoryId: "22",
+    const startResumableUpload = async (token: string) =>
+        fetch(
+            "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json; charset=UTF-8",
+                    "X-Upload-Content-Length": String(videoBuffer.length),
+                    "X-Upload-Content-Type": contentType,
                 },
-                status: {
-                    privacyStatus,
-                    selfDeclaredMadeForKids: false,
-                },
-            }),
-            cache: "no-store",
-        }
-    );
+                body: JSON.stringify({
+                    snippet: {
+                        title,
+                        description,
+                        categoryId: "22",
+                    },
+                    status: {
+                        privacyStatus,
+                        selfDeclaredMadeForKids: false,
+                    },
+                }),
+                cache: "no-store",
+            }
+        );
+
+    let initRes = await startResumableUpload(accessToken);
+
+    // If access token was expired, refresh once and retry init
+    if (initRes.status === 401 && account.refresh_token) {
+        accessToken = await getValidAccessToken(account, true);
+        initRes = await startResumableUpload(accessToken);
+    }
 
     if (!initRes.ok) {
         const errBody = await initRes.json().catch(() => ({}));
