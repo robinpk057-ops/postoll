@@ -37,13 +37,13 @@ export async function publishLinkedInPost(
 
   const { data: content, error: contentError } = await supabase
     .from("content")
-    .select("id, user_id, workflow_id, type, caption, hashtags, image_url")
+    .select("id, user_id, workflow_id, type, title, caption, hashtags, image_url")
     .eq("id", contentId)
     .eq("user_id", userId)
     .maybeSingle();
 
   if (contentError || !content) {
-    throw new PublishLinkedInError("Content not found.", 404);
+    throw new PublishLinkedInError("Content not found.", 404, contentError);
   }
 
   let account: {
@@ -108,22 +108,15 @@ export async function publishLinkedInPost(
         .join(" ")
     : "";
 
-  const commentary = [content.caption, hashtagText]
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-
-  if (!commentary) {
-    throw new PublishLinkedInError(
-      "LinkedIn post requires caption/commentary text.",
-      400
-    );
-  }
+  const baseText = (content.caption || content.title || "").trim();
+  const commentary =
+    [baseText, hashtagText].filter(Boolean).join("\n\n").trim() ||
+    "Shared via Postoll";
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${account.access_token}`,
     "Content-Type": "application/json",
-    "LinkedIn-Version": "202501",
+    "LinkedIn-Version": "202601",
     "X-Restli-Protocol-Version": "2.0.0",
   };
 
@@ -167,7 +160,8 @@ export async function publishLinkedInPost(
 
     if (!initRes.ok || !uploadUrl || !mediaUrn) {
       throw new PublishLinkedInError(
-        initData?.message || "Failed to initialize LinkedIn image upload.",
+        initData?.message ||
+          `Failed to initialize LinkedIn image upload (${initRes.status}).`,
         400,
         initData
       );
@@ -220,11 +214,18 @@ export async function publishLinkedInPost(
     cache: "no-store",
   });
 
-  const postData = await postRes.json().catch(() => ({}));
+  const postText = await postRes.text();
+  let postData: Record<string, unknown> = {};
+  try {
+    postData = postText ? JSON.parse(postText) : {};
+  } catch {
+    postData = { raw: postText };
+  }
 
   if (!postRes.ok) {
     throw new PublishLinkedInError(
-      postData?.message || `LinkedIn publish failed (${postRes.status})`,
+      (postData?.message as string) ||
+        `LinkedIn publish failed (${postRes.status})`,
       400,
       postData
     );
