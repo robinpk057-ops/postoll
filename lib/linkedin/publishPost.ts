@@ -123,66 +123,159 @@ export async function publishLinkedInPost(
   let mediaUrn: string | null = null;
 
   if (content.image_url && content.image_url.startsWith("http")) {
-    if (content.type === "video" || isVideoUrl(content.image_url)) {
+    const mediaRes = await fetch(content.image_url, { cache: "no-store" });
+    if (!mediaRes.ok) {
       throw new PublishLinkedInError(
-        "Direct video upload to LinkedIn is not yet enabled in this publisher; use an image or text post.",
+        `Could not download media from image_url (${mediaRes.status}).`,
         400
       );
     }
 
-    const imgRes = await fetch(content.image_url, { cache: "no-store" });
-    if (!imgRes.ok) {
-      throw new PublishLinkedInError(
-        `Could not download image from image_url (${imgRes.status}).`,
-        400
+    const contentType = mediaRes.headers.get("content-type") || "";
+    const isVideo =
+      content.type === "video" ||
+      isVideoUrl(content.image_url) ||
+      contentType.startsWith("video/");
+
+    const mediaBuffer = Buffer.from(await mediaRes.arrayBuffer());
+
+    if (isVideo) {
+      const initRes = await fetch(
+        "https://api.linkedin.com/rest/videos?action=initializeUpload",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            initializeUploadRequest: {
+              owner: authorUrn,
+              fileSizeBytes: mediaBuffer.byteLength,
+              uploadCaptions: false,
+              uploadThumbnail: false,
+            },
+          }),
+          cache: "no-store",
+        }
       );
-    }
 
-    const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
+      const initData = await initRes.json().catch(() => ({}));
+      const value = initData?.value;
+      const videoUrn = value?.video as string | undefined;
+      const uploadInstructions = Array.isArray(value?.uploadInstructions)
+        ? value.uploadInstructions
+        : [];
+      const uploadToken = (value?.uploadToken as string) || "";
 
-    const initRes = await fetch(
-      "https://api.linkedin.com/rest/images?action=initializeUpload",
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          initializeUploadRequest: {
-            owner: authorUrn,
-          },
-        }),
-        cache: "no-store",
+      if (!initRes.ok || !videoUrn || uploadInstructions.length === 0) {
+        throw new PublishLinkedInError(
+          initData?.message ||
+            `Failed to initialize LinkedIn video upload (${initRes.status}).`,
+          400,
+          initData
+        );
       }
-    );
 
-    const initData = await initRes.json().catch(() => ({}));
-    const uploadUrl = initData?.value?.uploadUrl as string | undefined;
-    mediaUrn = (initData?.value?.image as string) || null;
+      const uploadedPartIds: string[] = [];
 
-    if (!initRes.ok || !uploadUrl || !mediaUrn) {
-      throw new PublishLinkedInError(
-        initData?.message ||
-          `Failed to initialize LinkedIn image upload (${initRes.status}).`,
-        400,
-        initData
+      for (const part of uploadInstructions) {
+        const start = Number(part.firstByte ?? 0);
+        const end = Number(part.lastByte ?? mediaBuffer.byteLength - 1) + 1;
+        const chunk = mediaBuffer.subarray(start, end);
+
+        const partRes = await fetch(part.uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/octet-stream",
+          },
+          body: chunk,
+          cache: "no-store",
+        });
+
+        if (!partRes.ok) {
+          throw new PublishLinkedInError(
+            `LinkedIn video chunk upload failed (${partRes.status}).`,
+            400
+          );
+        }
+
+        const etag = partRes.headers.get("etag");
+        if (etag) {
+          uploadedPartIds.push(etag.replace(/^"|"$/g, ""));
+        }
+      }
+
+      const finRes = await fetch(
+        "https://api.linkedin.com/rest/videos?action=finalizeUpload",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            finalizeUploadRequest: {
+              video: videoUrn,
+              uploadToken,
+              uploadedPartIds,
+            },
+          }),
+          cache: "no-store",
+        }
       );
-    }
 
-    const uploadRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${account.access_token}`,
-        "Content-Type":
-          imgRes.headers.get("content-type") || "image/jpeg",
-      },
-      body: imgBuffer,
-      cache: "no-store",
-    });
+      if (!finRes.ok) {
+        const finData = await finRes.json().catch(() => ({}));
+        throw new PublishLinkedInError(
+          finData?.message ||
+            `LinkedIn video finalize failed (${finRes.status}).`,
+          400,
+          finData
+        );
+      }
 
-    if (!uploadRes.ok) {
-      throw new PublishLinkedInError(
-        `LinkedIn binary image upload failed (${uploadRes.status}).`,
-        400
+      // Brief pause so LinkedIn registers the finalized video asset before /rest/posts
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      mediaUrn = videoUrn;
+    } else {
+      const initRes = await fetch(
+        "https://api.linkedin.com/rest/images?action=initializeUpload",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            initializeUploadRequest: {
+              owner: authorUrn,
+            },
+          }),
+          cache: "no-store",
+        }
       );
+
+      const initData = await initRes.json().catch(() => ({}));
+      const uploadUrl = initData?.value?.uploadUrl as string | undefined;
+      mediaUrn = (initData?.value?.image as string) || null;
+
+      if (!initRes.ok || !uploadUrl || !mediaUrn) {
+        throw new PublishLinkedInError(
+          initData?.message ||
+            `Failed to initialize LinkedIn image upload (${initRes.status}).`,
+          400,
+          initData
+        );
+      }
+
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${account.access_token}`,
+          "Content-Type": contentType || "image/jpeg",
+        },
+        body: mediaBuffer,
+        cache: "no-store",
+      });
+
+      if (!uploadRes.ok) {
+        throw new PublishLinkedInError(
+          `LinkedIn binary image upload failed (${uploadRes.status}).`,
+          400
+        );
+      }
     }
   }
 
@@ -202,6 +295,7 @@ export async function publishLinkedInPost(
   if (mediaUrn) {
     postBody.content = {
       media: {
+        title: content.title || "Postoll Video",
         id: mediaUrn,
       },
     };
