@@ -90,8 +90,12 @@ function AccountsContent() {
   useEffect(() => {
     setMounted(true);
     const connectedParam = searchParams.get("connected");
+    const errorParam = searchParams.get("error");
     if (connectedParam) {
       setMessage(`Successfully connected ${connectedParam} account!`);
+    }
+    if (errorParam) {
+      setError(`Connection error: ${errorParam}`);
     }
     loadAccounts();
   }, [searchParams]);
@@ -220,6 +224,37 @@ function AccountsContent() {
     }
   }
 
+  async function connectLinkedIn() {
+    try {
+      setConnecting("linkedin");
+      setError("");
+      setMessage("");
+      setPublishResult("");
+
+      const response = await fetch("/api/accounts/linkedin/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to start LinkedIn connection.");
+      }
+
+      if (!data.authorizationUrl) {
+        throw new Error("LinkedIn authorization URL was not returned.");
+      }
+
+      window.location.href = data.authorizationUrl;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "LinkedIn connect failed."
+      );
+      setConnecting(null);
+    }
+  }
+
   async function connectTikTok() {
     try {
       setConnecting("tiktok");
@@ -264,6 +299,11 @@ function AccountsContent() {
 
     if (platformId === "youtube") {
       connectYouTube();
+      return;
+    }
+
+    if (platformId === "linkedin") {
+      connectLinkedIn();
       return;
     }
 

@@ -24,6 +24,11 @@ import {
   PublishTikTokError,
 } from "@/lib/tiktok/publishPost";
 
+import {
+  publishLinkedInPost,
+  PublishLinkedInError,
+} from "@/lib/linkedin/publishPost";
+
 /*
 - Publishing a single item can take up to ~24s while polling
 - Instagram's media container status. This route can process
@@ -787,6 +792,13 @@ async function handleScheduler(request: Request) {
                 workflowId,
                 target.account_id
               );
+            } else if (platform === "linkedin") {
+              await publishLinkedInPost(
+                userId,
+                claimedContent.id,
+                workflowId,
+                target.account_id
+              );
             } else {
               publishErrors.push(`Unsupported platform: ${platform}`);
             }
@@ -796,6 +808,7 @@ async function handleScheduler(request: Request) {
                 platformError instanceof PublishPostError ||
                 platformError instanceof PublishYouTubeError ||
                 platformError instanceof PublishTikTokError ||
+                platformError instanceof PublishLinkedInError ||
                 platformError instanceof Error
                 ? platformError.message
                 : "Publish failed";
@@ -847,6 +860,7 @@ async function handleScheduler(request: Request) {
             publishError instanceof PublishPostError ||
             publishError instanceof PublishYouTubeError ||
             publishError instanceof PublishTikTokError ||
+            publishError instanceof PublishLinkedInError ||
             publishError instanceof Error
             ? publishError.message
             : "Unable to publish content.";
