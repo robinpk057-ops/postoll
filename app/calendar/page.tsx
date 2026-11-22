@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AppShell from "../AppShell";
 import { createClient } from "@/lib/supabase/client";
@@ -108,6 +108,7 @@ export default function CalendarPage() {
 
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [caption, setCaption] = useState("");
   const [time, setTime] = useState("09:00");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
@@ -165,6 +166,7 @@ export default function CalendarPage() {
 
   function openModalForDate(dateKey: string) {
     setError("");
+    setFile(null);
     if (accounts.length > 0 && selectedAccountIds.length === 0) {
       setSelectedAccountIds([accounts[0].id]);
     }
@@ -397,11 +399,59 @@ export default function CalendarPage() {
 
             <label className="mt-5 block text-sm font-medium">Media</label>
             <input
+              ref={fileInputRef}
               type="file"
               accept="image/*,video/*"
-              className="mt-2 w-full text-sm"
+              className="hidden"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const dropped = e.dataTransfer.files?.[0];
+                if (dropped) setFile(dropped);
+              }}
+              className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed px-4 py-3.5 transition hover:border-violet-400"
+              style={{
+                backgroundColor: "#0d0d12",
+                borderColor: file ? "#7c3aed" : "#383847",
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                {file ? (
+                  <>
+                    <p className="truncate text-sm font-medium text-white">
+                      {file.name}
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-400">
+                      {(file.size / (1024 * 1024)).toFixed(2)} MB · Click to
+                      replace
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-zinc-200">
+                      Click to upload or drag &amp; drop
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-400">
+                      Supports images and videos
+                    </p>
+                  </>
+                )}
+              </div>
+              <span
+                className="shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium"
+                style={{
+                  backgroundColor: "#1f1f29",
+                  borderColor: "#383847",
+                  color: "#c4b5fd",
+                }}
+              >
+                {file ? "Change" : "Choose file"}
+              </span>
+            </div>
 
             <label className="mt-4 block text-sm font-medium">Time (24h)</label>
             <div className="mt-2">
