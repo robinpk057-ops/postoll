@@ -244,6 +244,12 @@ export default function CalendarPage() {
   const [notice, setNotice] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Per-day minimize & extracted (expanded full-width) states across all days
+  const [minimizedDays, setMinimizedDays] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [extractedDayKey, setExtractedDayKey] = useState<string | null>(null);
+
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyFilter, setHistoryFilter] = useState<
     "all" | "posted" | "scheduled" | "failed"
@@ -292,33 +298,33 @@ export default function CalendarPage() {
     return time < nowHHMM;
   }, [modalDate, todayKey, time, timezone]);
 
-  // Map of `${scheduled_date}:${platform}` and `${scheduled_date}:acc:${account_id}` for already-posted items
-  const postedDayKeysSet = useMemo(() => {
-    const keys = new Set<string>();
-    for (const p of posts) {
-      if (!isPostedStatus(p.status)) continue;
-      if (p.scheduled_date && p.platform) {
-        keys.add(`${p.scheduled_date}:plat:${p.platform.toLowerCase()}`);
-      }
-      if (p.scheduled_date && p.account_id) {
-        keys.add(`${p.scheduled_date}:acc:${p.account_id}`);
-      }
-    }
-    return keys;
-  }, [posts]);
+  // Only lock individual posts that are already published
+  function isPostLocked(post: CalendarPost): boolean {
+    return isPostedStatus(post.status);
+  }
 
-  function isPostLockedForDay(post: CalendarPost): boolean {
-    if (isPostedStatus(post.status)) return true;
-    const platKey = post.platform
-      ? `${post.scheduled_date}:plat:${post.platform.toLowerCase()}`
-      : null;
-    const accKey = post.account_id
-      ? `${post.scheduled_date}:acc:${post.account_id}`
-      : null;
-    return Boolean(
-      (platKey && postedDayKeysSet.has(platKey)) ||
-        (accKey && postedDayKeysSet.has(accKey))
-    );
+  function toggleMinimizeDay(dateKey: string) {
+    setMinimizedDays((prev) => ({
+      ...prev,
+      [dateKey]: !prev[dateKey],
+    }));
+  }
+
+  function toggleExtractDay(dateKey: string) {
+    setMinimizedDays((prev) => ({
+      ...prev,
+      [dateKey]: false,
+    }));
+    setExtractedDayKey((prev) => (prev === dateKey ? null : dateKey));
+  }
+
+  function setAllDaysMinimized(value: boolean) {
+    const next: Record<string, boolean> = {};
+    for (const d of days) {
+      next[toDateKey(d)] = value;
+    }
+    setMinimizedDays(next);
+    if (value) setExtractedDayKey(null);
   }
 
   const load = useCallback(async () => {
@@ -392,9 +398,9 @@ export default function CalendarPage() {
   }
 
   function openRescheduleModal(post: CalendarPost) {
-    if (isPostLockedForDay(post)) {
+    if (isPostLocked(post)) {
       setError(
-        "This content has already been posted for this platform on this day and cannot be rescheduled."
+        "This post has already been published and cannot be rescheduled."
       );
       return;
     }
@@ -420,9 +426,9 @@ export default function CalendarPage() {
   }
 
   async function handleDeletePost(post: CalendarPost) {
-    if (isPostLockedForDay(post)) {
+    if (isPostLocked(post)) {
       setError(
-        "This content has already been posted for this platform on this day and cannot be deleted."
+        "This post has already been published and cannot be deleted."
       );
       return;
     }
@@ -440,7 +446,7 @@ export default function CalendarPage() {
         throw new Error(json.error || "Failed to delete post");
       }
       setNotice(
-        `Deleted ${post.platform || "post"} scheduled for ${post.scheduled_date} ${(post.scheduled_time || "").slice(0, 5)}.`
+        `Deleted ${post.account_name || post.platform || "post"} scheduled for ${post.scheduled_date} ${(post.scheduled_time || "").slice(0, 5)}.`
       );
       await load();
     } catch (e) {
@@ -473,7 +479,11 @@ export default function CalendarPage() {
   );
 
   function postsForDay(dateKey: string) {
-    return posts.filter((p) => p.scheduled_date === dateKey);
+    return posts
+      .filter((p) => p.scheduled_date === dateKey)
+      .sort((a, b) =>
+        (a.scheduled_time || "").localeCompare(b.scheduled_time || "")
+      );
   }
 
   const availableMonths = useMemo(() => {
@@ -609,7 +619,7 @@ export default function CalendarPage() {
               user.id,
               modalDate,
               customFile,
-              acc.platform.toLowerCase()
+              `${acc.platform.toLowerCase()}-${acc.id.slice(0, 6)}`
             );
             accountUrlMap.set(acc.id, uploadedUrl);
           }
@@ -667,7 +677,7 @@ export default function CalendarPage() {
         );
       } else {
         setNotice(
-          `Scheduled once for ${modalDate} at ${time} (${scheduledCount} account${scheduledCount > 1 ? "s" : ""}).`
+          `Scheduled once for ${modalDate} at ${time} (${scheduledCount} item${scheduledCount > 1 ? "s" : ""}).`
         );
       }
 
@@ -694,11 +704,49 @@ export default function CalendarPage() {
         <p className="text-sm font-medium" style={{ color: "#a78bfa" }}>
           ✦ Medium plan
         </p>
-        <h1 className="mt-2 text-4xl font-bold">Calendar</h1>
-        <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
-          Rolling 30-day schedule · one-time per post (no repeats) · past times
-          today move to next coming time · 24-hour ({timezone})
-        </p>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold">Calendar</h1>
+            <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
+              Rolling 30-day schedule · multiple contents allowed per account ·
+              one-time per post · 24-hour ({timezone})
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {extractedDayKey && (
+              <button
+                type="button"
+                onClick={() => setExtractedDayKey(null)}
+                className="rounded-lg border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-medium text-violet-200"
+              >
+                Reset grid layout
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setAllDaysMinimized(true)}
+              className="rounded-lg border px-3 py-1.5 text-xs font-medium text-zinc-200"
+              style={{
+                backgroundColor: "#181820",
+                borderColor: "#2e2e3b",
+              }}
+            >
+              Minimize all days
+            </button>
+            <button
+              type="button"
+              onClick={() => setAllDaysMinimized(false)}
+              className="rounded-lg border px-3 py-1.5 text-xs font-medium text-zinc-200"
+              style={{
+                backgroundColor: "#181820",
+                borderColor: "#2e2e3b",
+              }}
+            >
+              Expand all days
+            </button>
+          </div>
+        </div>
 
         {notice && (
           <div
@@ -743,6 +791,8 @@ export default function CalendarPage() {
               {days.map((d) => {
                 const key = toDateKey(d);
                 const dayPosts = postsForDay(key);
+                const isMinimized = Boolean(minimizedDays[key]);
+                const isExtracted = extractedDayKey === key;
                 const label = d.toLocaleDateString(undefined, {
                   weekday: "short",
                   month: "short",
@@ -752,90 +802,139 @@ export default function CalendarPage() {
                 return (
                   <div
                     key={key}
-                    className="flex min-h-40 flex-col rounded-2xl border p-4"
+                    className={`flex flex-col rounded-2xl border p-4 transition ${
+                      isMinimized ? "min-h-0" : "min-h-40"
+                    } ${
+                      isExtracted
+                        ? "sm:col-span-2 lg:col-span-3 xl:col-span-4 ring-1 ring-violet-500/50"
+                        : ""
+                    }`}
                     style={{
                       background: "var(--card)",
-                      borderColor: "var(--border)",
+                      borderColor: isExtracted ? "#7c3aed" : "var(--border)",
                     }}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-lg font-semibold">{label}</p>
-                      <button
-                        type="button"
-                        onClick={() => openModalForDate(key)}
-                        className="rounded-lg px-2 py-1 text-xs font-medium"
-                        style={{
-                          background: "var(--foreground)",
-                          color: "var(--background)",
-                        }}
-                      >
-                        + Add
-                      </button>
+                      <div>
+                        <p className="text-lg font-semibold">{label}</p>
+                        <p className="text-[11px] text-zinc-400">
+                          {dayPosts.length}{" "}
+                          {dayPosts.length === 1 ? "item" : "items"}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleMinimizeDay(key)}
+                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] font-medium text-zinc-300 hover:border-zinc-500"
+                          title={isMinimized ? "Expand day card" : "Minimize day card"}
+                        >
+                          {isMinimized ? "Expand" : "Minimize"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleExtractDay(key)}
+                          className="rounded-lg border border-violet-500/35 bg-violet-950/40 px-2 py-1 text-[11px] font-medium text-violet-200 hover:bg-violet-900/50"
+                          title={
+                            isExtracted
+                              ? "Return day card to grid"
+                              : "Extract day card across full width"
+                          }
+                        >
+                          {isExtracted ? "Collapse row" : "Extract"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openModalForDate(key)}
+                          className="rounded-lg px-2 py-1 text-xs font-medium"
+                          style={{
+                            background: "var(--foreground)",
+                            color: "var(--background)",
+                          }}
+                        >
+                          + Add
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="mt-3 flex-1 space-y-2.5">
-                      {dayPosts.length === 0 && (
-                        <p className="text-xs" style={{ color: "var(--muted)" }}>
-                          No posts
-                        </p>
-                      )}
-                      {dayPosts.map((p) => {
-                        const locked = isPostLockedForDay(p);
-                        return (
-                          <div
-                            key={p.id}
-                            className="rounded-lg border p-2.5"
-                            style={{
-                              borderColor: "var(--border)",
-                              backgroundColor: "rgba(255,255,255,0.02)",
-                            }}
+                    {!isMinimized && (
+                      <div
+                        className={`mt-3 flex-1 ${
+                          isExtracted
+                            ? "grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                            : "space-y-2.5"
+                        }`}
+                      >
+                        {dayPosts.length === 0 && (
+                          <p
+                            className="text-xs"
+                            style={{ color: "var(--muted)" }}
                           >
-                            <div className="flex items-center gap-2.5">
-                              <MediaThumbnail
-                                src={p.media_url}
-                                thumbnailUrl={p.thumbnail_url}
-                                sizeClass="h-11 w-11"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium">
-                                  {(p.scheduled_time || "").slice(0, 5)}
-                                  {p.platform ? ` · ${p.platform}` : ""}
-                                </p>
-                                <div className="mt-0.5">
-                                  <StatusBadge status={p.status} />
+                            No posts
+                          </p>
+                        )}
+                        {dayPosts.map((p) => {
+                          const locked = isPostLocked(p);
+                          return (
+                            <div
+                              key={p.id}
+                              className="rounded-lg border p-2.5"
+                              style={{
+                                borderColor: "var(--border)",
+                                backgroundColor: "rgba(255,255,255,0.02)",
+                              }}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <MediaThumbnail
+                                  src={p.media_url}
+                                  thumbnailUrl={p.thumbnail_url}
+                                  sizeClass="h-11 w-11"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium">
+                                    {(p.scheduled_time || "").slice(0, 5)}
+                                    {p.platform ? ` · ${p.platform}` : ""}
+                                  </p>
+                                  <p className="truncate text-[11px] text-zinc-400">
+                                    {p.account_name || "Connected account"}
+                                  </p>
+                                  <div className="mt-1">
+                                    <StatusBadge status={p.status} />
+                                  </div>
                                 </div>
                               </div>
-                            </div>
 
-                            {locked ? (
-                              <p className="mt-2 border-t border-zinc-800/70 pt-1.5 text-[11px] text-emerald-300/90">
-                                Posted for day · locked
-                              </p>
-                            ) : (
-                              <div className="mt-2 flex items-center justify-end gap-2 border-t border-zinc-800/70 pt-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => openRescheduleModal(p)}
-                                  className="rounded px-2 py-0.5 text-[11px] font-medium text-violet-300 hover:bg-violet-950/60"
-                                >
-                                  Reschedule
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={deletingId === p.id}
-                                  onClick={() => handleDeletePost(p)}
-                                  className="rounded px-2 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-950/60 disabled:opacity-40"
-                                >
-                                  {deletingId === p.id
-                                    ? "Deleting…"
-                                    : "Delete"}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                              {locked ? (
+                                <p className="mt-2 border-t border-zinc-800/70 pt-1.5 text-[11px] text-emerald-300/90">
+                                  Published · locked
+                                </p>
+                              ) : (
+                                <div className="mt-2 flex items-center justify-end gap-2 border-t border-zinc-800/70 pt-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => openRescheduleModal(p)}
+                                    className="rounded px-2 py-0.5 text-[11px] font-medium text-violet-300 hover:bg-violet-950/60"
+                                  >
+                                    Reschedule
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={deletingId === p.id}
+                                    onClick={() => handleDeletePost(p)}
+                                    className="rounded px-2 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-950/60 disabled:opacity-40"
+                                  >
+                                    {deletingId === p.id
+                                      ? "Deleting…"
+                                      : "Delete"}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1009,7 +1108,7 @@ export default function CalendarPage() {
                             {isExpanded && (
                               <div className="space-y-2.5 border-t border-zinc-800/80 px-4 py-3">
                                 {group.posts.map((item) => {
-                                  const locked = isPostLockedForDay(item);
+                                  const locked = isPostLocked(item);
                                   return (
                                     <div
                                       key={item.id}
@@ -1062,7 +1161,7 @@ export default function CalendarPage() {
                                         <StatusBadge status={item.status} />
                                         {locked ? (
                                           <span className="rounded-lg border border-emerald-500/25 bg-emerald-950/30 px-2.5 py-1 text-xs text-emerald-300">
-                                            Locked (posted)
+                                            Locked (published)
                                           </span>
                                         ) : (
                                           <>
@@ -1141,7 +1240,8 @@ export default function CalendarPage() {
                 Schedule post · {modalDate}
               </h2>
               <p className="mt-1 text-xs text-zinc-400">
-                Posts once on the selected date &amp; time (no repeated runs).
+                Scheduled time applies to each selected account; multiple posts
+                can be scheduled for the same account.
               </p>
             </div>
 
