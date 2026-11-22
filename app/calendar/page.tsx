@@ -29,6 +29,14 @@ type SocialAccount = {
   connected?: boolean | null;
 };
 
+type DayGroup = {
+  dateKey: string;
+  posts: CalendarPost[];
+  postedCount: number;
+  scheduledCount: number;
+  failedCount: number;
+};
+
 const EXCLUDED_PLATFORMS = new Set(["x", "twitter"]);
 
 function isAllowedAccount(acc: SocialAccount) {
@@ -77,6 +85,23 @@ function buildDays(count: number) {
   });
 }
 
+function isPostedStatus(status: string) {
+  const s = (status || "").toLowerCase();
+  return (
+    s === "published" || s === "posted" || s === "completed" || s === "success"
+  );
+}
+
+function isScheduledStatus(status: string) {
+  const s = (status || "").toLowerCase();
+  return s === "scheduled" || s === "queued";
+}
+
+function isFailedStatus(status: string) {
+  const s = (status || "").toLowerCase();
+  return s === "failed" || s === "error";
+}
+
 function MediaThumbnail({
   src,
   thumbnailUrl,
@@ -122,10 +147,8 @@ function MediaThumbnail({
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const s = (status || "scheduled").toLowerCase();
-  const isPosted =
-    s === "published" || s === "posted" || s === "completed" || s === "success";
-  const isFailed = s === "failed" || s === "error";
+  const isPosted = isPostedStatus(status);
+  const isFailed = isFailedStatus(status);
 
   let style = {
     bg: "rgba(124, 58, 237, 0.16)",
@@ -219,9 +242,17 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  // History card collapse & filtering for multi-year scale
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [historyFilter, setHistoryFilter] = useState<
     "all" | "posted" | "scheduled" | "failed"
   >("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [expandedDayKeys, setExpandedDayKeys] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [visibleDayCount, setVisibleDayCount] = useState<number>(10);
 
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -260,7 +291,16 @@ export default function CalendarPage() {
         throw new Error(postsJson.error || "Failed to load posts");
       }
 
-      setPosts(postsJson.posts || []);
+      const loadedPosts: CalendarPost[] = postsJson.posts || [];
+      setPosts(loadedPosts);
+
+      // Expand the most recent day by default for quick glance
+      const firstDate = loadedPosts[0]?.scheduled_date;
+      if (firstDate) {
+        setExpandedDayKeys((prev) =>
+          Object.keys(prev).length === 0 ? { [firstDate]: true } : prev
+        );
+      }
 
       const rawList =
         accJson.accounts ?? accJson.data ?? (Array.isArray(accJson) ? accJson : []);
@@ -327,26 +367,66 @@ export default function CalendarPage() {
     return posts.filter((p) => p.scheduled_date === dateKey);
   }
 
-  const filteredHistoryPosts = useMemo(() => {
-    return posts.filter((p) => {
-      const s = (p.status || "").toLowerCase();
-      if (historyFilter === "posted") {
-        return (
-          s === "published" ||
-          s === "posted" ||
-          s === "completed" ||
-          s === "success"
-        );
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    for (const p of posts) {
+      if (p.scheduled_date && p.scheduled_date.length >= 7) {
+        months.add(p.scheduled_date.slice(0, 7));
       }
-      if (historyFilter === "scheduled") {
-        return s === "scheduled" || s === "queued";
+    }
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [posts]);
+
+  const dayGroups = useMemo<DayGroup[]>(() => {
+    const filteredPosts = posts.filter((p) => {
+      if (
+        selectedMonth !== "all" &&
+        !(p.scheduled_date || "").startsWith(selectedMonth)
+      ) {
+        return false;
       }
-      if (historyFilter === "failed") {
-        return s === "failed" || s === "error";
-      }
+      if (historyFilter === "posted") return isPostedStatus(p.status);
+      if (historyFilter === "scheduled") return isScheduledStatus(p.status);
+      if (historyFilter === "failed") return isFailedStatus(p.status);
       return true;
     });
-  }, [posts, historyFilter]);
+
+    const groupedMap = new Map<string, CalendarPost[]>();
+    for (const p of filteredPosts) {
+      const key = p.scheduled_date || "unknown";
+      const existing = groupedMap.get(key) || [];
+      existing.push(p);
+      groupedMap.set(key, existing);
+    }
+
+    return Array.from(groupedMap.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([dateKey, dayItems]) => {
+        const sortedItems = [...dayItems].sort((a, b) =>
+          (b.scheduled_time || "").localeCompare(a.scheduled_time || "")
+        );
+        return {
+          dateKey,
+          posts: sortedItems,
+          postedCount: sortedItems.filter((x) => isPostedStatus(x.status)).length,
+          scheduledCount: sortedItems.filter((x) => isScheduledStatus(x.status))
+            .length,
+          failedCount: sortedItems.filter((x) => isFailedStatus(x.status)).length,
+        };
+      });
+  }, [posts, selectedMonth, historyFilter]);
+
+  const paginatedDayGroups = useMemo(
+    () => dayGroups.slice(0, visibleDayCount),
+    [dayGroups, visibleDayCount]
+  );
+
+  function toggleDayAccordion(dateKey: string) {
+    setExpandedDayKeys((prev) => ({
+      ...prev,
+      [dateKey]: !prev[dateKey],
+    }));
+  }
 
   async function submitPost() {
     if (!modalDate || !file) return;
@@ -564,119 +644,253 @@ export default function CalendarPage() {
               })}
             </div>
 
-            {/* Scheduled & Posted Content History (persists beyond rolling 30-day cards) */}
+            {/* Collapsible & Day-Grouped Scheduled / Posted History */}
             <section
-              className="mt-14 rounded-2xl border p-6"
+              className="mt-12 rounded-2xl border p-5"
               style={{
                 backgroundColor: "#14141b",
                 borderColor: "#2a2a36",
               }}
             >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-2xl font-bold">
+                  <h2 className="text-xl font-bold">
                     Scheduled &amp; Posted Content History
                   </h2>
-                  <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
-                    View all scheduled and already-published posts, accounts,
-                    times, and status—even after dates roll past the 30-day grid.
+                  <p className="mt-0.5 text-xs" style={{ color: "var(--muted)" }}>
+                    Grouped per day · {dayGroups.length} day
+                    {dayGroups.length === 1 ? "" : "s"} · {posts.length} total
+                    item{posts.length === 1 ? "" : "s"}
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {(
-                    [
-                      ["all", "All"],
-                      ["posted", "Posted"],
-                      ["scheduled", "Scheduled"],
-                      ["failed", "Failed"],
-                    ] as const
-                  ).map(([key, label]) => {
-                    const active = historyFilter === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => setHistoryFilter(key)}
-                        className="rounded-lg border px-3 py-1.5 text-xs font-medium transition"
-                        style={{
-                          backgroundColor: active ? "#7c3aed" : "#1b1b24",
-                          borderColor: active ? "#8b5cf6" : "#2f2f3d",
-                          color: active ? "#ffffff" : "#d4d4d8",
-                        }}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen((prev) => !prev)}
+                  className="rounded-lg border px-3 py-1.5 text-xs font-medium transition"
+                  style={{
+                    backgroundColor: "#1d1d26",
+                    borderColor: "#343442",
+                    color: "#e4e4e7",
+                  }}
+                >
+                  {historyOpen ? "Collapse card" : "Open history"}
+                </button>
               </div>
 
-              {filteredHistoryPosts.length === 0 ? (
-                <p
-                  className="mt-6 text-sm"
-                  style={{ color: "var(--muted)" }}
-                >
-                  No posts found for this filter.
-                </p>
-              ) : (
-                <div className="mt-6 space-y-3">
-                  {filteredHistoryPosts.map((item) => {
-                    const outsideRolling30 = !calendarDayKeys.has(
-                      item.scheduled_date
-                    );
-                    return (
-                      <div
-                        key={item.id}
-                        className="flex flex-col gap-3 rounded-xl border p-3.5 sm:flex-row sm:items-center sm:justify-between"
+              {historyOpen && (
+                <>
+                  <div className="mt-4 flex flex-col gap-3 border-t border-zinc-800 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          ["all", "All"],
+                          ["posted", "Posted"],
+                          ["scheduled", "Scheduled"],
+                          ["failed", "Failed"],
+                        ] as const
+                      ).map(([key, label]) => {
+                        const active = historyFilter === key;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              setHistoryFilter(key);
+                              setVisibleDayCount(10);
+                            }}
+                            className="rounded-lg border px-3 py-1.5 text-xs font-medium transition"
+                            style={{
+                              backgroundColor: active ? "#7c3aed" : "#1b1b24",
+                              borderColor: active ? "#8b5cf6" : "#2f2f3d",
+                              color: active ? "#ffffff" : "#d4d4d8",
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <label
+                        htmlFor="history-month-select"
+                        className="text-xs text-zinc-400"
+                      >
+                        Month:
+                      </label>
+                      <select
+                        id="history-month-select"
+                        value={selectedMonth}
+                        onChange={(e) => {
+                          setSelectedMonth(e.target.value);
+                          setVisibleDayCount(10);
+                        }}
+                        className="rounded-lg border px-2.5 py-1.5 text-xs text-white"
                         style={{
                           backgroundColor: "#0e0e13",
-                          borderColor: "#262632",
+                          borderColor: "#2f2f3d",
                         }}
                       >
-                        <div className="flex min-w-0 items-center gap-3.5">
-                          <MediaThumbnail
-                            src={item.media_url}
-                            thumbnailUrl={item.thumbnail_url}
-                            sizeClass="h-14 w-14"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-white">
-                              {item.caption || "(No caption)"}
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-400">
-                              <span className="font-medium text-zinc-200">
-                                {item.account_name || item.platform}
+                        <option value="all">All months</option>
+                        {availableMonths.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {paginatedDayGroups.length === 0 ? (
+                    <p
+                      className="mt-6 text-sm"
+                      style={{ color: "var(--muted)" }}
+                    >
+                      No posts found for this filter.
+                    </p>
+                  ) : (
+                    <div className="mt-5 space-y-3">
+                      {paginatedDayGroups.map((group) => {
+                        const isExpanded = Boolean(expandedDayKeys[group.dateKey]);
+                        const outsideRolling30 = !calendarDayKeys.has(
+                          group.dateKey
+                        );
+
+                        return (
+                          <div
+                            key={group.dateKey}
+                            className="rounded-xl border"
+                            style={{
+                              backgroundColor: "#0e0e13",
+                              borderColor: isExpanded ? "#363647" : "#262632",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleDayAccordion(group.dateKey)}
+                              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                            >
+                              <div className="flex flex-wrap items-center gap-2.5">
+                                <span className="text-xs font-mono text-violet-300">
+                                  {isExpanded ? "▼" : "▶"}
+                                </span>
+                                <span className="text-sm font-semibold text-white">
+                                  {group.dateKey}
+                                </span>
+                                <span className="rounded bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300">
+                                  {group.posts.length}{" "}
+                                  {group.posts.length === 1 ? "post" : "posts"}
+                                </span>
+                                {group.postedCount > 0 && (
+                                  <span className="rounded bg-emerald-950/80 px-2 py-0.5 text-[11px] text-emerald-300">
+                                    {group.postedCount} posted
+                                  </span>
+                                )}
+                                {group.scheduledCount > 0 && (
+                                  <span className="rounded bg-violet-950/80 px-2 py-0.5 text-[11px] text-violet-300">
+                                    {group.scheduledCount} scheduled
+                                  </span>
+                                )}
+                                {group.failedCount > 0 && (
+                                  <span className="rounded bg-red-950/80 px-2 py-0.5 text-[11px] text-red-300">
+                                    {group.failedCount} failed
+                                  </span>
+                                )}
+                                {outsideRolling30 && (
+                                  <span className="rounded bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400">
+                                    Outside 30d grid
+                                  </span>
+                                )}
+                              </div>
+
+                              <span className="text-xs text-zinc-400">
+                                {isExpanded ? "Hide details" : "Show details"}
                               </span>
-                              {item.platform ? ` (${item.platform})` : ""} ·
-                              Scheduled:{" "}
-                              <span className="text-zinc-200">
-                                {item.scheduled_date}{" "}
-                                {(item.scheduled_time || "").slice(0, 5)}
-                              </span>
-                              {item.timezone ? ` ${item.timezone}` : ""}
-                            </p>
-                            {item.published_at && (
-                              <p className="mt-0.5 text-[11px] text-emerald-400">
-                                Published at:{" "}
-                                {new Date(item.published_at).toLocaleString()}
-                              </p>
+                            </button>
+
+                            {isExpanded && (
+                              <div className="space-y-2.5 border-t border-zinc-800/80 px-4 py-3">
+                                {group.posts.map((item) => (
+                                  <div
+                                    key={item.id}
+                                    className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                    style={{
+                                      backgroundColor: "#14141c",
+                                      borderColor: "#252531",
+                                    }}
+                                  >
+                                    <div className="flex min-w-0 items-center gap-3">
+                                      <MediaThumbnail
+                                        src={item.media_url}
+                                        thumbnailUrl={item.thumbnail_url}
+                                        sizeClass="h-12 w-12"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium text-white">
+                                          {item.caption || "(No caption)"}
+                                        </p>
+                                        <p className="mt-0.5 text-xs text-zinc-400">
+                                          <span className="font-medium text-zinc-200">
+                                            {item.account_name || item.platform}
+                                          </span>
+                                          {item.platform
+                                            ? ` (${item.platform})`
+                                            : ""}{" "}
+                                          · Time:{" "}
+                                          <span className="text-zinc-200">
+                                            {(item.scheduled_time || "").slice(
+                                              0,
+                                              5
+                                            )}
+                                          </span>
+                                          {item.timezone
+                                            ? ` ${item.timezone}`
+                                            : ""}
+                                        </p>
+                                        {item.published_at && (
+                                          <p className="mt-0.5 text-[11px] text-emerald-400">
+                                            Published:{" "}
+                                            {new Date(
+                                              item.published_at
+                                            ).toLocaleString()}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="shrink-0 self-end sm:self-center">
+                                      <StatusBadge status={item.status} />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
-                        </div>
+                        );
+                      })}
 
-                        <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
-                          {outsideRolling30 && (
-                            <span className="rounded bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">
-                              Outside 30d window
-                            </span>
-                          )}
-                          <StatusBadge status={item.status} />
+                      {dayGroups.length > visibleDayCount && (
+                        <div className="pt-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setVisibleDayCount((prev) => prev + 10)
+                            }
+                            className="rounded-lg border px-4 py-2 text-xs font-medium text-zinc-200 transition hover:border-violet-400"
+                            style={{
+                              backgroundColor: "#1b1b24",
+                              borderColor: "#323242",
+                            }}
+                          >
+                            Show more days ({dayGroups.length - visibleDayCount}{" "}
+                            remaining)
+                          </button>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </section>
           </>
