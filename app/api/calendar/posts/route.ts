@@ -102,7 +102,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("calendar_posts")
       .select(
-        "id, platform, scheduled_date, scheduled_time, timezone, media_url, thumbnail_url, caption, status, account_id, published_at, created_at"
+        "id, platform, scheduled_date, scheduled_time, timezone, media_url, thumbnail_url, caption, status, account_id, published_at, error_message, created_at"
       )
       .eq("user_id", user.id)
       .order("scheduled_date", { ascending: false })
@@ -264,6 +264,106 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const {
+      id,
+      scheduled_date,
+      scheduled_time,
+      timezone,
+      media_url,
+      caption,
+    } = body;
+
+    if (!id || !scheduled_date || !scheduled_time) {
+      return NextResponse.json(
+        { error: "id, scheduled_date, and scheduled_time are required" },
+        { status: 400 }
+      );
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from("calendar_posts")
+      .select("id, status, media_url, caption, timezone")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (fetchErr) {
+      return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+    }
+
+    if (!existing) {
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    }
+
+    if (isPublishedStatus(existing.status)) {
+      return NextResponse.json(
+        {
+          error:
+            "This post is already published and cannot be rescheduled.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const effectiveTz = timezone || existing.timezone || "UTC";
+    const normalizedRequestedTime = normalizeTimeStr(scheduled_time);
+    const nowInTz = getNowInTimeZone(effectiveTz);
+
+    let finalTime = normalizedRequestedTime;
+    let adjustedFromPastTime = false;
+
+    if (
+      scheduled_date === nowInTz.dateKey &&
+      normalizedRequestedTime < nowInTz.timeStr
+    ) {
+      finalTime = addMinutesToTimeStr(nowInTz.timeStr, 5);
+      adjustedFromPastTime = true;
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from("calendar_posts")
+      .update({
+        scheduled_date,
+        scheduled_time: finalTime,
+        timezone: effectiveTz,
+        media_url: media_url || existing.media_url,
+        caption: caption !== undefined ? caption || null : existing.caption,
+        status: "scheduled",
+        error_message: null,
+      })
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .select()
+      .single();
+
+    if (updateErr) {
+      console.error("calendar PATCH error:", updateErr);
+      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      post: updated,
+      adjustedFromPastTime,
+    });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
     const supabase = await createClient();
@@ -283,7 +383,7 @@ export async function DELETE(req: NextRequest) {
 
     const { data: targetPost, error: fetchErr } = await supabase
       .from("calendar_posts")
-      .select("id, scheduled_date, platform, account_id, status")
+      .select("id, status")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -300,35 +400,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "This post has already been published and cannot be deleted or rescheduled.",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Check if content has already been posted for the same platform/account on that day
-    const { data: dayRows } = await supabase
-      .from("calendar_posts")
-      .select("id, platform, account_id, status")
-      .eq("user_id", user.id)
-      .eq("scheduled_date", targetPost.scheduled_date);
-
-    const alreadyPostedSamePlatformDay = (dayRows || []).some((r) => {
-      if (!isPublishedStatus(r.status)) return false;
-      const sameAccount =
-        targetPost.account_id && r.account_id === targetPost.account_id;
-      const samePlatform =
-        targetPost.platform &&
-        (r.platform || "").toLowerCase() ===
-          (targetPost.platform || "").toLowerCase();
-      return Boolean(sameAccount || samePlatform);
-    });
-
-    if (alreadyPostedSamePlatformDay) {
-      return NextResponse.json(
-        {
-          error:
-            "Content has already been posted for this platform on this day; delete/reschedule is locked.",
+            "This post has already been published and cannot be deleted.",
         },
         { status: 400 }
       );

@@ -18,6 +18,7 @@ type CalendarPost = {
   account_id: string | null;
   account_name?: string | null;
   published_at?: string | null;
+  error_message?: string | null;
   created_at?: string;
 };
 
@@ -244,11 +245,10 @@ export default function CalendarPage() {
   const [notice, setNotice] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Strictly per-date minimize & maximize state (never alters other dates)
-  const [minimizedByDate, setMinimizedByDate] = useState<
+  // Per-date collapsed state toggled only by "+" / "-" button
+  const [collapsedByDate, setCollapsedByDate] = useState<
     Record<string, boolean>
   >({});
-  const [maximizedDateKey, setMaximizedDateKey] = useState<string | null>(null);
 
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyFilter, setHistoryFilter] = useState<
@@ -260,7 +260,12 @@ export default function CalendarPage() {
   );
   const [visibleDayCount, setVisibleDayCount] = useState<number>(10);
 
-  // Modal & customization state
+  // When editing an existing post via Reschedule, store its id to update in place
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingAccountLabel, setEditingAccountLabel] = useState<string | null>(
+    null
+  );
+
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [reusedMediaUrl, setReusedMediaUrl] = useState<string | null>(null);
@@ -298,29 +303,11 @@ export default function CalendarPage() {
     return time < nowHHMM;
   }, [modalDate, todayKey, time, timezone]);
 
-  function isPostLocked(post: CalendarPost): boolean {
-    return isPostedStatus(post.status);
-  }
-
-  function handleSingleDayMinimize(dateKey: string) {
-    setMinimizedByDate((prev) => {
-      const nextMinimized = !prev[dateKey];
-      if (nextMinimized && maximizedDateKey === dateKey) {
-        setMaximizedDateKey(null);
-      }
-      return {
-        ...prev,
-        [dateKey]: nextMinimized,
-      };
-    });
-  }
-
-  function handleSingleDayMaximize(dateKey: string) {
-    setMinimizedByDate((prev) => ({
+  function toggleDateCollapse(dateKey: string) {
+    setCollapsedByDate((prev) => ({
       ...prev,
-      [dateKey]: false,
+      [dateKey]: !prev[dateKey],
     }));
-    setMaximizedDateKey((prev) => (prev === dateKey ? null : dateKey));
   }
 
   const load = useCallback(async () => {
@@ -375,6 +362,8 @@ export default function CalendarPage() {
 
   function openModalForDate(dateKey: string) {
     setError("");
+    setEditingPostId(null);
+    setEditingAccountLabel(null);
     setFile(null);
     setReusedMediaUrl(null);
     setPerAccountFiles({});
@@ -394,38 +383,31 @@ export default function CalendarPage() {
   }
 
   function openRescheduleModal(post: CalendarPost) {
-    if (isPostLocked(post)) {
-      setError(
-        "This post has already been published and cannot be rescheduled."
-      );
+    if (isPostedStatus(post.status)) {
+      setError("Published posts are locked and cannot be rescheduled.");
       return;
     }
     setError("");
+    setEditingPostId(post.id);
+    setEditingAccountLabel(
+      `${post.account_name || post.platform || "Account"}${post.platform ? ` (${post.platform})` : ""}`
+    );
     setFile(null);
     setPerAccountFiles({});
     setUsePerAccountFiles(false);
     setReusedMediaUrl(post.media_url || null);
     setCaption(post.caption || "");
-    setPerAccountCaptions(
-      post.account_id ? { [post.account_id]: post.caption || "" } : {}
-    );
+    setPerAccountCaptions({});
     setUsePerAccountCaptions(false);
     const targetDate = post.scheduled_date || todayKey;
     const postTime = (post.scheduled_time || "09:00").slice(0, 5);
     setTime(postTime);
-    if (post.account_id) {
-      setSelectedAccountIds([post.account_id]);
-    } else if (accounts[0]?.id) {
-      setSelectedAccountIds([accounts[0].id]);
-    }
     setModalDate(targetDate);
   }
 
   async function handleDeletePost(post: CalendarPost) {
-    if (isPostLocked(post)) {
-      setError(
-        "This post has already been published and cannot be deleted."
-      );
+    if (isPostedStatus(post.status)) {
+      setError("Published posts are locked and cannot be deleted.");
       return;
     }
 
@@ -442,7 +424,7 @@ export default function CalendarPage() {
         throw new Error(json.error || "Failed to delete post");
       }
       setNotice(
-        `Deleted ${post.account_name || post.platform || "post"} scheduled for ${post.scheduled_date} ${(post.scheduled_time || "").slice(0, 5)}.`
+        `Deleted ${post.account_name || post.platform || "post"} (${(post.scheduled_time || "").slice(0, 5)}).`
       );
       await load();
     } catch (e) {
@@ -571,7 +553,11 @@ export default function CalendarPage() {
   );
 
   const canSubmit = useMemo(() => {
-    if (!modalDate || selectedAccountIds.length === 0 || saving) return false;
+    if (!modalDate || saving) return false;
+    if (editingPostId) {
+      return Boolean(file || reusedMediaUrl);
+    }
+    if (selectedAccountIds.length === 0) return false;
     if (file || reusedMediaUrl) return true;
     if (usePerAccountFiles) {
       return chosenAccounts.some((acc) => Boolean(perAccountFiles[acc.id]));
@@ -579,8 +565,9 @@ export default function CalendarPage() {
     return false;
   }, [
     modalDate,
-    selectedAccountIds.length,
     saving,
+    editingPostId,
+    selectedAccountIds.length,
     file,
     reusedMediaUrl,
     usePerAccountFiles,
@@ -606,78 +593,108 @@ export default function CalendarPage() {
         defaultUrl = await uploadMediaFile(user.id, modalDate, file, "default");
       }
 
-      const accountUrlMap = new Map<string, string>();
-      if (usePerAccountFiles) {
-        for (const acc of chosenAccounts) {
-          const customFile = perAccountFiles[acc.id];
-          if (customFile) {
-            const uploadedUrl = await uploadMediaFile(
-              user.id,
-              modalDate,
-              customFile,
-              `${acc.platform.toLowerCase()}-${acc.id.slice(0, 6)}`
-            );
-            accountUrlMap.set(acc.id, uploadedUrl);
-          }
-        }
-      }
-
-      let anyAdjusted = false;
-      let scheduledTimeUsed = time;
-      let scheduledCount = 0;
-
-      for (const acc of chosenAccounts) {
-        const mediaUrlForAccount = accountUrlMap.get(acc.id) || defaultUrl;
-        if (!mediaUrlForAccount) {
-          throw new Error(
-            `Please select a file for ${acc.account_name || acc.platform} or upload a default file.`
-          );
-        }
-
-        const customCaption = usePerAccountCaptions
-          ? (perAccountCaptions[acc.id] ?? "").trim()
-          : "";
-        const finalCaption = customCaption || caption;
-
+      // In-place update when rescheduling an existing post (keeps same account, no new duplicate row)
+      if (editingPostId) {
         const res = await fetch("/api/calendar/posts", {
-          method: "POST",
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            id: editingPostId,
             scheduled_date: modalDate,
             scheduled_time: time.length === 5 ? `${time}:00` : time,
             timezone,
-            media_url: mediaUrlForAccount,
-            caption: finalCaption,
-            account_id: acc.id,
-            platform: acc.platform.toLowerCase(),
+            media_url: defaultUrl,
+            caption,
           }),
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(
-            json.error || `Failed to schedule on ${acc.platform}`
-          );
+          throw new Error(json.error || "Failed to reschedule post");
         }
-        scheduledCount += 1;
-        if (json.adjustedFromPastTime) {
-          anyAdjusted = true;
-          if (json.post?.scheduled_time) {
-            scheduledTimeUsed = String(json.post.scheduled_time).slice(0, 5);
-          }
-        }
-      }
-
-      if (anyAdjusted) {
+        const updatedTime = json.post?.scheduled_time
+          ? String(json.post.scheduled_time).slice(0, 5)
+          : time;
         setNotice(
-          `Selected time had already passed for today—scheduled once for the next coming time (${scheduledTimeUsed}) on ${modalDate}.`
+          json.adjustedFromPastTime
+            ? `Updated schedule on ${editingAccountLabel || "account"} to ${modalDate} ${updatedTime} (next coming time today).`
+            : `Updated schedule on ${editingAccountLabel || "account"} to ${modalDate} ${updatedTime}.`
         );
       } else {
-        setNotice(
-          `Scheduled once for ${modalDate} at ${time} (${scheduledCount} item${scheduledCount > 1 ? "s" : ""}).`
-        );
+        const accountUrlMap = new Map<string, string>();
+        if (usePerAccountFiles) {
+          for (const acc of chosenAccounts) {
+            const customFile = perAccountFiles[acc.id];
+            if (customFile) {
+              const uploadedUrl = await uploadMediaFile(
+                user.id,
+                modalDate,
+                customFile,
+                `${acc.platform.toLowerCase()}-${acc.id.slice(0, 6)}`
+              );
+              accountUrlMap.set(acc.id, uploadedUrl);
+            }
+          }
+        }
+
+        let anyAdjusted = false;
+        let scheduledTimeUsed = time;
+        let scheduledCount = 0;
+
+        for (const acc of chosenAccounts) {
+          const mediaUrlForAccount = accountUrlMap.get(acc.id) || defaultUrl;
+          if (!mediaUrlForAccount) {
+            throw new Error(
+              `Please select a file for ${acc.account_name || acc.platform} or upload a default file.`
+            );
+          }
+
+          const customCaption = usePerAccountCaptions
+            ? (perAccountCaptions[acc.id] ?? "").trim()
+            : "";
+          const finalCaption = customCaption || caption;
+
+          const res = await fetch("/api/calendar/posts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              scheduled_date: modalDate,
+              scheduled_time: time.length === 5 ? `${time}:00` : time,
+              timezone,
+              media_url: mediaUrlForAccount,
+              caption: finalCaption,
+              account_id: acc.id,
+              platform: acc.platform.toLowerCase(),
+            }),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(
+              json.error || `Failed to schedule on ${acc.platform}`
+            );
+          }
+          scheduledCount += 1;
+          if (json.adjustedFromPastTime) {
+            anyAdjusted = true;
+            if (json.post?.scheduled_time) {
+              scheduledTimeUsed = String(json.post.scheduled_time).slice(0, 5);
+            }
+          }
+        }
+
+        if (anyAdjusted) {
+          setNotice(
+            `Selected time had already passed for today—scheduled once for the next coming time (${scheduledTimeUsed}) on ${modalDate}.`
+          );
+        } else {
+          setNotice(
+            `Scheduled once for ${modalDate} at ${time} (${scheduledCount} item${scheduledCount > 1 ? "s" : ""}).`
+          );
+        }
       }
 
       setModalDate(null);
+      setEditingPostId(null);
+      setEditingAccountLabel(null);
       setFile(null);
       setReusedMediaUrl(null);
       setPerAccountFiles({});
@@ -749,8 +766,7 @@ export default function CalendarPage() {
               {days.map((d) => {
                 const key = toDateKey(d);
                 const dayPosts = postsForDay(key);
-                const isMinimized = Boolean(minimizedByDate[key]);
-                const isMaximized = maximizedDateKey === key;
+                const isCollapsed = Boolean(collapsedByDate[key]);
                 const label = d.toLocaleDateString(undefined, {
                   weekday: "short",
                   month: "short",
@@ -760,14 +776,10 @@ export default function CalendarPage() {
                 return (
                   <div
                     key={key}
-                    className={`flex flex-col rounded-2xl border p-4 transition ${
-                      isMaximized
-                        ? "sm:col-span-2 lg:col-span-3 xl:col-span-4 ring-1 ring-violet-500/50"
-                        : ""
-                    }`}
+                    className="flex flex-col rounded-2xl border p-4"
                     style={{
                       background: "var(--card)",
-                      borderColor: isMaximized ? "#7c3aed" : "var(--border)",
+                      borderColor: "var(--border)",
                     }}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -782,19 +794,14 @@ export default function CalendarPage() {
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => handleSingleDayMinimize(key)}
-                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] font-medium text-zinc-300 hover:border-zinc-500"
-                          title={isMinimized ? "Restore day card" : "Minimize day card"}
+                          onClick={() => toggleDateCollapse(key)}
+                          className="h-7 w-7 rounded-lg border border-zinc-700 bg-zinc-900 text-center text-sm font-semibold leading-none text-zinc-200 hover:border-zinc-500"
+                          title={isCollapsed ? "Expand day" : "Minimize day"}
+                          aria-label={
+                            isCollapsed ? `Expand ${label}` : `Minimize ${label}`
+                          }
                         >
-                          {isMinimized ? "+" : "−"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSingleDayMaximize(key)}
-                          className="rounded-lg border border-violet-500/35 bg-violet-950/40 px-2 py-1 text-[11px] font-medium text-violet-200 hover:bg-violet-900/50"
-                          title="Maximize day card"
-                        >
-                          Maximize
+                          {isCollapsed ? "+" : "−"}
                         </button>
                         <button
                           type="button"
@@ -810,14 +817,8 @@ export default function CalendarPage() {
                       </div>
                     </div>
 
-                    {!isMinimized && (
-                      <div
-                        className={`mt-3 ${
-                          isMaximized
-                            ? "grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-                            : "space-y-2.5"
-                        }`}
-                      >
+                    {!isCollapsed && (
+                      <div className="mt-3 space-y-2.5">
                         {dayPosts.length === 0 && (
                           <p
                             className="text-xs"
@@ -827,7 +828,7 @@ export default function CalendarPage() {
                           </p>
                         )}
                         {dayPosts.map((p) => {
-                          const locked = isPostLocked(p);
+                          const isPublished = isPostedStatus(p.status);
                           return (
                             <div
                               key={p.id}
@@ -857,7 +858,7 @@ export default function CalendarPage() {
                                 </div>
                               </div>
 
-                              {locked ? (
+                              {isPublished ? (
                                 <p className="mt-2 border-t border-zinc-800/70 pt-1.5 text-[11px] text-emerald-300/90">
                                   Published · locked
                                 </p>
@@ -1060,7 +1061,7 @@ export default function CalendarPage() {
                             {isExpanded && (
                               <div className="space-y-2.5 border-t border-zinc-800/80 px-4 py-3">
                                 {group.posts.map((item) => {
-                                  const locked = isPostLocked(item);
+                                  const isPublished = isPostedStatus(item.status);
                                   return (
                                     <div
                                       key={item.id}
@@ -1098,6 +1099,11 @@ export default function CalendarPage() {
                                               ? ` ${item.timezone}`
                                               : ""}
                                           </p>
+                                          {item.error_message && (
+                                            <p className="mt-0.5 text-[11px] text-red-300">
+                                              Reason: {item.error_message}
+                                            </p>
+                                          )}
                                           {item.published_at && (
                                             <p className="mt-0.5 text-[11px] text-emerald-400">
                                               Published:{" "}
@@ -1111,7 +1117,7 @@ export default function CalendarPage() {
 
                                       <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
                                         <StatusBadge status={item.status} />
-                                        {locked ? (
+                                        {isPublished ? (
                                           <span className="rounded-lg border border-emerald-500/25 bg-emerald-950/30 px-2.5 py-1 text-xs text-emerald-300">
                                             Locked (published)
                                           </span>
@@ -1189,11 +1195,14 @@ export default function CalendarPage() {
           >
             <div className="border-b border-zinc-800 pb-3">
               <h2 className="text-xl font-semibold">
-                Schedule post · {modalDate}
+                {editingPostId
+                  ? `Reschedule · ${editingAccountLabel || "Post"}`
+                  : `Schedule post · ${modalDate}`}
               </h2>
               <p className="mt-1 text-xs text-zinc-400">
-                Scheduled time applies to each selected account; multiple posts
-                can be scheduled for the same account.
+                {editingPostId
+                  ? "Updates this post's time/schedule on the same account without creating a duplicate."
+                  : "Scheduled time applies to each selected account; multiple posts can be scheduled for the same account."}
               </p>
             </div>
 
@@ -1265,7 +1274,7 @@ export default function CalendarPage() {
                     ) : reusedMediaUrl ? (
                       <>
                         <p className="truncate text-sm font-medium text-violet-200">
-                          Using existing media from rescheduled post
+                          Using existing media
                         </p>
                         <p className="mt-0.5 text-xs text-zinc-400">
                           Click to upload a different file
@@ -1296,82 +1305,84 @@ export default function CalendarPage() {
               </div>
             </div>
 
-            {/* Account Selection */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">
-                  Accounts ({selectedAccountIds.length} selected)
-                </span>
-                {accounts.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={toggleSelectAll}
-                    className="rounded-md border px-2.5 py-1 text-xs font-medium"
-                    style={{
-                      backgroundColor: "#1f1f29",
-                      borderColor: "#383847",
-                      color: "#c4b5fd",
-                    }}
-                  >
-                    {allSelected ? "Deselect all" : "Select all"}
-                  </button>
-                )}
-              </div>
+            {/* Account Selection (hidden when rescheduling an existing post in place) */}
+            {!editingPostId && (
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium">
+                    Accounts ({selectedAccountIds.length} selected)
+                  </span>
+                  {accounts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="rounded-md border px-2.5 py-1 text-xs font-medium"
+                      style={{
+                        backgroundColor: "#1f1f29",
+                        borderColor: "#383847",
+                        color: "#c4b5fd",
+                      }}
+                    >
+                      {allSelected ? "Deselect all" : "Select all"}
+                    </button>
+                  )}
+                </div>
 
-              <div
-                className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-3 sm:grid-cols-2"
-                style={{
-                  backgroundColor: "#0d0d12",
-                  borderColor: "#282834",
-                }}
-              >
-                {accounts.length === 0 ? (
-                  <p className="col-span-2 text-xs text-zinc-400">
-                    No accounts available (X is excluded).
-                  </p>
-                ) : (
-                  accounts.map((acc) => {
-                    const checked = selectedAccountIds.includes(acc.id);
-                    return (
-                      <label
-                        key={acc.id}
-                        className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition"
-                        style={{
-                          backgroundColor: checked ? "#1d1b2e" : "#14141c",
-                          borderColor: checked ? "#7c3aed" : "#262632",
-                        }}
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleAccount(acc.id)}
-                            className="h-4 w-4 shrink-0 accent-violet-500"
-                          />
-                          <span className="truncate text-xs font-medium">
-                            {acc.account_name || acc.id}
+                <div
+                  className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-3 sm:grid-cols-2"
+                  style={{
+                    backgroundColor: "#0d0d12",
+                    borderColor: "#282834",
+                  }}
+                >
+                  {accounts.length === 0 ? (
+                    <p className="col-span-2 text-xs text-zinc-400">
+                      No accounts available (X is excluded).
+                    </p>
+                  ) : (
+                    accounts.map((acc) => {
+                      const checked = selectedAccountIds.includes(acc.id);
+                      return (
+                        <label
+                          key={acc.id}
+                          className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition"
+                          style={{
+                            backgroundColor: checked ? "#1d1b2e" : "#14141c",
+                            borderColor: checked ? "#7c3aed" : "#262632",
+                          }}
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleAccount(acc.id)}
+                              className="h-4 w-4 shrink-0 accent-violet-500"
+                            />
+                            <span className="truncate text-xs font-medium">
+                              {acc.account_name || acc.id}
+                            </span>
                           </span>
-                        </span>
-                        <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-300">
-                          {acc.platform}
-                        </span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
+                          <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-300">
+                            {acc.platform}
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
 
-              <Link
-                href="/accounts"
-                className="inline-block text-xs"
-                style={{ color: "#a78bfa" }}
-              >
-                Connect another account →
-              </Link>
-            </div>
+                <Link
+                  href="/accounts"
+                  className="inline-block text-xs"
+                  style={{ color: "#a78bfa" }}
+                >
+                  Connect another account →
+                </Link>
+              </div>
+            )}
 
             {/* Per-Account Media Option */}
-            {chosenAccounts.length > 0 && (
+            {!editingPostId && chosenAccounts.length > 0 && (
               <div className="rounded-xl border border-zinc-800 bg-[#0d0d12] p-3.5">
                 <label className="flex cursor-pointer items-center justify-between gap-2 text-xs font-medium text-zinc-200">
                   <span>Different media file per selected account</span>
@@ -1444,7 +1455,7 @@ export default function CalendarPage() {
                 <label className="text-sm font-medium">
                   Default caption / description
                 </label>
-                {chosenAccounts.length > 0 && (
+                {!editingPostId && chosenAccounts.length > 0 && (
                   <label className="flex cursor-pointer items-center gap-2 text-xs text-violet-300">
                     <input
                       type="checkbox"
@@ -1471,42 +1482,48 @@ export default function CalendarPage() {
                 }}
               />
 
-              {usePerAccountCaptions && chosenAccounts.length > 0 && (
-                <div className="space-y-3 rounded-xl border border-zinc-800 bg-[#0d0d12] p-3.5">
-                  {chosenAccounts.map((acc) => (
-                    <div key={acc.id} className="space-y-1.5">
-                      <label className="block text-xs font-medium text-zinc-200">
-                        {acc.account_name || acc.id}{" "}
-                        <span className="uppercase text-violet-300">
-                          ({acc.platform})
-                        </span>
-                      </label>
-                      <textarea
-                        value={perAccountCaptions[acc.id] ?? ""}
-                        onChange={(e) =>
-                          setPerAccountCaptions((prev) => ({
-                            ...prev,
-                            [acc.id]: e.target.value,
-                          }))
-                        }
-                        placeholder="Leave blank to use default caption..."
-                        className="min-h-16 w-full rounded-lg border p-2.5 text-xs"
-                        style={{
-                          backgroundColor: "#14141c",
-                          borderColor: "#2c2c38",
-                          color: "#f4f4f6",
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
+              {!editingPostId &&
+                usePerAccountCaptions &&
+                chosenAccounts.length > 0 && (
+                  <div className="space-y-3 rounded-xl border border-zinc-800 bg-[#0d0d12] p-3.5">
+                    {chosenAccounts.map((acc) => (
+                      <div key={acc.id} className="space-y-1.5">
+                        <label className="block text-xs font-medium text-zinc-200">
+                          {acc.account_name || acc.id}{" "}
+                          <span className="uppercase text-violet-300">
+                            ({acc.platform})
+                          </span>
+                        </label>
+                        <textarea
+                          value={perAccountCaptions[acc.id] ?? ""}
+                          onChange={(e) =>
+                            setPerAccountCaptions((prev) => ({
+                              ...prev,
+                              [acc.id]: e.target.value,
+                            }))
+                          }
+                          placeholder="Leave blank to use default caption..."
+                          className="min-h-16 w-full rounded-lg border p-2.5 text-xs"
+                          style={{
+                            backgroundColor: "#14141c",
+                            borderColor: "#2c2c38",
+                            color: "#f4f4f6",
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
             </div>
 
             <div className="flex justify-end gap-3 border-t border-zinc-800 pt-4">
               <button
                 type="button"
-                onClick={() => setModalDate(null)}
+                onClick={() => {
+                  setModalDate(null);
+                  setEditingPostId(null);
+                  setEditingAccountLabel(null);
+                }}
                 className="rounded-xl border px-4 py-2 text-sm"
                 style={{
                   backgroundColor: "#1d1d26",
@@ -1528,7 +1545,9 @@ export default function CalendarPage() {
               >
                 {saving
                   ? "Saving…"
-                  : `Schedule${selectedAccountIds.length > 1 ? ` (${selectedAccountIds.length})` : ""}`}
+                  : editingPostId
+                    ? "Update schedule"
+                    : `Schedule${selectedAccountIds.length > 1 ? ` (${selectedAccountIds.length})` : ""}`}
               </button>
             </div>
           </div>
