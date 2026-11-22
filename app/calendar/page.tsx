@@ -244,11 +244,11 @@ export default function CalendarPage() {
   const [notice, setNotice] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Per-day minimize & extracted (expanded full-width) states across all days
-  const [minimizedDays, setMinimizedDays] = useState<Record<string, boolean>>(
-    {}
-  );
-  const [extractedDayKey, setExtractedDayKey] = useState<string | null>(null);
+  // Strictly per-date minimize & maximize state (never alters other dates)
+  const [minimizedByDate, setMinimizedByDate] = useState<
+    Record<string, boolean>
+  >({});
+  const [maximizedDateKey, setMaximizedDateKey] = useState<string | null>(null);
 
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyFilter, setHistoryFilter] = useState<
@@ -298,33 +298,29 @@ export default function CalendarPage() {
     return time < nowHHMM;
   }, [modalDate, todayKey, time, timezone]);
 
-  // Only lock individual posts that are already published
   function isPostLocked(post: CalendarPost): boolean {
     return isPostedStatus(post.status);
   }
 
-  function toggleMinimizeDay(dateKey: string) {
-    setMinimizedDays((prev) => ({
-      ...prev,
-      [dateKey]: !prev[dateKey],
-    }));
+  function handleSingleDayMinimize(dateKey: string) {
+    setMinimizedByDate((prev) => {
+      const nextMinimized = !prev[dateKey];
+      if (nextMinimized && maximizedDateKey === dateKey) {
+        setMaximizedDateKey(null);
+      }
+      return {
+        ...prev,
+        [dateKey]: nextMinimized,
+      };
+    });
   }
 
-  function toggleExtractDay(dateKey: string) {
-    setMinimizedDays((prev) => ({
+  function handleSingleDayMaximize(dateKey: string) {
+    setMinimizedByDate((prev) => ({
       ...prev,
       [dateKey]: false,
     }));
-    setExtractedDayKey((prev) => (prev === dateKey ? null : dateKey));
-  }
-
-  function setAllDaysMinimized(value: boolean) {
-    const next: Record<string, boolean> = {};
-    for (const d of days) {
-      next[toDateKey(d)] = value;
-    }
-    setMinimizedDays(next);
-    if (value) setExtractedDayKey(null);
+    setMaximizedDateKey((prev) => (prev === dateKey ? null : dateKey));
   }
 
   const load = useCallback(async () => {
@@ -704,49 +700,11 @@ export default function CalendarPage() {
         <p className="text-sm font-medium" style={{ color: "#a78bfa" }}>
           ✦ Medium plan
         </p>
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-4xl font-bold">Calendar</h1>
-            <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
-              Rolling 30-day schedule · multiple contents allowed per account ·
-              one-time per post · 24-hour ({timezone})
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {extractedDayKey && (
-              <button
-                type="button"
-                onClick={() => setExtractedDayKey(null)}
-                className="rounded-lg border border-violet-500/40 bg-violet-950/50 px-3 py-1.5 text-xs font-medium text-violet-200"
-              >
-                Reset grid layout
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setAllDaysMinimized(true)}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium text-zinc-200"
-              style={{
-                backgroundColor: "#181820",
-                borderColor: "#2e2e3b",
-              }}
-            >
-              Minimize all days
-            </button>
-            <button
-              type="button"
-              onClick={() => setAllDaysMinimized(false)}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium text-zinc-200"
-              style={{
-                backgroundColor: "#181820",
-                borderColor: "#2e2e3b",
-              }}
-            >
-              Expand all days
-            </button>
-          </div>
-        </div>
+        <h1 className="mt-2 text-4xl font-bold">Calendar</h1>
+        <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
+          Rolling 30-day schedule · multiple contents allowed per account ·
+          one-time per post · 24-hour ({timezone})
+        </p>
 
         {notice && (
           <div
@@ -787,12 +745,12 @@ export default function CalendarPage() {
           </p>
         ) : (
           <>
-            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="mt-10 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {days.map((d) => {
                 const key = toDateKey(d);
                 const dayPosts = postsForDay(key);
-                const isMinimized = Boolean(minimizedDays[key]);
-                const isExtracted = extractedDayKey === key;
+                const isMinimized = Boolean(minimizedByDate[key]);
+                const isMaximized = maximizedDateKey === key;
                 const label = d.toLocaleDateString(undefined, {
                   weekday: "short",
                   month: "short",
@@ -803,15 +761,13 @@ export default function CalendarPage() {
                   <div
                     key={key}
                     className={`flex flex-col rounded-2xl border p-4 transition ${
-                      isMinimized ? "min-h-0" : "min-h-40"
-                    } ${
-                      isExtracted
+                      isMaximized
                         ? "sm:col-span-2 lg:col-span-3 xl:col-span-4 ring-1 ring-violet-500/50"
                         : ""
                     }`}
                     style={{
                       background: "var(--card)",
-                      borderColor: isExtracted ? "#7c3aed" : "var(--border)",
+                      borderColor: isMaximized ? "#7c3aed" : "var(--border)",
                     }}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -823,26 +779,22 @@ export default function CalendarPage() {
                         </p>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => toggleMinimizeDay(key)}
+                          onClick={() => handleSingleDayMinimize(key)}
                           className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] font-medium text-zinc-300 hover:border-zinc-500"
-                          title={isMinimized ? "Expand day card" : "Minimize day card"}
+                          title={isMinimized ? "Restore day card" : "Minimize day card"}
                         >
-                          {isMinimized ? "Expand" : "Minimize"}
+                          {isMinimized ? "+" : "−"}
                         </button>
                         <button
                           type="button"
-                          onClick={() => toggleExtractDay(key)}
+                          onClick={() => handleSingleDayMaximize(key)}
                           className="rounded-lg border border-violet-500/35 bg-violet-950/40 px-2 py-1 text-[11px] font-medium text-violet-200 hover:bg-violet-900/50"
-                          title={
-                            isExtracted
-                              ? "Return day card to grid"
-                              : "Extract day card across full width"
-                          }
+                          title="Maximize day card"
                         >
-                          {isExtracted ? "Collapse row" : "Extract"}
+                          Maximize
                         </button>
                         <button
                           type="button"
@@ -860,8 +812,8 @@ export default function CalendarPage() {
 
                     {!isMinimized && (
                       <div
-                        className={`mt-3 flex-1 ${
-                          isExtracted
+                        className={`mt-3 ${
+                          isMaximized
                             ? "grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
                             : "space-y-2.5"
                         }`}
