@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://postoll.vercel.app";
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,20 +10,51 @@ export async function GET(request: NextRequest) {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     const error = searchParams.get("error");
+    const errorDescription = searchParams.get("error_description");
 
     if (error) {
+      const msg = errorDescription ? `${error}: ${errorDescription}` : error;
       return NextResponse.redirect(
-        new URL(`/accounts?error=${encodeURIComponent(error)}`, request.url)
+        new URL(`/accounts?error=${encodeURIComponent(msg)}`, SITE)
       );
     }
 
     if (!code) {
       return NextResponse.redirect(
-        new URL(
-          "/accounts?error=Missing_TikTok_authorization_code",
-          request.url
-        )
+        new URL("/accounts?error=Missing_TikTok_authorization_code", SITE)
       );
+    }
+
+    // 1) Resolve authenticated user from Supabase cookies first (just like Facebook callback)
+    let targetUserId: string | null = null;
+    try {
+      const serverSupabase = await createServerClient();
+      const {
+        data: { user },
+      } = await serverSupabase.auth.getUser();
+      if (user?.id) {
+        targetUserId = user.id;
+      }
+    } catch (e) {
+      console.warn("Could not read server Supabase session in TikTok callback:", e);
+    }
+
+    // 2) Fallback: decode userId from state if cookies weren't sent across redirect
+    if (!targetUserId && state) {
+      try {
+        const decodedState = JSON.parse(
+          Buffer.from(state, "base64").toString("utf-8")
+        );
+        if (decodedState?.userId && typeof decodedState.userId === "string") {
+          targetUserId = decodedState.userId;
+        }
+      } catch {
+        // Ignore if state is a plain CSRF nonce rather than base64 JSON
+      }
+    }
+
+    if (!targetUserId) {
+      return NextResponse.redirect(new URL("/login", SITE));
     }
 
     const supabaseUrl =
@@ -29,47 +63,19 @@ export async function GET(request: NextRequest) {
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return NextResponse.redirect(
-        new URL(
-          "/accounts?error=Missing_Supabase_server_config",
-          request.url
-        )
+        new URL("/accounts?error=Missing_Supabase_server_config", SITE)
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    const supabaseAdmin = createAdminClient(supabaseUrl, supabaseServiceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-
-    let targetUserId: string | null = null;
-    if (state) {
-      try {
-        const decodedState = JSON.parse(
-          Buffer.from(state, "base64").toString("utf-8")
-        );
-        if (decodedState?.userId && typeof decodedState.userId === "string") {
-          targetUserId = decodedState.userId;
-        }
-      } catch (e) {
-        console.warn("Could not parse state parameter:", e);
-      }
-    }
-
-    if (!targetUserId) {
-      return NextResponse.redirect(
-        new URL(
-          "/accounts?error=Missing_user_session_in_TikTok_state",
-          request.url
-        )
-      );
-    }
 
     const clientKey =
       process.env.TIKTOK_CLIENT_KEY || process.env.NEXT_PUBLIC_TIKTOK_CLIENT_KEY;
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
     const redirectUri =
-      process.env.TIKTOK_REDIRECT_URI || `${appUrl}/api/auth/tiktok/callback`;
+      process.env.TIKTOK_REDIRECT_URI || `${SITE}/api/auth/tiktok/callback`;
 
     const tokenResponse = await fetch(
       "https://open.tiktokapis.com/v2/oauth/token/",
@@ -90,11 +96,12 @@ export async function GET(request: NextRequest) {
 
     if (!tokenResponse.ok || !tokenData.access_token) {
       console.error("TikTok token exchange failed:", tokenData);
+      const detail =
+        tokenData?.error_description ||
+        tokenData?.error?.message ||
+        "TikTok_Token_Exchange_Failed";
       return NextResponse.redirect(
-        new URL(
-          "/accounts?error=TikTok_Token_Exchange_Failed",
-          request.url
-        )
+        new URL(`/accounts?error=${encodeURIComponent(detail)}`, SITE)
       );
     }
 
@@ -103,7 +110,7 @@ export async function GET(request: NextRequest) {
 
     if (!openId) {
       return NextResponse.redirect(
-        new URL("/accounts?error=TikTok_Missing_Open_ID", request.url)
+        new URL("/accounts?error=TikTok_Missing_Open_ID", SITE)
       );
     }
 
@@ -131,7 +138,7 @@ export async function GET(request: NextRequest) {
     const expiresInSec = Number(tokenData.expires_in) || 86400;
     const expiresAt = new Date(Date.now() + expiresInSec * 1000).toISOString();
 
-    const { error: dbError } = await supabase.from("accounts").upsert(
+    const { error: dbError } = await supabaseAdmin.from("accounts").upsert(
       {
         user_id: targetUserId,
         platform: "tiktok",
@@ -148,20 +155,15 @@ export async function GET(request: NextRequest) {
     if (dbError) {
       console.error("Database save error for TikTok:", dbError);
       return NextResponse.redirect(
-        new URL(
-          `/accounts?error=${encodeURIComponent(dbError.message)}`,
-          request.url
-        )
+        new URL(`/accounts?error=${encodeURIComponent(dbError.message)}`, SITE)
       );
     }
 
-    return NextResponse.redirect(
-      new URL("/accounts?connected=tiktok", request.url)
-    );
+    return NextResponse.redirect(new URL("/accounts?connected=tiktok", SITE));
   } catch (err) {
     console.error("TikTok callback exception:", err);
     return NextResponse.redirect(
-      new URL("/accounts?error=TikTok_Callback_Exception", request.url)
+      new URL("/accounts?error=TikTok_Callback_Exception", SITE)
     );
   }
 }
