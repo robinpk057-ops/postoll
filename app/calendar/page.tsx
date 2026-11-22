@@ -254,7 +254,7 @@ export default function CalendarPage() {
   );
   const [visibleDayCount, setVisibleDayCount] = useState<number>(10);
 
-  // Modal & media state (supports default file, existing media URL on reschedule, and per-account files)
+  // Modal & customization state
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [reusedMediaUrl, setReusedMediaUrl] = useState<string | null>(null);
@@ -263,12 +263,17 @@ export default function CalendarPage() {
   >({});
   const [usePerAccountFiles, setUsePerAccountFiles] = useState(false);
 
+  const [caption, setCaption] = useState("");
+  const [usePerAccountCaptions, setUsePerAccountCaptions] = useState(false);
+  const [perAccountCaptions, setPerAccountCaptions] = useState<
+    Record<string, string>
+  >({});
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const accountFileInputRefs = useRef<Record<string, HTMLInputElement | null>>(
     {}
   );
 
-  const [caption, setCaption] = useState("");
   const [time, setTime] = useState("09:00");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -286,6 +291,35 @@ export default function CalendarPage() {
     const nowHHMM = getCurrentTimeHHMMInTz(timezone);
     return time < nowHHMM;
   }, [modalDate, todayKey, time, timezone]);
+
+  // Map of `${scheduled_date}:${platform}` and `${scheduled_date}:acc:${account_id}` for already-posted items
+  const postedDayKeysSet = useMemo(() => {
+    const keys = new Set<string>();
+    for (const p of posts) {
+      if (!isPostedStatus(p.status)) continue;
+      if (p.scheduled_date && p.platform) {
+        keys.add(`${p.scheduled_date}:plat:${p.platform.toLowerCase()}`);
+      }
+      if (p.scheduled_date && p.account_id) {
+        keys.add(`${p.scheduled_date}:acc:${p.account_id}`);
+      }
+    }
+    return keys;
+  }, [posts]);
+
+  function isPostLockedForDay(post: CalendarPost): boolean {
+    if (isPostedStatus(post.status)) return true;
+    const platKey = post.platform
+      ? `${post.scheduled_date}:plat:${post.platform.toLowerCase()}`
+      : null;
+    const accKey = post.account_id
+      ? `${post.scheduled_date}:acc:${post.account_id}`
+      : null;
+    return Boolean(
+      (platKey && postedDayKeysSet.has(platKey)) ||
+        (accKey && postedDayKeysSet.has(accKey))
+    );
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -344,6 +378,8 @@ export default function CalendarPage() {
     setPerAccountFiles({});
     setUsePerAccountFiles(false);
     setCaption("");
+    setPerAccountCaptions({});
+    setUsePerAccountCaptions(false);
     if (dateKey === todayKey) {
       setTime(getCurrentTimeHHMMInTz(timezone));
     } else {
@@ -356,12 +392,22 @@ export default function CalendarPage() {
   }
 
   function openRescheduleModal(post: CalendarPost) {
+    if (isPostLockedForDay(post)) {
+      setError(
+        "This content has already been posted for this platform on this day and cannot be rescheduled."
+      );
+      return;
+    }
     setError("");
     setFile(null);
     setPerAccountFiles({});
     setUsePerAccountFiles(false);
     setReusedMediaUrl(post.media_url || null);
     setCaption(post.caption || "");
+    setPerAccountCaptions(
+      post.account_id ? { [post.account_id]: post.caption || "" } : {}
+    );
+    setUsePerAccountCaptions(false);
     const targetDate = post.scheduled_date || todayKey;
     const postTime = (post.scheduled_time || "09:00").slice(0, 5);
     setTime(postTime);
@@ -374,6 +420,13 @@ export default function CalendarPage() {
   }
 
   async function handleDeletePost(post: CalendarPost) {
+    if (isPostLockedForDay(post)) {
+      setError(
+        "This content has already been posted for this platform on this day and cannot be deleted."
+      );
+      return;
+    }
+
     setDeletingId(post.id);
     setError("");
     setNotice("");
@@ -575,6 +628,11 @@ export default function CalendarPage() {
           );
         }
 
+        const customCaption = usePerAccountCaptions
+          ? (perAccountCaptions[acc.id] ?? "").trim()
+          : "";
+        const finalCaption = customCaption || caption;
+
         const res = await fetch("/api/calendar/posts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -583,7 +641,7 @@ export default function CalendarPage() {
             scheduled_time: time.length === 5 ? `${time}:00` : time,
             timezone,
             media_url: mediaUrlForAccount,
-            caption,
+            caption: finalCaption,
             account_id: acc.id,
             platform: acc.platform.toLowerCase(),
           }),
@@ -619,6 +677,8 @@ export default function CalendarPage() {
       setPerAccountFiles({});
       setUsePerAccountFiles(false);
       setCaption("");
+      setPerAccountCaptions({});
+      setUsePerAccountCaptions(false);
       setTime("09:00");
       await load();
     } catch (e) {
@@ -713,57 +773,68 @@ export default function CalendarPage() {
                       </button>
                     </div>
 
-                    <div className="mt-3 flex-1 space-y-2">
+                    <div className="mt-3 flex-1 space-y-2.5">
                       {dayPosts.length === 0 && (
                         <p className="text-xs" style={{ color: "var(--muted)" }}>
                           No posts
                         </p>
                       )}
-                      {dayPosts.map((p) => (
-                        <div
-                          key={p.id}
-                          className="rounded-lg border p-2"
-                          style={{
-                            borderColor: "var(--border)",
-                            backgroundColor: "rgba(255,255,255,0.02)",
-                          }}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <MediaThumbnail
-                              src={p.media_url}
-                              thumbnailUrl={p.thumbnail_url}
-                              sizeClass="h-11 w-11"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium">
-                                {(p.scheduled_time || "").slice(0, 5)}
-                                {p.platform ? ` · ${p.platform}` : ""}
-                              </p>
-                              <div className="mt-0.5">
-                                <StatusBadge status={p.status} />
+                      {dayPosts.map((p) => {
+                        const locked = isPostLockedForDay(p);
+                        return (
+                          <div
+                            key={p.id}
+                            className="rounded-lg border p-2.5"
+                            style={{
+                              borderColor: "var(--border)",
+                              backgroundColor: "rgba(255,255,255,0.02)",
+                            }}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <MediaThumbnail
+                                src={p.media_url}
+                                thumbnailUrl={p.thumbnail_url}
+                                sizeClass="h-11 w-11"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">
+                                  {(p.scheduled_time || "").slice(0, 5)}
+                                  {p.platform ? ` · ${p.platform}` : ""}
+                                </p>
+                                <div className="mt-0.5">
+                                  <StatusBadge status={p.status} />
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="mt-2 flex items-center justify-end gap-2 border-t border-zinc-800/70 pt-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openRescheduleModal(p)}
-                              className="rounded px-2 py-0.5 text-[11px] font-medium text-violet-300 hover:bg-violet-950/60"
-                            >
-                              Reschedule
-                            </button>
-                            <button
-                              type="button"
-                              disabled={deletingId === p.id}
-                              onClick={() => handleDeletePost(p)}
-                              className="rounded px-2 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-950/60 disabled:opacity-40"
-                            >
-                              {deletingId === p.id ? "Deleting…" : "Delete"}
-                            </button>
+                            {locked ? (
+                              <p className="mt-2 border-t border-zinc-800/70 pt-1.5 text-[11px] text-emerald-300/90">
+                                Posted for day · locked
+                              </p>
+                            ) : (
+                              <div className="mt-2 flex items-center justify-end gap-2 border-t border-zinc-800/70 pt-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openRescheduleModal(p)}
+                                  className="rounded px-2 py-0.5 text-[11px] font-medium text-violet-300 hover:bg-violet-950/60"
+                                >
+                                  Reschedule
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={deletingId === p.id}
+                                  onClick={() => handleDeletePost(p)}
+                                  className="rounded px-2 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-950/60 disabled:opacity-40"
+                                >
+                                  {deletingId === p.id
+                                    ? "Deleting…"
+                                    : "Delete"}
+                                </button>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -937,76 +1008,91 @@ export default function CalendarPage() {
 
                             {isExpanded && (
                               <div className="space-y-2.5 border-t border-zinc-800/80 px-4 py-3">
-                                {group.posts.map((item) => (
-                                  <div
-                                    key={item.id}
-                                    className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
-                                    style={{
-                                      backgroundColor: "#14141c",
-                                      borderColor: "#252531",
-                                    }}
-                                  >
-                                    <div className="flex min-w-0 items-center gap-3">
-                                      <MediaThumbnail
-                                        src={item.media_url}
-                                        thumbnailUrl={item.thumbnail_url}
-                                        sizeClass="h-12 w-12"
-                                      />
-                                      <div className="min-w-0 flex-1">
-                                        <p className="truncate text-sm font-medium text-white">
-                                          {item.caption || "(No caption)"}
-                                        </p>
-                                        <p className="mt-0.5 text-xs text-zinc-400">
-                                          <span className="font-medium text-zinc-200">
-                                            {item.account_name || item.platform}
-                                          </span>
-                                          {item.platform
-                                            ? ` (${item.platform})`
-                                            : ""}{" "}
-                                          · Time:{" "}
-                                          <span className="text-zinc-200">
-                                            {(item.scheduled_time || "").slice(
-                                              0,
-                                              5
-                                            )}
-                                          </span>
-                                          {item.timezone
-                                            ? ` ${item.timezone}`
-                                            : ""}
-                                        </p>
-                                        {item.published_at && (
-                                          <p className="mt-0.5 text-[11px] text-emerald-400">
-                                            Published:{" "}
-                                            {new Date(
-                                              item.published_at
-                                            ).toLocaleString()}
+                                {group.posts.map((item) => {
+                                  const locked = isPostLockedForDay(item);
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                                      style={{
+                                        backgroundColor: "#14141c",
+                                        borderColor: "#252531",
+                                      }}
+                                    >
+                                      <div className="flex min-w-0 items-center gap-3">
+                                        <MediaThumbnail
+                                          src={item.media_url}
+                                          thumbnailUrl={item.thumbnail_url}
+                                          sizeClass="h-12 w-12"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <p className="truncate text-sm font-medium text-white">
+                                            {item.caption || "(No caption)"}
                                           </p>
+                                          <p className="mt-0.5 text-xs text-zinc-400">
+                                            <span className="font-medium text-zinc-200">
+                                              {item.account_name ||
+                                                item.platform}
+                                            </span>
+                                            {item.platform
+                                              ? ` (${item.platform})`
+                                              : ""}{" "}
+                                            · Time:{" "}
+                                            <span className="text-zinc-200">
+                                              {(
+                                                item.scheduled_time || ""
+                                              ).slice(0, 5)}
+                                            </span>
+                                            {item.timezone
+                                              ? ` ${item.timezone}`
+                                              : ""}
+                                          </p>
+                                          {item.published_at && (
+                                            <p className="mt-0.5 text-[11px] text-emerald-400">
+                                              Published:{" "}
+                                              {new Date(
+                                                item.published_at
+                                              ).toLocaleString()}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
+                                        <StatusBadge status={item.status} />
+                                        {locked ? (
+                                          <span className="rounded-lg border border-emerald-500/25 bg-emerald-950/30 px-2.5 py-1 text-xs text-emerald-300">
+                                            Locked (posted)
+                                          </span>
+                                        ) : (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                openRescheduleModal(item)
+                                              }
+                                              className="rounded-lg border border-violet-500/30 bg-violet-950/40 px-2.5 py-1 text-xs font-medium text-violet-200 hover:bg-violet-900/50"
+                                            >
+                                              Reschedule
+                                            </button>
+                                            <button
+                                              type="button"
+                                              disabled={deletingId === item.id}
+                                              onClick={() =>
+                                                handleDeletePost(item)
+                                              }
+                                              className="rounded-lg border border-red-500/30 bg-red-950/40 px-2.5 py-1 text-xs font-medium text-red-200 hover:bg-red-900/50 disabled:opacity-40"
+                                            >
+                                              {deletingId === item.id
+                                                ? "Deleting…"
+                                                : "Delete"}
+                                            </button>
+                                          </>
                                         )}
                                       </div>
                                     </div>
-
-                                    <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
-                                      <StatusBadge status={item.status} />
-                                      <button
-                                        type="button"
-                                        onClick={() => openRescheduleModal(item)}
-                                        className="rounded-lg border border-violet-500/30 bg-violet-950/40 px-2.5 py-1 text-xs font-medium text-violet-200 hover:bg-violet-900/50"
-                                      >
-                                        Reschedule
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={deletingId === item.id}
-                                        onClick={() => handleDeletePost(item)}
-                                        className="rounded-lg border border-red-500/30 bg-red-950/40 px-2.5 py-1 text-xs font-medium text-red-200 hover:bg-red-900/50 disabled:opacity-40"
-                                      >
-                                        {deletingId === item.id
-                                          ? "Deleting…"
-                                          : "Delete"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -1043,177 +1129,200 @@ export default function CalendarPage() {
       {modalDate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
           <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border p-6 shadow-2xl"
+            className="max-h-[90vh] w-full max-w-xl space-y-5 overflow-y-auto rounded-2xl border p-6 shadow-2xl"
             style={{
               backgroundColor: "#15151c",
               borderColor: "#2f2f3d",
               color: "#f4f4f6",
             }}
           >
-            <h2 className="text-xl font-semibold">Schedule post · {modalDate}</h2>
-            <p className="mt-1 text-xs text-zinc-400">
-              Posts once on the selected date &amp; time (no repeated runs).
-            </p>
+            <div className="border-b border-zinc-800 pb-3">
+              <h2 className="text-xl font-semibold">
+                Schedule post · {modalDate}
+              </h2>
+              <p className="mt-1 text-xs text-zinc-400">
+                Posts once on the selected date &amp; time (no repeated runs).
+              </p>
+            </div>
 
             {error && (
-              <p className="mt-3 rounded-lg border border-red-500/40 bg-red-950/50 px-3 py-2 text-xs text-red-300">
+              <p className="rounded-lg border border-red-500/40 bg-red-950/50 px-3 py-2 text-xs text-red-300">
                 {error}
               </p>
             )}
 
-            <label className="mt-5 block text-sm font-medium">
-              Default media
-            </label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,video/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0] || null;
-                setFile(f);
-                if (f) setReusedMediaUrl(null);
-              }}
-            />
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const dropped = e.dataTransfer.files?.[0];
-                if (dropped) {
-                  setFile(dropped);
-                  setReusedMediaUrl(null);
-                }
-              }}
-              className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed px-4 py-3.5 transition hover:border-violet-400"
-              style={{
-                backgroundColor: "#0d0d12",
-                borderColor: file || reusedMediaUrl ? "#7c3aed" : "#383847",
-              }}
-            >
-              <div className="min-w-0 flex-1">
-                {file ? (
-                  <>
-                    <p className="truncate text-sm font-medium text-white">
-                      {file.name}
-                    </p>
-                    <p className="mt-0.5 text-xs text-zinc-400">
-                      {(file.size / (1024 * 1024)).toFixed(2)} MB · Click to
-                      replace
-                    </p>
-                  </>
-                ) : reusedMediaUrl ? (
-                  <>
-                    <p className="truncate text-sm font-medium text-violet-200">
-                      Using existing media from rescheduled post
-                    </p>
-                    <p className="mt-0.5 text-xs text-zinc-400">
-                      Click to upload a different file
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-zinc-200">
-                      Click to upload or drag &amp; drop
-                    </p>
-                    <p className="mt-0.5 text-xs text-zinc-400">
-                      Supports images and videos
-                    </p>
-                  </>
+            {/* Time & Default Media */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium">Time (24h)</label>
+                <div className="mt-2">
+                  <TimePicker24 value={time} onChange={setTime} />
+                </div>
+                {isSelectedTimePastToday && (
+                  <p className="mt-2 text-xs text-amber-300">
+                    This time has already passed today—saving will automatically
+                    set the next coming time today.
+                  </p>
                 )}
               </div>
-              <span
-                className="shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium"
-                style={{
-                  backgroundColor: "#1f1f29",
-                  borderColor: "#383847",
-                  color: "#c4b5fd",
-                }}
-              >
-                {file || reusedMediaUrl ? "Change" : "Choose file"}
-              </span>
-            </div>
 
-            <label className="mt-4 block text-sm font-medium">Time (24h)</label>
-            <div className="mt-2">
-              <TimePicker24 value={time} onChange={setTime} />
-            </div>
-            {isSelectedTimePastToday && (
-              <p className="mt-2 text-xs text-amber-300">
-                This time has already passed today—saving will automatically set
-                the next coming time today.
-              </p>
-            )}
-
-            <div className="mt-4 flex items-center justify-between gap-2">
-              <span className="text-sm font-medium">
-                Accounts ({selectedAccountIds.length} selected)
-              </span>
-              {accounts.length > 0 && (
-                <button
-                  type="button"
-                  onClick={toggleSelectAll}
-                  className="rounded-md border px-2.5 py-1 text-xs font-medium"
+              <div>
+                <label className="block text-sm font-medium">
+                  Default media
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setFile(f);
+                    if (f) setReusedMediaUrl(null);
+                  }}
+                />
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const dropped = e.dataTransfer.files?.[0];
+                    if (dropped) {
+                      setFile(dropped);
+                      setReusedMediaUrl(null);
+                    }
+                  }}
+                  className="mt-2 flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-dashed px-4 py-3.5 transition hover:border-violet-400"
                   style={{
-                    backgroundColor: "#1f1f29",
-                    borderColor: "#383847",
-                    color: "#c4b5fd",
+                    backgroundColor: "#0d0d12",
+                    borderColor:
+                      file || reusedMediaUrl ? "#7c3aed" : "#383847",
                   }}
                 >
-                  {allSelected ? "Deselect all" : "Select all"}
-                </button>
-              )}
+                  <div className="min-w-0 flex-1">
+                    {file ? (
+                      <>
+                        <p className="truncate text-sm font-medium text-white">
+                          {file.name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-zinc-400">
+                          {(file.size / (1024 * 1024)).toFixed(2)} MB · Click to
+                          replace
+                        </p>
+                      </>
+                    ) : reusedMediaUrl ? (
+                      <>
+                        <p className="truncate text-sm font-medium text-violet-200">
+                          Using existing media from rescheduled post
+                        </p>
+                        <p className="mt-0.5 text-xs text-zinc-400">
+                          Click to upload a different file
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-medium text-zinc-200">
+                          Click to upload or drag &amp; drop
+                        </p>
+                        <p className="mt-0.5 text-xs text-zinc-400">
+                          Supports images and videos
+                        </p>
+                      </>
+                    )}
+                  </div>
+                  <span
+                    className="shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      backgroundColor: "#1f1f29",
+                      borderColor: "#383847",
+                      color: "#c4b5fd",
+                    }}
+                  >
+                    {file || reusedMediaUrl ? "Change" : "Choose file"}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            <div
-              className="mt-2 max-h-44 space-y-2 overflow-y-auto rounded-xl border p-3"
-              style={{
-                backgroundColor: "#0d0d12",
-                borderColor: "#282834",
-              }}
-            >
-              {accounts.length === 0 ? (
-                <p className="text-xs text-zinc-400">
-                  No accounts available (X is excluded).
-                </p>
-              ) : (
-                accounts.map((acc) => {
-                  const checked = selectedAccountIds.includes(acc.id);
-                  return (
-                    <label
-                      key={acc.id}
-                      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm transition"
-                      style={{
-                        backgroundColor: checked ? "#1d1b2e" : "#14141c",
-                        borderColor: checked ? "#7c3aed" : "#262632",
-                      }}
-                    >
-                      <span className="flex min-w-0 items-center gap-2.5">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleAccount(acc.id)}
-                          className="h-4 w-4 accent-violet-500"
-                        />
-                        <span className="truncate font-medium">
-                          {acc.account_name || acc.id}
+            {/* Account Selection */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">
+                  Accounts ({selectedAccountIds.length} selected)
+                </span>
+                {accounts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    className="rounded-md border px-2.5 py-1 text-xs font-medium"
+                    style={{
+                      backgroundColor: "#1f1f29",
+                      borderColor: "#383847",
+                      color: "#c4b5fd",
+                    }}
+                  >
+                    {allSelected ? "Deselect all" : "Select all"}
+                  </button>
+                )}
+              </div>
+
+              <div
+                className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-3 sm:grid-cols-2"
+                style={{
+                  backgroundColor: "#0d0d12",
+                  borderColor: "#282834",
+                }}
+              >
+                {accounts.length === 0 ? (
+                  <p className="col-span-2 text-xs text-zinc-400">
+                    No accounts available (X is excluded).
+                  </p>
+                ) : (
+                  accounts.map((acc) => {
+                    const checked = selectedAccountIds.includes(acc.id);
+                    return (
+                      <label
+                        key={acc.id}
+                        className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition"
+                        style={{
+                          backgroundColor: checked ? "#1d1b2e" : "#14141c",
+                          borderColor: checked ? "#7c3aed" : "#262632",
+                        }}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleAccount(acc.id)}
+                            className="h-4 w-4 shrink-0 accent-violet-500"
+                          />
+                          <span className="truncate text-xs font-medium">
+                            {acc.account_name || acc.id}
+                          </span>
                         </span>
-                      </span>
-                      <span className="shrink-0 rounded bg-zinc-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-zinc-300">
-                        {acc.platform}
-                      </span>
-                    </label>
-                  );
-                })
-              )}
+                        <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-300">
+                          {acc.platform}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+
+              <Link
+                href="/accounts"
+                className="inline-block text-xs"
+                style={{ color: "#a78bfa" }}
+              >
+                Connect another account →
+              </Link>
             </div>
 
-            {/* Different file per platform option */}
+            {/* Per-Account Media Option */}
             {chosenAccounts.length > 0 && (
-              <div className="mt-4 rounded-xl border border-zinc-800 bg-[#0d0d12] p-3">
+              <div className="rounded-xl border border-zinc-800 bg-[#0d0d12] p-3.5">
                 <label className="flex cursor-pointer items-center justify-between gap-2 text-xs font-medium text-zinc-200">
-                  <span>Use different file per selected account/platform</span>
+                  <span>Different media file per selected account</span>
                   <input
                     type="checkbox"
                     checked={usePerAccountFiles}
@@ -1223,13 +1332,13 @@ export default function CalendarPage() {
                 </label>
 
                 {usePerAccountFiles && (
-                  <div className="mt-3 space-y-2 border-t border-zinc-800 pt-3">
+                  <div className="mt-3 space-y-2.5 border-t border-zinc-800 pt-3">
                     {chosenAccounts.map((acc) => {
                       const customFile = perAccountFiles[acc.id] || null;
                       return (
                         <div
                           key={acc.id}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-[#14141c] px-3 py-2"
+                          className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-[#14141c] px-3 py-2.5"
                         >
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-xs font-medium text-white">
@@ -1277,27 +1386,72 @@ export default function CalendarPage() {
               </div>
             )}
 
-            <Link
-              href="/accounts"
-              className="mt-2 inline-block text-xs"
-              style={{ color: "#a78bfa" }}
-            >
-              Connect another account →
-            </Link>
+            {/* Caption & Per-Account Descriptions */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium">
+                  Default caption / description
+                </label>
+                {chosenAccounts.length > 0 && (
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-violet-300">
+                    <input
+                      type="checkbox"
+                      checked={usePerAccountCaptions}
+                      onChange={(e) =>
+                        setUsePerAccountCaptions(e.target.checked)
+                      }
+                      className="h-3.5 w-3.5 accent-violet-500"
+                    />
+                    <span>Different caption per account</span>
+                  </label>
+                )}
+              </div>
 
-            <label className="mt-4 block text-sm font-medium">Caption</label>
-            <textarea
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              className="mt-2 min-h-24 w-full rounded-lg border p-3 text-sm"
-              style={{
-                backgroundColor: "#0d0d12",
-                borderColor: "#2e2e38",
-                color: "#f4f4f6",
-              }}
-            />
+              <textarea
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                placeholder="Write caption or description..."
+                className="min-h-20 w-full rounded-lg border p-3 text-sm"
+                style={{
+                  backgroundColor: "#0d0d12",
+                  borderColor: "#2e2e38",
+                  color: "#f4f4f6",
+                }}
+              />
 
-            <div className="mt-6 flex justify-end gap-3">
+              {usePerAccountCaptions && chosenAccounts.length > 0 && (
+                <div className="space-y-3 rounded-xl border border-zinc-800 bg-[#0d0d12] p-3.5">
+                  {chosenAccounts.map((acc) => (
+                    <div key={acc.id} className="space-y-1.5">
+                      <label className="block text-xs font-medium text-zinc-200">
+                        {acc.account_name || acc.id}{" "}
+                        <span className="uppercase text-violet-300">
+                          ({acc.platform})
+                        </span>
+                      </label>
+                      <textarea
+                        value={perAccountCaptions[acc.id] ?? ""}
+                        onChange={(e) =>
+                          setPerAccountCaptions((prev) => ({
+                            ...prev,
+                            [acc.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="Leave blank to use default caption..."
+                        className="min-h-16 w-full rounded-lg border p-2.5 text-xs"
+                        style={{
+                          backgroundColor: "#14141c",
+                          borderColor: "#2c2c38",
+                          color: "#f4f4f6",
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-zinc-800 pt-4">
               <button
                 type="button"
                 onClick={() => setModalDate(null)}

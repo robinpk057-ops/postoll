@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 const BLOCKED_PLATFORMS = new Set(["x", "twitter"]);
+const PUBLISHED_STATUSES = new Set([
+  "published",
+  "posted",
+  "completed",
+  "success",
+]);
+
+function isPublishedStatus(status: string | null | undefined): boolean {
+  return PUBLISHED_STATUSES.has((status || "").trim().toLowerCase());
+}
 
 function getNowInTimeZone(timeZone: string): { dateKey: string; timeStr: string } {
   const safeTz = timeZone || "UTC";
@@ -46,9 +56,18 @@ function addMinutesToTimeStr(timeStr: string, minsToAdd: number): string {
 
 function normalizeTimeStr(raw: string): string {
   const parts = raw.split(":");
-  const hh = String(Math.min(23, Math.max(0, Number(parts[0] ?? 9)))).padStart(2, "0");
-  const mm = String(Math.min(59, Math.max(0, Number(parts[1] ?? 0)))).padStart(2, "0");
-  const ss = String(Math.min(59, Math.max(0, Number(parts[2] ?? 0)))).padStart(2, "0");
+  const hh = String(Math.min(23, Math.max(0, Number(parts[0] ?? 9)))).padStart(
+    2,
+    "0"
+  );
+  const mm = String(Math.min(59, Math.max(0, Number(parts[1] ?? 0)))).padStart(
+    2,
+    "0"
+  );
+  const ss = String(Math.min(59, Math.max(0, Number(parts[2] ?? 0)))).padStart(
+    2,
+    "0"
+  );
   return `${hh}:${mm}:${ss}`;
 }
 
@@ -88,7 +107,7 @@ export async function GET() {
       .eq("user_id", user.id)
       .order("scheduled_date", { ascending: false })
       .order("scheduled_time", { ascending: false })
-      .limit(200);
+      .limit(300);
 
     if (error) {
       console.error("calendar GET error:", error);
@@ -96,7 +115,9 @@ export async function GET() {
     }
 
     const enriched = (data ?? []).map((row) => {
-      const accInfo = row.account_id ? accountMap.get(row.account_id) : undefined;
+      const accInfo = row.account_id
+        ? accountMap.get(row.account_id)
+        : undefined;
       return {
         ...row,
         account_name: accInfo?.account_name || row.platform || "Account",
@@ -258,6 +279,59 @@ export async function DELETE(req: NextRequest) {
     const id = req.nextUrl.searchParams.get("id")?.trim();
     if (!id) {
       return NextResponse.json({ error: "Post id is required" }, { status: 400 });
+    }
+
+    const { data: targetPost, error: fetchErr } = await supabase
+      .from("calendar_posts")
+      .select("id, scheduled_date, platform, account_id, status")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (fetchErr) {
+      return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+    }
+
+    if (!targetPost) {
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    }
+
+    if (isPublishedStatus(targetPost.status)) {
+      return NextResponse.json(
+        {
+          error:
+            "This post has already been published and cannot be deleted or rescheduled.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Check if content has already been posted for the same platform/account on that day
+    const { data: dayRows } = await supabase
+      .from("calendar_posts")
+      .select("id, platform, account_id, status")
+      .eq("user_id", user.id)
+      .eq("scheduled_date", targetPost.scheduled_date);
+
+    const alreadyPostedSamePlatformDay = (dayRows || []).some((r) => {
+      if (!isPublishedStatus(r.status)) return false;
+      const sameAccount =
+        targetPost.account_id && r.account_id === targetPost.account_id;
+      const samePlatform =
+        targetPost.platform &&
+        (r.platform || "").toLowerCase() ===
+          (targetPost.platform || "").toLowerCase();
+      return Boolean(sameAccount || samePlatform);
+    });
+
+    if (alreadyPostedSamePlatformDay) {
+      return NextResponse.json(
+        {
+          error:
+            "Content has already been posted for this platform on this day; delete/reschedule is locked.",
+        },
+        { status: 400 }
+      );
     }
 
     const { error } = await supabase
