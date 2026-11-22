@@ -7,14 +7,18 @@ import { createClient } from "@/lib/supabase/client";
 
 type CalendarPost = {
   id: string;
+  platform: string | null;
   scheduled_date: string;
   scheduled_time: string;
   timezone: string | null;
   media_url: string;
+  thumbnail_url?: string | null;
   caption: string | null;
   status: string;
   account_id: string | null;
-  platform?: string | null;
+  account_name?: string | null;
+  published_at?: string | null;
+  created_at?: string;
 };
 
 type SocialAccount = {
@@ -33,11 +37,34 @@ function isAllowedAccount(acc: SocialAccount) {
   return acc.connected !== false;
 }
 
+function isVideoMedia(url: string) {
+  return /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(url || "");
+}
+
 function toDateKey(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function getCurrentTimeHHMMInTz(timeZone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timeZone || "UTC",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date());
+    const h = parts.find((p) => p.type === "hour")?.value || "09";
+    const m = parts.find((p) => p.type === "minute")?.value || "00";
+    return `${h === "24" ? "00" : h}:${m}`;
+  } catch {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(
+      now.getMinutes()
+    ).padStart(2, "0")}`;
+  }
 }
 
 function buildDays(count: number) {
@@ -48,6 +75,90 @@ function buildDays(count: number) {
     d.setDate(start.getDate() + i);
     return d;
   });
+}
+
+function MediaThumbnail({
+  src,
+  thumbnailUrl,
+  sizeClass = "h-12 w-12",
+}: {
+  src: string;
+  thumbnailUrl?: string | null;
+  sizeClass?: string;
+}) {
+  const previewSrc = thumbnailUrl || src;
+  const isVideo = !thumbnailUrl && isVideoMedia(src);
+
+  if (!previewSrc) {
+    return (
+      <div
+        className={`${sizeClass} shrink-0 rounded bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-400`}
+      >
+        Media
+      </div>
+    );
+  }
+
+  if (isVideo) {
+    return (
+      <video
+        src={`${src}#t=0.5`}
+        preload="metadata"
+        muted
+        playsInline
+        className={`${sizeClass} shrink-0 rounded bg-zinc-900 object-cover`}
+      />
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={previewSrc}
+      alt=""
+      className={`${sizeClass} shrink-0 rounded bg-zinc-900 object-cover`}
+    />
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const s = (status || "scheduled").toLowerCase();
+  const isPosted =
+    s === "published" || s === "posted" || s === "completed" || s === "success";
+  const isFailed = s === "failed" || s === "error";
+
+  let style = {
+    bg: "rgba(124, 58, 237, 0.16)",
+    border: "rgba(167, 139, 250, 0.35)",
+    text: "#c4b5fd",
+  };
+
+  if (isPosted) {
+    style = {
+      bg: "rgba(16, 185, 129, 0.16)",
+      border: "rgba(52, 211, 153, 0.35)",
+      text: "#6ee7b7",
+    };
+  } else if (isFailed) {
+    style = {
+      bg: "rgba(239, 68, 68, 0.16)",
+      border: "rgba(248, 113, 113, 0.35)",
+      text: "#fca5a5",
+    };
+  }
+
+  return (
+    <span
+      className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize"
+      style={{
+        backgroundColor: style.bg,
+        borderColor: style.border,
+        color: style.text,
+      }}
+    >
+      {status}
+    </span>
+  );
 }
 
 function TimePicker24({
@@ -101,10 +212,16 @@ function TimePicker24({
 export default function CalendarPage() {
   const supabase = createClient();
   const days = useMemo(() => buildDays(30), []);
+  const todayKey = useMemo(() => toDateKey(new Date()), []);
+
   const [posts, setPosts] = useState<CalendarPost[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [historyFilter, setHistoryFilter] = useState<
+    "all" | "posted" | "scheduled" | "failed"
+  >("all");
 
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -121,6 +238,12 @@ export default function CalendarPage() {
       return "UTC";
     }
   }, []);
+
+  const isSelectedTimePastToday = useMemo(() => {
+    if (modalDate !== todayKey) return false;
+    const nowHHMM = getCurrentTimeHHMMInTz(timezone);
+    return time < nowHHMM;
+  }, [modalDate, todayKey, time, timezone]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -167,6 +290,11 @@ export default function CalendarPage() {
   function openModalForDate(dateKey: string) {
     setError("");
     setFile(null);
+    if (dateKey === todayKey) {
+      setTime(getCurrentTimeHHMMInTz(timezone));
+    } else {
+      setTime("09:00");
+    }
     if (accounts.length > 0 && selectedAccountIds.length === 0) {
       setSelectedAccountIds([accounts[0].id]);
     }
@@ -190,9 +318,35 @@ export default function CalendarPage() {
     }
   }
 
+  const calendarDayKeys = useMemo(
+    () => new Set(days.map((d) => toDateKey(d))),
+    [days]
+  );
+
   function postsForDay(dateKey: string) {
     return posts.filter((p) => p.scheduled_date === dateKey);
   }
+
+  const filteredHistoryPosts = useMemo(() => {
+    return posts.filter((p) => {
+      const s = (p.status || "").toLowerCase();
+      if (historyFilter === "posted") {
+        return (
+          s === "published" ||
+          s === "posted" ||
+          s === "completed" ||
+          s === "success"
+        );
+      }
+      if (historyFilter === "scheduled") {
+        return s === "scheduled" || s === "queued";
+      }
+      if (historyFilter === "failed") {
+        return s === "failed" || s === "error";
+      }
+      return true;
+    });
+  }, [posts, historyFilter]);
 
   async function submitPost() {
     if (!modalDate || !file) return;
@@ -203,6 +357,7 @@ export default function CalendarPage() {
 
     setSaving(true);
     setError("");
+    setNotice("");
 
     try {
       const {
@@ -227,6 +382,9 @@ export default function CalendarPage() {
         selectedAccountIds.includes(a.id)
       );
 
+      let anyAdjusted = false;
+      let scheduledTimeUsed = time;
+
       const results = await Promise.all(
         chosenAccounts.map(async (acc) => {
           const res = await fetch("/api/calendar/posts", {
@@ -248,12 +406,28 @@ export default function CalendarPage() {
               json.error || `Failed to schedule on ${acc.platform}`
             );
           }
+          if (json.adjustedFromPastTime) {
+            anyAdjusted = true;
+            if (json.post?.scheduled_time) {
+              scheduledTimeUsed = String(json.post.scheduled_time).slice(0, 5);
+            }
+          }
           return json;
         })
       );
 
       if (!results.length) {
         throw new Error("No posts scheduled");
+      }
+
+      if (anyAdjusted) {
+        setNotice(
+          `Selected time had already passed for today—scheduled once for the next coming time (${scheduledTimeUsed}) on ${modalDate}.`
+        );
+      } else {
+        setNotice(
+          `Scheduled once for ${modalDate} at ${time} (${results.length} account${results.length > 1 ? "s" : ""}).`
+        );
       }
 
       setModalDate(null);
@@ -276,9 +450,22 @@ export default function CalendarPage() {
         </p>
         <h1 className="mt-2 text-4xl font-bold">Calendar</h1>
         <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
-          Next 30 days · multi-account scheduling (excluding X) · 24-hour times
-          ({timezone})
+          Rolling 30-day schedule · one-time per post (no repeats) · past times
+          today move to next coming time · 24-hour ({timezone})
         </p>
+
+        {notice && (
+          <div
+            className="mt-4 rounded-xl border px-4 py-3 text-sm"
+            style={{
+              backgroundColor: "rgba(16, 185, 129, 0.12)",
+              borderColor: "rgba(52, 211, 153, 0.35)",
+              color: "#6ee7b7",
+            }}
+          >
+            {notice}
+          </div>
+        )}
 
         {error && !modalDate && (
           <p className="mt-4 text-sm text-red-400">{error}</p>
@@ -305,77 +492,194 @@ export default function CalendarPage() {
             Loading…
           </p>
         ) : (
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {days.map((d) => {
-              const key = toDateKey(d);
-              const dayPosts = postsForDay(key);
-              const label = d.toLocaleDateString(undefined, {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              });
+          <>
+            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {days.map((d) => {
+                const key = toDateKey(d);
+                const dayPosts = postsForDay(key);
+                const label = d.toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                });
 
-              return (
-                <div
-                  key={key}
-                  className="flex min-h-40 flex-col rounded-2xl border p-4"
-                  style={{
-                    background: "var(--card)",
-                    borderColor: "var(--border)",
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-lg font-semibold">{label}</p>
-                    <button
-                      type="button"
-                      onClick={() => openModalForDate(key)}
-                      className="rounded-lg px-2 py-1 text-xs font-medium"
-                      style={{
-                        background: "var(--foreground)",
-                        color: "var(--background)",
-                      }}
-                    >
-                      + Add
-                    </button>
-                  </div>
-
-                  <div className="mt-3 flex-1 space-y-2">
-                    {dayPosts.length === 0 && (
-                      <p className="text-xs" style={{ color: "var(--muted)" }}>
-                        No posts
-                      </p>
-                    )}
-                    {dayPosts.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex gap-2 rounded-lg border p-2"
-                        style={{ borderColor: "var(--border)" }}
+                return (
+                  <div
+                    key={key}
+                    className="flex min-h-40 flex-col rounded-2xl border p-4"
+                    style={{
+                      background: "var(--card)",
+                      borderColor: "var(--border)",
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-lg font-semibold">{label}</p>
+                      <button
+                        type="button"
+                        onClick={() => openModalForDate(key)}
+                        className="rounded-lg px-2 py-1 text-xs font-medium"
+                        style={{
+                          background: "var(--foreground)",
+                          color: "var(--background)",
+                        }}
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={p.media_url}
-                          alt=""
-                          className="h-12 w-12 rounded object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium">
-                            {(p.scheduled_time || "").slice(0, 5)}
-                            {p.platform ? ` · ${p.platform}` : ""}
-                          </p>
-                          <p
-                            className="truncate text-xs"
-                            style={{ color: "var(--muted)" }}
-                          >
-                            {p.status}
-                          </p>
+                        + Add
+                      </button>
+                    </div>
+
+                    <div className="mt-3 flex-1 space-y-2">
+                      {dayPosts.length === 0 && (
+                        <p className="text-xs" style={{ color: "var(--muted)" }}>
+                          No posts
+                        </p>
+                      )}
+                      {dayPosts.map((p) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center gap-2.5 rounded-lg border p-2"
+                          style={{
+                            borderColor: "var(--border)",
+                            backgroundColor: "rgba(255,255,255,0.02)",
+                          }}
+                        >
+                          <MediaThumbnail
+                            src={p.media_url}
+                            thumbnailUrl={p.thumbnail_url}
+                            sizeClass="h-12 w-12"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {(p.scheduled_time || "").slice(0, 5)}
+                              {p.platform ? ` · ${p.platform}` : ""}
+                            </p>
+                            <div className="mt-0.5">
+                              <StatusBadge status={p.status} />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Scheduled & Posted Content History (persists beyond rolling 30-day cards) */}
+            <section
+              className="mt-14 rounded-2xl border p-6"
+              style={{
+                backgroundColor: "#14141b",
+                borderColor: "#2a2a36",
+              }}
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold">
+                    Scheduled &amp; Posted Content History
+                  </h2>
+                  <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
+                    View all scheduled and already-published posts, accounts,
+                    times, and status—even after dates roll past the 30-day grid.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      ["all", "All"],
+                      ["posted", "Posted"],
+                      ["scheduled", "Scheduled"],
+                      ["failed", "Failed"],
+                    ] as const
+                  ).map(([key, label]) => {
+                    const active = historyFilter === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setHistoryFilter(key)}
+                        className="rounded-lg border px-3 py-1.5 text-xs font-medium transition"
+                        style={{
+                          backgroundColor: active ? "#7c3aed" : "#1b1b24",
+                          borderColor: active ? "#8b5cf6" : "#2f2f3d",
+                          color: active ? "#ffffff" : "#d4d4d8",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {filteredHistoryPosts.length === 0 ? (
+                <p
+                  className="mt-6 text-sm"
+                  style={{ color: "var(--muted)" }}
+                >
+                  No posts found for this filter.
+                </p>
+              ) : (
+                <div className="mt-6 space-y-3">
+                  {filteredHistoryPosts.map((item) => {
+                    const outsideRolling30 = !calendarDayKeys.has(
+                      item.scheduled_date
+                    );
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex flex-col gap-3 rounded-xl border p-3.5 sm:flex-row sm:items-center sm:justify-between"
+                        style={{
+                          backgroundColor: "#0e0e13",
+                          borderColor: "#262632",
+                        }}
+                      >
+                        <div className="flex min-w-0 items-center gap-3.5">
+                          <MediaThumbnail
+                            src={item.media_url}
+                            thumbnailUrl={item.thumbnail_url}
+                            sizeClass="h-14 w-14"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-white">
+                              {item.caption || "(No caption)"}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-400">
+                              <span className="font-medium text-zinc-200">
+                                {item.account_name || item.platform}
+                              </span>
+                              {item.platform ? ` (${item.platform})` : ""} ·
+                              Scheduled:{" "}
+                              <span className="text-zinc-200">
+                                {item.scheduled_date}{" "}
+                                {(item.scheduled_time || "").slice(0, 5)}
+                              </span>
+                              {item.timezone ? ` ${item.timezone}` : ""}
+                            </p>
+                            {item.published_at && (
+                              <p className="mt-0.5 text-[11px] text-emerald-400">
+                                Published at:{" "}
+                                {new Date(item.published_at).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
+                          {outsideRolling30 && (
+                            <span className="rounded bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">
+                              Outside 30d window
+                            </span>
+                          )}
+                          <StatusBadge status={item.status} />
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </section>
+          </>
         )}
       </div>
 
@@ -390,6 +694,9 @@ export default function CalendarPage() {
             }}
           >
             <h2 className="text-xl font-semibold">Add post · {modalDate}</h2>
+            <p className="mt-1 text-xs text-zinc-400">
+              Posts once on the selected date &amp; time (no repeated runs).
+            </p>
 
             {error && (
               <p className="mt-3 rounded-lg border border-red-500/40 bg-red-950/50 px-3 py-2 text-xs text-red-300">
@@ -457,6 +764,12 @@ export default function CalendarPage() {
             <div className="mt-2">
               <TimePicker24 value={time} onChange={setTime} />
             </div>
+            {isSelectedTimePastToday && (
+              <p className="mt-2 text-xs text-amber-300">
+                This time has already passed today—saving will automatically set
+                the next coming time today.
+              </p>
+            )}
 
             <div className="mt-4 flex items-center justify-between gap-2">
               <span className="text-sm font-medium">
