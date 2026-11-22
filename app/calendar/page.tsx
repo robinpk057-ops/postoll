@@ -117,7 +117,7 @@ function MediaThumbnail({
   if (!previewSrc) {
     return (
       <div
-        className={`${sizeClass} shrink-0 rounded bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-400`}
+        className={`${sizeClass} flex shrink-0 items-center justify-center rounded bg-zinc-800 text-[10px] text-zinc-400`}
       >
         Media
       </div>
@@ -172,7 +172,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize"
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize"
       style={{
         backgroundColor: style.bg,
         borderColor: style.border,
@@ -242,8 +242,8 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // History card collapse & filtering for multi-year scale
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyFilter, setHistoryFilter] = useState<
     "all" | "posted" | "scheduled" | "failed"
@@ -254,9 +254,20 @@ export default function CalendarPage() {
   );
   const [visibleDayCount, setVisibleDayCount] = useState<number>(10);
 
+  // Modal & media state (supports default file, existing media URL on reschedule, and per-account files)
   const [modalDate, setModalDate] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [reusedMediaUrl, setReusedMediaUrl] = useState<string | null>(null);
+  const [perAccountFiles, setPerAccountFiles] = useState<
+    Record<string, File | null>
+  >({});
+  const [usePerAccountFiles, setUsePerAccountFiles] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const accountFileInputRefs = useRef<Record<string, HTMLInputElement | null>>(
+    {}
+  );
+
   const [caption, setCaption] = useState("");
   const [time, setTime] = useState("09:00");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
@@ -294,7 +305,6 @@ export default function CalendarPage() {
       const loadedPosts: CalendarPost[] = postsJson.posts || [];
       setPosts(loadedPosts);
 
-      // Expand the most recent day by default for quick glance
       const firstDate = loadedPosts[0]?.scheduled_date;
       if (firstDate) {
         setExpandedDayKeys((prev) =>
@@ -330,6 +340,10 @@ export default function CalendarPage() {
   function openModalForDate(dateKey: string) {
     setError("");
     setFile(null);
+    setReusedMediaUrl(null);
+    setPerAccountFiles({});
+    setUsePerAccountFiles(false);
+    setCaption("");
     if (dateKey === todayKey) {
       setTime(getCurrentTimeHHMMInTz(timezone));
     } else {
@@ -339,6 +353,48 @@ export default function CalendarPage() {
       setSelectedAccountIds([accounts[0].id]);
     }
     setModalDate(dateKey);
+  }
+
+  function openRescheduleModal(post: CalendarPost) {
+    setError("");
+    setFile(null);
+    setPerAccountFiles({});
+    setUsePerAccountFiles(false);
+    setReusedMediaUrl(post.media_url || null);
+    setCaption(post.caption || "");
+    const targetDate = post.scheduled_date || todayKey;
+    const postTime = (post.scheduled_time || "09:00").slice(0, 5);
+    setTime(postTime);
+    if (post.account_id) {
+      setSelectedAccountIds([post.account_id]);
+    } else if (accounts[0]?.id) {
+      setSelectedAccountIds([accounts[0].id]);
+    }
+    setModalDate(targetDate);
+  }
+
+  async function handleDeletePost(post: CalendarPost) {
+    setDeletingId(post.id);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetch(
+        `/api/calendar/posts?id=${encodeURIComponent(post.id)}`,
+        { method: "DELETE" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || "Failed to delete post");
+      }
+      setNotice(
+        `Deleted ${post.platform || "post"} scheduled for ${post.scheduled_date} ${(post.scheduled_time || "").slice(0, 5)}.`
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   function toggleAccount(id: string) {
@@ -428,12 +484,53 @@ export default function CalendarPage() {
     }));
   }
 
-  async function submitPost() {
-    if (!modalDate || !file) return;
-    if (selectedAccountIds.length === 0) {
-      setError("Select at least one account to schedule.");
-      return;
+  async function uploadMediaFile(
+    userId: string,
+    dateKey: string,
+    targetFile: File,
+    suffix: string
+  ) {
+    const ext = targetFile.name.split(".").pop() || "bin";
+    const path = `${userId}/calendar/${dateKey}/${Date.now()}-${suffix}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from("postoll-media")
+      .upload(path, targetFile, { upsert: false });
+
+    if (upErr) throw upErr;
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("postoll-media").getPublicUrl(path);
+
+    return publicUrl;
+  }
+
+  const chosenAccounts = useMemo(
+    () => accounts.filter((a) => selectedAccountIds.includes(a.id)),
+    [accounts, selectedAccountIds]
+  );
+
+  const canSubmit = useMemo(() => {
+    if (!modalDate || selectedAccountIds.length === 0 || saving) return false;
+    if (file || reusedMediaUrl) return true;
+    if (usePerAccountFiles) {
+      return chosenAccounts.some((acc) => Boolean(perAccountFiles[acc.id]));
     }
+    return false;
+  }, [
+    modalDate,
+    selectedAccountIds.length,
+    saving,
+    file,
+    reusedMediaUrl,
+    usePerAccountFiles,
+    chosenAccounts,
+    perAccountFiles,
+  ]);
+
+  async function submitPost() {
+    if (!modalDate || !canSubmit) return;
 
     setSaving(true);
     setError("");
@@ -445,59 +542,65 @@ export default function CalendarPage() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
 
-      const ext = file.name.split(".").pop() || "bin";
-      const path = `${user.id}/calendar/${modalDate}/${Date.now()}.${ext}`;
+      let defaultUrl: string | null = reusedMediaUrl;
+      if (file) {
+        defaultUrl = await uploadMediaFile(user.id, modalDate, file, "default");
+      }
 
-      const { error: upErr } = await supabase.storage
-        .from("postoll-media")
-        .upload(path, file, { upsert: false });
-
-      if (upErr) throw upErr;
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("postoll-media").getPublicUrl(path);
-
-      const chosenAccounts = accounts.filter((a) =>
-        selectedAccountIds.includes(a.id)
-      );
+      const accountUrlMap = new Map<string, string>();
+      if (usePerAccountFiles) {
+        for (const acc of chosenAccounts) {
+          const customFile = perAccountFiles[acc.id];
+          if (customFile) {
+            const uploadedUrl = await uploadMediaFile(
+              user.id,
+              modalDate,
+              customFile,
+              acc.platform.toLowerCase()
+            );
+            accountUrlMap.set(acc.id, uploadedUrl);
+          }
+        }
+      }
 
       let anyAdjusted = false;
       let scheduledTimeUsed = time;
+      let scheduledCount = 0;
 
-      const results = await Promise.all(
-        chosenAccounts.map(async (acc) => {
-          const res = await fetch("/api/calendar/posts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              scheduled_date: modalDate,
-              scheduled_time: time.length === 5 ? `${time}:00` : time,
-              timezone,
-              media_url: publicUrl,
-              caption,
-              account_id: acc.id,
-              platform: acc.platform.toLowerCase(),
-            }),
-          });
-          const json = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            throw new Error(
-              json.error || `Failed to schedule on ${acc.platform}`
-            );
-          }
-          if (json.adjustedFromPastTime) {
-            anyAdjusted = true;
-            if (json.post?.scheduled_time) {
-              scheduledTimeUsed = String(json.post.scheduled_time).slice(0, 5);
-            }
-          }
-          return json;
-        })
-      );
+      for (const acc of chosenAccounts) {
+        const mediaUrlForAccount = accountUrlMap.get(acc.id) || defaultUrl;
+        if (!mediaUrlForAccount) {
+          throw new Error(
+            `Please select a file for ${acc.account_name || acc.platform} or upload a default file.`
+          );
+        }
 
-      if (!results.length) {
-        throw new Error("No posts scheduled");
+        const res = await fetch("/api/calendar/posts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scheduled_date: modalDate,
+            scheduled_time: time.length === 5 ? `${time}:00` : time,
+            timezone,
+            media_url: mediaUrlForAccount,
+            caption,
+            account_id: acc.id,
+            platform: acc.platform.toLowerCase(),
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            json.error || `Failed to schedule on ${acc.platform}`
+          );
+        }
+        scheduledCount += 1;
+        if (json.adjustedFromPastTime) {
+          anyAdjusted = true;
+          if (json.post?.scheduled_time) {
+            scheduledTimeUsed = String(json.post.scheduled_time).slice(0, 5);
+          }
+        }
       }
 
       if (anyAdjusted) {
@@ -506,12 +609,15 @@ export default function CalendarPage() {
         );
       } else {
         setNotice(
-          `Scheduled once for ${modalDate} at ${time} (${results.length} account${results.length > 1 ? "s" : ""}).`
+          `Scheduled once for ${modalDate} at ${time} (${scheduledCount} account${scheduledCount > 1 ? "s" : ""}).`
         );
       }
 
       setModalDate(null);
       setFile(null);
+      setReusedMediaUrl(null);
+      setPerAccountFiles({});
+      setUsePerAccountFiles(false);
       setCaption("");
       setTime("09:00");
       await load();
@@ -616,25 +722,45 @@ export default function CalendarPage() {
                       {dayPosts.map((p) => (
                         <div
                           key={p.id}
-                          className="flex items-center gap-2.5 rounded-lg border p-2"
+                          className="rounded-lg border p-2"
                           style={{
                             borderColor: "var(--border)",
                             backgroundColor: "rgba(255,255,255,0.02)",
                           }}
                         >
-                          <MediaThumbnail
-                            src={p.media_url}
-                            thumbnailUrl={p.thumbnail_url}
-                            sizeClass="h-12 w-12"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">
-                              {(p.scheduled_time || "").slice(0, 5)}
-                              {p.platform ? ` · ${p.platform}` : ""}
-                            </p>
-                            <div className="mt-0.5">
-                              <StatusBadge status={p.status} />
+                          <div className="flex items-center gap-2.5">
+                            <MediaThumbnail
+                              src={p.media_url}
+                              thumbnailUrl={p.thumbnail_url}
+                              sizeClass="h-11 w-11"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">
+                                {(p.scheduled_time || "").slice(0, 5)}
+                                {p.platform ? ` · ${p.platform}` : ""}
+                              </p>
+                              <div className="mt-0.5">
+                                <StatusBadge status={p.status} />
+                              </div>
                             </div>
+                          </div>
+
+                          <div className="mt-2 flex items-center justify-end gap-2 border-t border-zinc-800/70 pt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openRescheduleModal(p)}
+                              className="rounded px-2 py-0.5 text-[11px] font-medium text-violet-300 hover:bg-violet-950/60"
+                            >
+                              Reschedule
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deletingId === p.id}
+                              onClick={() => handleDeletePost(p)}
+                              className="rounded px-2 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-950/60 disabled:opacity-40"
+                            >
+                              {deletingId === p.id ? "Deleting…" : "Delete"}
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -772,7 +898,7 @@ export default function CalendarPage() {
                               className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                             >
                               <div className="flex flex-wrap items-center gap-2.5">
-                                <span className="text-xs font-mono text-violet-300">
+                                <span className="font-mono text-xs text-violet-300">
                                   {isExpanded ? "▼" : "▶"}
                                 </span>
                                 <span className="text-sm font-semibold text-white">
@@ -859,8 +985,25 @@ export default function CalendarPage() {
                                       </div>
                                     </div>
 
-                                    <div className="shrink-0 self-end sm:self-center">
+                                    <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
                                       <StatusBadge status={item.status} />
+                                      <button
+                                        type="button"
+                                        onClick={() => openRescheduleModal(item)}
+                                        className="rounded-lg border border-violet-500/30 bg-violet-950/40 px-2.5 py-1 text-xs font-medium text-violet-200 hover:bg-violet-900/50"
+                                      >
+                                        Reschedule
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={deletingId === item.id}
+                                        onClick={() => handleDeletePost(item)}
+                                        className="rounded-lg border border-red-500/30 bg-red-950/40 px-2.5 py-1 text-xs font-medium text-red-200 hover:bg-red-900/50 disabled:opacity-40"
+                                      >
+                                        {deletingId === item.id
+                                          ? "Deleting…"
+                                          : "Delete"}
+                                      </button>
                                     </div>
                                   </div>
                                 ))}
@@ -907,7 +1050,7 @@ export default function CalendarPage() {
               color: "#f4f4f6",
             }}
           >
-            <h2 className="text-xl font-semibold">Add post · {modalDate}</h2>
+            <h2 className="text-xl font-semibold">Schedule post · {modalDate}</h2>
             <p className="mt-1 text-xs text-zinc-400">
               Posts once on the selected date &amp; time (no repeated runs).
             </p>
@@ -918,13 +1061,19 @@ export default function CalendarPage() {
               </p>
             )}
 
-            <label className="mt-5 block text-sm font-medium">Media</label>
+            <label className="mt-5 block text-sm font-medium">
+              Default media
+            </label>
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*,video/*"
               className="hidden"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                const f = e.target.files?.[0] || null;
+                setFile(f);
+                if (f) setReusedMediaUrl(null);
+              }}
             />
             <div
               onClick={() => fileInputRef.current?.click()}
@@ -932,12 +1081,15 @@ export default function CalendarPage() {
               onDrop={(e) => {
                 e.preventDefault();
                 const dropped = e.dataTransfer.files?.[0];
-                if (dropped) setFile(dropped);
+                if (dropped) {
+                  setFile(dropped);
+                  setReusedMediaUrl(null);
+                }
               }}
               className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed px-4 py-3.5 transition hover:border-violet-400"
               style={{
                 backgroundColor: "#0d0d12",
-                borderColor: file ? "#7c3aed" : "#383847",
+                borderColor: file || reusedMediaUrl ? "#7c3aed" : "#383847",
               }}
             >
               <div className="min-w-0 flex-1">
@@ -949,6 +1101,15 @@ export default function CalendarPage() {
                     <p className="mt-0.5 text-xs text-zinc-400">
                       {(file.size / (1024 * 1024)).toFixed(2)} MB · Click to
                       replace
+                    </p>
+                  </>
+                ) : reusedMediaUrl ? (
+                  <>
+                    <p className="truncate text-sm font-medium text-violet-200">
+                      Using existing media from rescheduled post
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-400">
+                      Click to upload a different file
                     </p>
                   </>
                 ) : (
@@ -970,7 +1131,7 @@ export default function CalendarPage() {
                   color: "#c4b5fd",
                 }}
               >
-                {file ? "Change" : "Choose file"}
+                {file || reusedMediaUrl ? "Change" : "Choose file"}
               </span>
             </div>
 
@@ -1048,6 +1209,74 @@ export default function CalendarPage() {
               )}
             </div>
 
+            {/* Different file per platform option */}
+            {chosenAccounts.length > 0 && (
+              <div className="mt-4 rounded-xl border border-zinc-800 bg-[#0d0d12] p-3">
+                <label className="flex cursor-pointer items-center justify-between gap-2 text-xs font-medium text-zinc-200">
+                  <span>Use different file per selected account/platform</span>
+                  <input
+                    type="checkbox"
+                    checked={usePerAccountFiles}
+                    onChange={(e) => setUsePerAccountFiles(e.target.checked)}
+                    className="h-4 w-4 accent-violet-500"
+                  />
+                </label>
+
+                {usePerAccountFiles && (
+                  <div className="mt-3 space-y-2 border-t border-zinc-800 pt-3">
+                    {chosenAccounts.map((acc) => {
+                      const customFile = perAccountFiles[acc.id] || null;
+                      return (
+                        <div
+                          key={acc.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-[#14141c] px-3 py-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-medium text-white">
+                              {acc.account_name || acc.id}{" "}
+                              <span className="uppercase text-violet-300">
+                                ({acc.platform})
+                              </span>
+                            </p>
+                            <p className="truncate text-[11px] text-zinc-400">
+                              {customFile
+                                ? customFile.name
+                                : "Using default media"}
+                            </p>
+                          </div>
+
+                          <input
+                            ref={(el) => {
+                              accountFileInputRefs.current[acc.id] = el;
+                            }}
+                            type="file"
+                            accept="image/*,video/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const picked = e.target.files?.[0] || null;
+                              setPerAccountFiles((prev) => ({
+                                ...prev,
+                                [acc.id]: picked,
+                              }));
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              accountFileInputRefs.current[acc.id]?.click()
+                            }
+                            className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-200 hover:border-violet-400"
+                          >
+                            {customFile ? "Change" : "Select file"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             <Link
               href="/accounts"
               className="mt-2 inline-block text-xs"
@@ -1083,7 +1312,7 @@ export default function CalendarPage() {
               </button>
               <button
                 type="button"
-                disabled={!file || selectedAccountIds.length === 0 || saving}
+                disabled={!canSubmit}
                 onClick={submitPost}
                 className="rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40"
                 style={{

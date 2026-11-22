@@ -69,7 +69,10 @@ export async function GET() {
       .select("id, platform, account_name")
       .eq("user_id", user.id);
 
-    const accountMap = new Map<string, { account_name: string | null; platform: string | null }>();
+    const accountMap = new Map<
+      string,
+      { account_name: string | null; platform: string | null }
+    >();
     for (const acc of accountsList || []) {
       accountMap.set(acc.id, {
         account_name: acc.account_name ?? null,
@@ -197,9 +200,10 @@ export async function POST(req: NextRequest) {
     let finalTime = normalizedRequestedTime;
     let adjustedFromPastTime = false;
 
-    // If scheduled for today in user's timezone and chosen time has already passed,
-    // move to the next coming time (+5 minutes from now)
-    if (scheduled_date === nowInTz.dateKey && normalizedRequestedTime < nowInTz.timeStr) {
+    if (
+      scheduled_date === nowInTz.dateKey &&
+      normalizedRequestedTime < nowInTz.timeStr
+    ) {
       finalTime = addMinutesToTimeStr(nowInTz.timeStr, 5);
       adjustedFromPastTime = true;
     }
@@ -233,6 +237,41 @@ export async function POST(req: NextRequest) {
       },
       adjustedFromPastTime,
     });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const id = req.nextUrl.searchParams.get("id")?.trim();
+    if (!id) {
+      return NextResponse.json({ error: "Post id is required" }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from("calendar_posts")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("calendar DELETE error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, id });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
