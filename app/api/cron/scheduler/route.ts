@@ -41,6 +41,7 @@ import {
 export const maxDuration = 120;
 
 const WINDOW_MINUTES = 15;
+const EXCLUDED_CALENDAR_PLATFORMS = new Set(["x", "twitter"]);
 
 /*
 - Fallback for workflows created before the per-workflow
@@ -240,6 +241,14 @@ type WorkflowSettingsRow = {
   timezone: string | null;
 };
 
+type DueSlot = {
+  slot: ScheduleSlot;
+  workflowId: string;
+  userId: string;
+  timezone: string;
+  runDate: string;
+};
+
 /*
 - ================================================================
 - ROUTE
@@ -311,6 +320,8 @@ async function handleScheduler(request: Request) {
     detail?: string;
   }> = [];
 
+  const dueSlots: DueSlot[] = [];
+
   try {
     const { data: slots, error: slotsError } = await supabaseAdmin
       .from("workflow_schedule_slots")
@@ -334,557 +345,541 @@ async function handleScheduler(request: Request) {
 
     const allSlots: ScheduleSlot[] = slots ?? [];
 
-    if (allSlots.length === 0) {
-      return NextResponse.json({
-        success: true,
-        checkedAt: now.toISOString(),
-        dueSlotCount: 0,
-        results: [],
-      });
-    }
-
-    const workflowIds = Array.from(
-      new Set(allSlots.map((slot) => slot.workflow_id))
-    );
-
-    const { data: workflows, error: workflowsError } =
-      await supabaseAdmin
-        .from("workflows")
-        .select("id, user_id, active, status, created_at")
-        .in("id", workflowIds);
-
-    if (workflowsError) {
-      console.error(
-        "Scheduler workflows lookup error:",
-        workflowsError
+    if (allSlots.length > 0) {
+      const workflowIds = Array.from(
+        new Set(allSlots.map((slot) => slot.workflow_id))
       );
 
-      return NextResponse.json(
-        {
-          error:
-            workflowsError.message ||
-            "Unable to load workflows.",
-        },
-        { status: 500 }
-      );
-    }
-
-    const workflowMap = new Map(
-      (workflows ?? []).map((workflow) => [
-        workflow.id,
-        workflow,
-      ])
-    );
-
-    const { data: settingsRows, error: settingsError } =
-      await supabaseAdmin
-        .from("workflow_settings")
-        .select(
-          "workflow_id, duration_type, start_date, end_date, timezone"
-        )
-        .in("workflow_id", workflowIds);
-
-    if (settingsError) {
-      console.error(
-        "Scheduler settings lookup error:",
-        settingsError
-      );
-    }
-
-    const settingsMap = new Map<string, WorkflowSettingsRow>(
-      (settingsRows ?? []).map((row) => [
-        row.workflow_id,
-        row as WorkflowSettingsRow,
-      ])
-    );
-
-    type DueSlot = {
-      slot: ScheduleSlot;
-      workflowId: string;
-      userId: string;
-      timezone: string;
-      runDate: string;
-    };
-
-    const dueSlots: DueSlot[] = [];
-
-    for (const slot of allSlots) {
-      const workflow = workflowMap.get(slot.workflow_id);
-
-      if (!workflow || workflow.active !== true) {
-        continue;
-      }
-
-      const settings = settingsMap.get(slot.workflow_id);
-      const timezone = settings?.timezone || DEFAULT_TIMEZONE;
-
-      const zonedDow = getZonedDayOfWeek(now, timezone);
-      const zonedMinutes = getZonedTimeMinutes(now, timezone);
-
-      if (slot.day_of_week !== zonedDow) {
-        continue;
-      }
-
-      const slotMinutes = timeStringToMinutes(slot.post_time);
-      const diff = Math.abs(zonedMinutes - slotMinutes);
-
-      if (diff > WINDOW_MINUTES) {
-        continue;
-      }
-
-      dueSlots.push({
-        slot,
-        workflowId: slot.workflow_id,
-        userId: workflow.user_id,
-        timezone,
-        runDate: getZonedDateString(now, timezone),
-      });
-    }
-
-    for (const due of dueSlots) {
-      const { slot, workflowId, userId, runDate } = due;
-      const workflow = workflowMap.get(workflowId)!;
-
-      const settings = settingsMap.get(workflowId);
-
-      if (isWorkflowExpired(workflow.created_at, settings, runDate)) {
+      const { data: workflows, error: workflowsError } =
         await supabaseAdmin
           .from("workflows")
-          .update({ active: false, status: "completed" })
-          .eq("id", workflowId);
+          .select("id, user_id, active, status, created_at")
+          .in("id", workflowIds);
 
-        await insertRun(supabaseAdmin, {
-          schedule_slot_id: slot.id,
-          workflow_id: workflowId,
-          run_date: runDate,
-          status: "skipped",
-          content_id: null,
-          error_message:
-            "Workflow duration has ended; workflow deactivated.",
-        });
-
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "skipped",
-          detail: "Workflow duration has ended.",
-        });
-
-        continue;
-      }
-
-      const { data: existingRun, error: existingRunError } =
-        await supabaseAdmin
-          .from("workflow_schedule_runs")
-          .select("id")
-          .eq("schedule_slot_id", slot.id)
-          .eq("run_date", runDate)
-          .maybeSingle();
-
-      if (existingRunError) {
+      if (workflowsError) {
         console.error(
-          "Scheduler existing-run lookup error:",
-          existingRunError
+          "Scheduler workflows lookup error:",
+          workflowsError
         );
 
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "error",
-          detail: existingRunError.message,
-        });
-
-        continue;
-      }
-
-      if (existingRun) {
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "already_run",
-        });
-
-        continue;
-      }
-
-      let queuedContent: {
-        id: string;
-        type: string;
-        status: string;
-      } | null = null;
-
-      const { data: queuedRow, error: queuedContentError } =
-        await supabaseAdmin
-          .from("content")
-          .select("id, type, status")
-          .eq("workflow_id", workflowId)
-          .eq("status", "queued")
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-
-      if (queuedContentError) {
-        console.error(
-          "Scheduler content lookup error:",
-          queuedContentError
+        return NextResponse.json(
+          {
+            error:
+              workflowsError.message ||
+              "Unable to load workflows.",
+          },
+          { status: 500 }
         );
-
-        await insertRun(supabaseAdmin, {
-          schedule_slot_id: slot.id,
-          workflow_id: workflowId,
-          run_date: runDate,
-          status: "failed",
-          content_id: null,
-          error_message: queuedContentError.message,
-        });
-
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "failed",
-          detail: queuedContentError.message,
-        });
-
-        continue;
       }
 
-      queuedContent = queuedRow;
+      const workflowMap = new Map(
+        (workflows ?? []).map((workflow) => [
+          workflow.id,
+          workflow,
+        ])
+      );
 
-      if (!queuedContent) {
-        const { data: workflowMeta } = await supabaseAdmin
-          .from("workflows")
-          .select("id, source, mode")
-          .eq("id", workflowId)
-          .maybeSingle();
+      const { data: settingsRows, error: settingsError } =
+        await supabaseAdmin
+          .from("workflow_settings")
+          .select(
+            "workflow_id, duration_type, start_date, end_date, timezone"
+          )
+          .in("workflow_id", workflowIds);
 
-        const isUserUpload =
-          workflowMeta?.source === "user_uploaded" ||
-          workflowMeta?.mode === "user_uploaded";
+      if (settingsError) {
+        console.error(
+          "Scheduler settings lookup error:",
+          settingsError
+        );
+      }
 
-        if (!isUserUpload) {
+      const settingsMap = new Map<string, WorkflowSettingsRow>(
+        (settingsRows ?? []).map((row) => [
+          row.workflow_id,
+          row as WorkflowSettingsRow,
+        ])
+      );
+
+      for (const slot of allSlots) {
+        const workflow = workflowMap.get(slot.workflow_id);
+
+        if (!workflow || workflow.active !== true) {
+          continue;
+        }
+
+        const settings = settingsMap.get(slot.workflow_id);
+        const timezone = settings?.timezone || DEFAULT_TIMEZONE;
+
+        const zonedDow = getZonedDayOfWeek(now, timezone);
+        const zonedMinutes = getZonedTimeMinutes(now, timezone);
+
+        if (slot.day_of_week !== zonedDow) {
+          continue;
+        }
+
+        const slotMinutes = timeStringToMinutes(slot.post_time);
+        const diff = Math.abs(zonedMinutes - slotMinutes);
+
+        if (diff > WINDOW_MINUTES) {
+          continue;
+        }
+
+        dueSlots.push({
+          slot,
+          workflowId: slot.workflow_id,
+          userId: workflow.user_id,
+          timezone,
+          runDate: getZonedDateString(now, timezone),
+        });
+      }
+
+      for (const due of dueSlots) {
+        const { slot, workflowId, userId, runDate } = due;
+        const workflow = workflowMap.get(workflowId)!;
+
+        const settings = settingsMap.get(workflowId);
+
+        if (isWorkflowExpired(workflow.created_at, settings, runDate)) {
+          await supabaseAdmin
+            .from("workflows")
+            .update({ active: false, status: "completed" })
+            .eq("id", workflowId);
+
           await insertRun(supabaseAdmin, {
             schedule_slot_id: slot.id,
             workflow_id: workflowId,
             run_date: runDate,
             status: "skipped",
             content_id: null,
-            error_message: "No queued content available.",
+            error_message:
+              "Workflow duration has ended; workflow deactivated.",
           });
 
           results.push({
             scheduleSlotId: slot.id,
             workflowId,
             status: "skipped",
-            detail: "No queued content available.",
+            detail: "Workflow duration has ended.",
           });
 
           continue;
         }
 
-        const { data: allContent, error: allContentError } =
+        const { data: existingRun, error: existingRunError } =
+          await supabaseAdmin
+            .from("workflow_schedule_runs")
+            .select("id")
+            .eq("schedule_slot_id", slot.id)
+            .eq("run_date", runDate)
+            .maybeSingle();
+
+        if (existingRunError) {
+          console.error(
+            "Scheduler existing-run lookup error:",
+            existingRunError
+          );
+
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "error",
+            detail: existingRunError.message,
+          });
+
+          continue;
+        }
+
+        if (existingRun) {
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "already_run",
+          });
+
+          continue;
+        }
+
+        let queuedContent: {
+          id: string;
+          type: string;
+          status: string;
+        } | null = null;
+
+        const { data: queuedRow, error: queuedContentError } =
           await supabaseAdmin
             .from("content")
-            .select(
-              "id, type, title, caption, hashtags, image_url, platform, status, created_at"
-            )
+            .select("id, type, status")
             .eq("workflow_id", workflowId)
-            .not("image_url", "is", null)
-            .order("created_at", { ascending: true });
+            .eq("status", "queued")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
 
-        if (allContentError || !allContent || allContent.length === 0) {
+        if (queuedContentError) {
+          console.error(
+            "Scheduler content lookup error:",
+            queuedContentError
+          );
+
           await insertRun(supabaseAdmin, {
             schedule_slot_id: slot.id,
             workflow_id: workflowId,
             run_date: runDate,
-            status: "skipped",
+            status: "failed",
             content_id: null,
-            error_message:
-              "No content available to rotate for this workflow.",
+            error_message: queuedContentError.message,
           });
 
           results.push({
             scheduleSlotId: slot.id,
             workflowId,
-            status: "skipped",
-            detail: "No content available to rotate.",
+            status: "failed",
+            detail: queuedContentError.message,
           });
 
           continue;
         }
 
-        type MediaTemplate = {
-          type: string;
-          title: string | null;
-          caption: string | null;
-          hashtags: string[] | null;
-          image_url: string;
-          platform: string | null;
-        };
+        queuedContent = queuedRow;
 
-        const library: MediaTemplate[] = [];
-        const seenUrls = new Set<string>();
+        if (!queuedContent) {
+          const { data: workflowMeta } = await supabaseAdmin
+            .from("workflows")
+            .select("id, source, mode")
+            .eq("id", workflowId)
+            .maybeSingle();
 
-        for (const row of allContent) {
-          if (!row.image_url || seenUrls.has(row.image_url)) continue;
-          seenUrls.add(row.image_url);
-          library.push({
-            type: row.type || "post",
-            title: row.title ?? null,
-            caption: row.caption ?? null,
-            hashtags: Array.isArray(row.hashtags) ? row.hashtags : [],
-            image_url: row.image_url,
-            platform: row.platform ?? "instagram",
-          });
-        }
+          const isUserUpload =
+            workflowMeta?.source === "user_uploaded" ||
+            workflowMeta?.mode === "user_uploaded";
 
-        if (library.length === 0) {
-          await insertRun(supabaseAdmin, {
-            schedule_slot_id: slot.id,
-            workflow_id: workflowId,
-            run_date: runDate,
-            status: "skipped",
-            content_id: null,
-            error_message: "No media library to rotate.",
-          });
+          if (!isUserUpload) {
+            await insertRun(supabaseAdmin, {
+              schedule_slot_id: slot.id,
+              workflow_id: workflowId,
+              run_date: runDate,
+              status: "skipped",
+              content_id: null,
+              error_message: "No queued content available.",
+            });
 
-          results.push({
-            scheduleSlotId: slot.id,
-            workflowId,
-            status: "skipped",
-            detail: "No media library to rotate.",
-          });
+            results.push({
+              scheduleSlotId: slot.id,
+              workflowId,
+              status: "skipped",
+              detail: "No queued content available.",
+            });
 
-          continue;
-        }
-
-        const published = allContent
-          .filter((row) => row.status === "published")
-          .sort((a, b) =>
-            String(b.created_at).localeCompare(String(a.created_at))
-          );
-
-        const lastUrl = published[0]?.image_url ?? null;
-        let nextIndex = 0;
-
-        if (lastUrl) {
-          const lastIndex = library.findIndex(
-            (item) => item.image_url === lastUrl
-          );
-          if (lastIndex >= 0) {
-            nextIndex = (lastIndex + 1) % library.length;
+            continue;
           }
-        }
 
-        const template = library[nextIndex];
+          const { data: allContent, error: allContentError } =
+            await supabaseAdmin
+              .from("content")
+              .select(
+                "id, type, title, caption, hashtags, image_url, platform, status, created_at"
+              )
+              .eq("workflow_id", workflowId)
+              .not("image_url", "is", null)
+              .order("created_at", { ascending: true });
 
-        const { data: cycled, error: cycleError } = await supabaseAdmin
-          .from("content")
-          .insert({
-            user_id: userId,
-            workflow_id: workflowId,
-            type: template.type,
-            title: template.title,
-            caption: template.caption,
-            hashtags: template.hashtags || [],
-            image_url: template.image_url,
-            platform: template.platform || "instagram",
-            status: "queued",
-          })
-          .select("id, type, status")
-          .single();
+          if (allContentError || !allContent || allContent.length === 0) {
+            await insertRun(supabaseAdmin, {
+              schedule_slot_id: slot.id,
+              workflow_id: workflowId,
+              run_date: runDate,
+              status: "skipped",
+              content_id: null,
+              error_message:
+                "No content available to rotate for this workflow.",
+            });
 
-        if (cycleError || !cycled) {
-          console.error("Rotate content insert error:", cycleError);
+            results.push({
+              scheduleSlotId: slot.id,
+              workflowId,
+              status: "skipped",
+              detail: "No content available to rotate.",
+            });
 
-          await insertRun(supabaseAdmin, {
-            schedule_slot_id: slot.id,
-            workflow_id: workflowId,
-            run_date: runDate,
-            status: "failed",
-            content_id: null,
-            error_message:
-              cycleError?.message ||
-              "Failed to rotate content for this workflow.",
-          });
+            continue;
+          }
 
-          results.push({
-            scheduleSlotId: slot.id,
-            workflowId,
-            status: "failed",
-            detail: "Failed to rotate content.",
-          });
+          type MediaTemplate = {
+            type: string;
+            title: string | null;
+            caption: string | null;
+            hashtags: string[] | null;
+            image_url: string;
+            platform: string | null;
+          };
 
-          continue;
-        }
+          const library: MediaTemplate[] = [];
+          const seenUrls = new Set<string>();
 
-        queuedContent = cycled;
-      }
+          for (const row of allContent) {
+            if (!row.image_url || seenUrls.has(row.image_url)) continue;
+            seenUrls.add(row.image_url);
+            library.push({
+              type: row.type || "post",
+              title: row.title ?? null,
+              caption: row.caption ?? null,
+              hashtags: Array.isArray(row.hashtags) ? row.hashtags : [],
+              image_url: row.image_url,
+              platform: row.platform ?? "instagram",
+            });
+          }
 
-      const { data: claimedContent, error: claimError } =
-        await supabaseAdmin
-          .from("content")
-          .update({ status: "publishing" })
-          .eq("id", queuedContent.id)
-          .eq("status", "queued")
-          .select()
-          .maybeSingle();
+          if (library.length === 0) {
+            await insertRun(supabaseAdmin, {
+              schedule_slot_id: slot.id,
+              workflow_id: workflowId,
+              run_date: runDate,
+              status: "skipped",
+              content_id: null,
+              error_message: "No media library to rotate.",
+            });
 
-      if (claimError || !claimedContent) {
-        await insertRun(supabaseAdmin, {
-          schedule_slot_id: slot.id,
-          workflow_id: workflowId,
-          run_date: runDate,
-          status: "skipped",
-          content_id: queuedContent.id,
-          error_message:
-            "Content was already claimed by another schedule slot.",
-        });
+            results.push({
+              scheduleSlotId: slot.id,
+              workflowId,
+              status: "skipped",
+              detail: "No media library to rotate.",
+            });
 
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "skipped",
-          detail: "Content already claimed.",
-        });
+            continue;
+          }
 
-        continue;
-      }
+          const published = allContent
+            .filter((row) => row.status === "published")
+            .sort((a, b) =>
+              String(b.created_at).localeCompare(String(a.created_at))
+            );
 
-      try {
-        const { data: workflowAccounts, error: waError } =
-          await supabaseAdmin
-            .from("workflow_accounts")
-            .select("platform, account_id")
-            .eq("workflow_id", workflowId);
+          const lastUrl = published[0]?.image_url ?? null;
+          let nextIndex = 0;
 
-        if (waError) {
-          throw new Error(waError.message);
-        }
-
-        const accounts = workflowAccounts ?? [];
-
-        const targets =
-          accounts.length > 0
-            ? accounts
-            : [{ platform: "instagram", account_id: null }];
-
-        const publishErrors: string[] = [];
-
-        for (const target of targets) {
-          const platform = (target.platform || "").toLowerCase();
-
-          try {
-            if (platform === "facebook") {
-              await publishFacebookPost(userId, claimedContent.id);
-            } else if (platform === "instagram") {
-              await publishInstagramPost(userId, claimedContent.id);
-            } else if (platform === "youtube") {
-              await publishYouTubeVideo(
-                userId,
-                claimedContent.id,
-                workflowId,
-                target.account_id
-              );
-            } else if (platform === "tiktok") {
-              await publishTikTokVideo(
-                userId,
-                claimedContent.id,
-                workflowId,
-                target.account_id
-              );
-            } else if (platform === "linkedin") {
-              await publishLinkedInPost(
-                userId,
-                claimedContent.id,
-                workflowId,
-                target.account_id
-              );
-            } else {
-              publishErrors.push(`Unsupported platform: ${platform}`);
+          if (lastUrl) {
+            const lastIndex = library.findIndex(
+              (item) => item.image_url === lastUrl
+            );
+            if (lastIndex >= 0) {
+              nextIndex = (lastIndex + 1) % library.length;
             }
-          } catch (platformError) {
-            const msg =
-              platformError instanceof PublishFacebookError ||
-                platformError instanceof PublishPostError ||
-                platformError instanceof PublishYouTubeError ||
-                platformError instanceof PublishTikTokError ||
-                platformError instanceof PublishLinkedInError ||
-                platformError instanceof Error
-                ? platformError.message
-                : "Publish failed";
-            publishErrors.push(`${platform}: ${msg}`);
           }
+
+          const template = library[nextIndex];
+
+          const { data: cycled, error: cycleError } = await supabaseAdmin
+            .from("content")
+            .insert({
+              user_id: userId,
+              workflow_id: workflowId,
+              type: template.type,
+              title: template.title,
+              caption: template.caption,
+              hashtags: template.hashtags || [],
+              image_url: template.image_url,
+              platform: template.platform || "instagram",
+              status: "queued",
+            })
+            .select("id, type, status")
+            .single();
+
+          if (cycleError || !cycled) {
+            console.error("Rotate content insert error:", cycleError);
+
+            await insertRun(supabaseAdmin, {
+              schedule_slot_id: slot.id,
+              workflow_id: workflowId,
+              run_date: runDate,
+              status: "failed",
+              content_id: null,
+              error_message:
+                cycleError?.message ||
+                "Failed to rotate content for this workflow.",
+            });
+
+            results.push({
+              scheduleSlotId: slot.id,
+              workflowId,
+              status: "failed",
+              detail: "Failed to rotate content.",
+            });
+
+            continue;
+          }
+
+          queuedContent = cycled;
         }
 
-        if (publishErrors.length === targets.length) {
-          throw new Error(publishErrors.join(" | "));
+        const { data: claimedContent, error: claimError } =
+          await supabaseAdmin
+            .from("content")
+            .update({ status: "publishing" })
+            .eq("id", queuedContent.id)
+            .eq("status", "queued")
+            .select()
+            .maybeSingle();
+
+        if (claimError || !claimedContent) {
+          await insertRun(supabaseAdmin, {
+            schedule_slot_id: slot.id,
+            workflow_id: workflowId,
+            run_date: runDate,
+            status: "skipped",
+            content_id: queuedContent.id,
+            error_message:
+              "Content was already claimed by another schedule slot.",
+          });
+
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "skipped",
+            detail: "Content already claimed.",
+          });
+
+          continue;
         }
 
-        await supabaseAdmin
-          .from("content")
-          .update({
-            status: "published",
-            published_at: new Date().toISOString(),
-          })
-          .eq("id", claimedContent.id);
+        try {
+          const { data: workflowAccounts, error: waError } =
+            await supabaseAdmin
+              .from("workflow_accounts")
+              .select("platform, account_id")
+              .eq("workflow_id", workflowId);
 
-        await insertRun(supabaseAdmin, {
-          schedule_slot_id: slot.id,
-          workflow_id: workflowId,
-          run_date: runDate,
-          status: "success",
-          content_id: claimedContent.id,
-          error_message:
-            publishErrors.length > 0
-              ? `Partial: ${publishErrors.join(" | ")}`
-              : null,
-        });
+          if (waError) {
+            throw new Error(waError.message);
+          }
 
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "success",
-          detail:
-            publishErrors.length > 0
-              ? `Partial: ${publishErrors.join(" | ")}`
-              : undefined,
-        });
-      } catch (publishError) {
-        await supabaseAdmin
-          .from("content")
-          .update({ status: "queued" })
-          .eq("id", claimedContent.id);
+          const accounts = workflowAccounts ?? [];
 
-        const message =
-          publishError instanceof PublishFacebookError ||
-            publishError instanceof PublishPostError ||
-            publishError instanceof PublishYouTubeError ||
-            publishError instanceof PublishTikTokError ||
-            publishError instanceof PublishLinkedInError ||
-            publishError instanceof Error
-            ? publishError.message
-            : "Unable to publish content.";
+          const targets =
+            accounts.length > 0
+              ? accounts
+              : [{ platform: "instagram", account_id: null }];
 
-        await insertRun(supabaseAdmin, {
-          schedule_slot_id: slot.id,
-          workflow_id: workflowId,
-          run_date: runDate,
-          status: "failed",
-          content_id: claimedContent.id,
-          error_message: message,
-        });
+          const publishErrors: string[] = [];
 
-        results.push({
-          scheduleSlotId: slot.id,
-          workflowId,
-          status: "failed",
-          detail: message,
-        });
+          for (const target of targets) {
+            const platform = (target.platform || "").toLowerCase();
+
+            try {
+              if (platform === "facebook") {
+                await publishFacebookPost(userId, claimedContent.id);
+              } else if (platform === "instagram") {
+                await publishInstagramPost(userId, claimedContent.id);
+              } else if (platform === "youtube") {
+                await publishYouTubeVideo(
+                  userId,
+                  claimedContent.id,
+                  workflowId,
+                  target.account_id
+                );
+              } else if (platform === "tiktok") {
+                await publishTikTokVideo(
+                  userId,
+                  claimedContent.id,
+                  workflowId,
+                  target.account_id
+                );
+              } else if (platform === "linkedin") {
+                await publishLinkedInPost(
+                  userId,
+                  claimedContent.id,
+                  workflowId,
+                  target.account_id
+                );
+              } else {
+                publishErrors.push(`Unsupported platform: ${platform}`);
+              }
+            } catch (platformError) {
+              const msg =
+                platformError instanceof PublishFacebookError ||
+                  platformError instanceof PublishPostError ||
+                  platformError instanceof PublishYouTubeError ||
+                  platformError instanceof PublishTikTokError ||
+                  platformError instanceof PublishLinkedInError ||
+                  platformError instanceof Error
+                  ? platformError.message
+                  : "Publish failed";
+              publishErrors.push(`${platform}: ${msg}`);
+            }
+          }
+
+          if (publishErrors.length === targets.length) {
+            throw new Error(publishErrors.join(" | "));
+          }
+
+          await supabaseAdmin
+            .from("content")
+            .update({
+              status: "published",
+              published_at: new Date().toISOString(),
+            })
+            .eq("id", claimedContent.id);
+
+          await insertRun(supabaseAdmin, {
+            schedule_slot_id: slot.id,
+            workflow_id: workflowId,
+            run_date: runDate,
+            status: "success",
+            content_id: claimedContent.id,
+            error_message:
+              publishErrors.length > 0
+                ? `Partial: ${publishErrors.join(" | ")}`
+                : null,
+          });
+
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "success",
+            detail:
+              publishErrors.length > 0
+                ? `Partial: ${publishErrors.join(" | ")}`
+                : undefined,
+          });
+        } catch (publishError) {
+          await supabaseAdmin
+            .from("content")
+            .update({ status: "queued" })
+            .eq("id", claimedContent.id);
+
+          const message =
+            publishError instanceof PublishFacebookError ||
+              platformErrorIsPostError(publishError) ||
+              publishError instanceof PublishYouTubeError ||
+              publishError instanceof PublishTikTokError ||
+              publishError instanceof PublishLinkedInError ||
+              publishError instanceof Error
+              ? publishError.message
+              : "Unable to publish content.";
+
+          await insertRun(supabaseAdmin, {
+            schedule_slot_id: slot.id,
+            workflow_id: workflowId,
+            run_date: runDate,
+            status: "failed",
+            content_id: claimedContent.id,
+            error_message: message,
+          });
+
+          results.push({
+            scheduleSlotId: slot.id,
+            workflowId,
+            status: "failed",
+            detail: message,
+          });
+        }
       }
     }
 
     const calendarResults: Array<{
       id: string;
+      platform?: string;
       status: string;
       detail?: string;
     }> = [];
@@ -894,13 +889,17 @@ async function handleScheduler(request: Request) {
       .select(
         "id, user_id, account_id, platform, scheduled_date, scheduled_time, timezone, media_url, caption, status"
       )
-      .eq("status", "scheduled")
-      .eq("platform", "instagram");
+      .eq("status", "scheduled");
 
     if (calendarError) {
       console.error("Calendar posts lookup error:", calendarError);
     } else {
       for (const row of calendarRows ?? []) {
+        const platform = (row.platform || "").trim().toLowerCase();
+        if (!platform || EXCLUDED_CALENDAR_PLATFORMS.has(platform)) {
+          continue;
+        }
+
         const tz = row.timezone || DEFAULT_TIMEZONE;
         const localDate = getZonedDateString(now, tz);
         const localMinutes = getZonedTimeMinutes(now, tz);
@@ -923,6 +922,7 @@ async function handleScheduler(request: Request) {
         if (claimErr || !claimed) {
           calendarResults.push({
             id: row.id,
+            platform,
             status: "skipped",
             detail: "Already claimed",
           });
@@ -930,17 +930,22 @@ async function handleScheduler(request: Request) {
         }
 
         try {
+          const isVideo = /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(
+            claimed.media_url || ""
+          );
+
           const { data: contentRow, error: contentErr } = await supabaseAdmin
             .from("content")
             .insert({
-              user_id: row.user_id,
+              user_id: claimed.user_id,
               workflow_id: null,
-              type: "post",
-              caption: row.caption,
+              type: isVideo ? "video" : "post",
+              title: claimed.caption ? claimed.caption.slice(0, 80) : null,
+              caption: claimed.caption,
               hashtags: [],
-              image_url: row.media_url,
+              image_url: claimed.media_url,
               status: "queued",
-              platform: "instagram",
+              platform,
             })
             .select("id")
             .single();
@@ -948,11 +953,38 @@ async function handleScheduler(request: Request) {
           if (contentErr || !contentRow) {
             throw new Error(
               contentErr?.message ||
-              "Failed to create content for calendar post"
+                "Failed to create content for calendar post"
             );
           }
 
-          await publishInstagramPost(row.user_id, contentRow.id);
+          if (platform === "facebook") {
+            await publishFacebookPost(claimed.user_id, contentRow.id);
+          } else if (platform === "instagram") {
+            await publishInstagramPost(claimed.user_id, contentRow.id);
+          } else if (platform === "youtube") {
+            await publishYouTubeVideo(
+              claimed.user_id,
+              contentRow.id,
+              null,
+              claimed.account_id
+            );
+          } else if (platform === "tiktok") {
+            await publishTikTokVideo(
+              claimed.user_id,
+              contentRow.id,
+              null,
+              claimed.account_id
+            );
+          } else if (platform === "linkedin") {
+            await publishLinkedInPost(
+              claimed.user_id,
+              contentRow.id,
+              null,
+              claimed.account_id
+            );
+          } else {
+            throw new Error(`Unsupported platform: ${platform}`);
+          }
 
           await supabaseAdmin
             .from("content")
@@ -969,12 +1001,23 @@ async function handleScheduler(request: Request) {
               published_at: new Date().toISOString(),
               error_message: null,
             })
-            .eq("id", row.id);
+            .eq("id", claimed.id);
 
-          calendarResults.push({ id: row.id, status: "success" });
+          calendarResults.push({
+            id: claimed.id,
+            platform,
+            status: "success",
+          });
         } catch (err) {
           const message =
-            err instanceof Error ? err.message : "Calendar publish failed";
+            err instanceof PublishFacebookError ||
+            platformErrorIsPostError(err) ||
+            err instanceof PublishYouTubeError ||
+            err instanceof PublishTikTokError ||
+            err instanceof PublishLinkedInError ||
+            err instanceof Error
+              ? err.message
+              : "Calendar publish failed";
 
           await supabaseAdmin
             .from("calendar_posts")
@@ -982,10 +1025,11 @@ async function handleScheduler(request: Request) {
               status: "failed",
               error_message: message,
             })
-            .eq("id", row.id);
+            .eq("id", claimed.id);
 
           calendarResults.push({
-            id: row.id,
+            id: claimed.id,
+            platform,
             status: "failed",
             detail: message,
           });
@@ -1000,7 +1044,6 @@ async function handleScheduler(request: Request) {
       results,
       calendarResults,
     });
-
   } catch (error) {
     console.error("Scheduler run error:", error);
 
@@ -1014,6 +1057,10 @@ async function handleScheduler(request: Request) {
       { status: 500 }
     );
   }
+}
+
+function platformErrorIsPostError(err: unknown): err is PublishPostError {
+  return err instanceof PublishPostError;
 }
 
 async function insertRun(
