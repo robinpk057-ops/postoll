@@ -14,13 +14,24 @@ type CalendarPost = {
   caption: string | null;
   status: string;
   account_id: string | null;
+  platform?: string | null;
 };
 
-type IgAccount = {
+type SocialAccount = {
   id: string;
-  account_name: string;
-  connected: boolean;
+  platform: string;
+  account_name: string | null;
+  account_id?: string | null;
+  connected?: boolean | null;
 };
+
+const EXCLUDED_PLATFORMS = new Set(["x", "twitter"]);
+
+function isAllowedAccount(acc: SocialAccount) {
+  const p = (acc.platform || "").trim().toLowerCase();
+  if (!p || EXCLUDED_PLATFORMS.has(p)) return false;
+  return acc.connected !== false;
+}
 
 function toDateKey(d: Date) {
   const y = d.getFullYear();
@@ -61,8 +72,8 @@ function TimePicker24({
       <select
         value={hour}
         onChange={(e) => set(Number(e.target.value), minute)}
-        className="rounded-lg border px-3 py-2"
-        style={{ background: "var(--background)", borderColor: "var(--border)" }}
+        className="rounded-lg border px-3 py-2 text-sm text-white"
+        style={{ background: "#0b0b0f", borderColor: "#2e2e38" }}
       >
         {Array.from({ length: 24 }, (_, i) => (
           <option key={i} value={i}>
@@ -74,8 +85,8 @@ function TimePicker24({
       <select
         value={minute}
         onChange={(e) => set(hour, Number(e.target.value))}
-        className="rounded-lg border px-3 py-2"
-        style={{ background: "var(--background)", borderColor: "var(--border)" }}
+        className="rounded-lg border px-3 py-2 text-sm text-white"
+        style={{ background: "#0b0b0f", borderColor: "#2e2e38" }}
       >
         {Array.from({ length: 60 }, (_, i) => (
           <option key={i} value={i}>
@@ -91,7 +102,7 @@ export default function CalendarPage() {
   const supabase = createClient();
   const days = useMemo(() => buildDays(30), []);
   const [posts, setPosts] = useState<CalendarPost[]>([]);
-  const [accounts, setAccounts] = useState<IgAccount[]>([]);
+  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -99,7 +110,7 @@ export default function CalendarPage() {
   const [file, setFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
   const [time, setTime] = useState("09:00");
-  const [accountId, setAccountId] = useState("");
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   const timezone = useMemo(() => {
@@ -127,18 +138,20 @@ export default function CalendarPage() {
 
       setPosts(postsJson.posts || []);
 
-      const list = (accJson.accounts || accJson || []) as IgAccount[];
-      const ig = (Array.isArray(list) ? list : []).filter(
-        (a) => (a as { platform?: string }).platform === "instagram" || true
+      const rawList =
+        accJson.accounts ?? accJson.data ?? (Array.isArray(accJson) ? accJson : []);
+      const filtered = (Array.isArray(rawList) ? rawList : []).filter(
+        isAllowedAccount
       );
-      // If API returns { accounts: [...] } with platform field:
-      const fromApi = accJson.accounts ?? accJson.data ?? [];
-      const igAccounts = (Array.isArray(fromApi) ? fromApi : []).filter(
-        (a: { platform?: string; connected?: boolean }) =>
-          a.platform === "instagram" && a.connected !== false
-      );
-      setAccounts(igAccounts.length ? igAccounts : ig);
-      if (igAccounts[0]?.id) setAccountId(igAccounts[0].id);
+
+      setAccounts(filtered);
+      setSelectedAccountIds((prev) => {
+        const validPrev = prev.filter((id) =>
+          filtered.some((a) => a.id === id)
+        );
+        if (validPrev.length > 0) return validPrev;
+        return filtered.length > 0 ? [filtered[0].id] : [];
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
     } finally {
@@ -150,12 +163,42 @@ export default function CalendarPage() {
     load();
   }, [load]);
 
+  function openModalForDate(dateKey: string) {
+    setError("");
+    if (accounts.length > 0 && selectedAccountIds.length === 0) {
+      setSelectedAccountIds([accounts[0].id]);
+    }
+    setModalDate(dateKey);
+  }
+
+  function toggleAccount(id: string) {
+    setSelectedAccountIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }
+
+  const allSelected =
+    accounts.length > 0 && selectedAccountIds.length === accounts.length;
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedAccountIds([]);
+    } else {
+      setSelectedAccountIds(accounts.map((a) => a.id));
+    }
+  }
+
   function postsForDay(dateKey: string) {
     return posts.filter((p) => p.scheduled_date === dateKey);
   }
 
   async function submitPost() {
     if (!modalDate || !file) return;
+    if (selectedAccountIds.length === 0) {
+      setError("Select at least one account to schedule.");
+      return;
+    }
+
     setSaving(true);
     setError("");
 
@@ -178,22 +221,38 @@ export default function CalendarPage() {
         data: { publicUrl },
       } = supabase.storage.from("postoll-media").getPublicUrl(path);
 
-      const res = await fetch("/api/calendar/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scheduled_date: modalDate,
-          scheduled_time: time.length === 5 ? `${time}:00` : time,
-          timezone,
-          media_url: publicUrl,
-          caption,
-          account_id: accountId || undefined,
-          platform: "instagram",
-        }),
-      });
+      const chosenAccounts = accounts.filter((a) =>
+        selectedAccountIds.includes(a.id)
+      );
 
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Save failed");
+      const results = await Promise.all(
+        chosenAccounts.map(async (acc) => {
+          const res = await fetch("/api/calendar/posts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              scheduled_date: modalDate,
+              scheduled_time: time.length === 5 ? `${time}:00` : time,
+              timezone,
+              media_url: publicUrl,
+              caption,
+              account_id: acc.id,
+              platform: acc.platform.toLowerCase(),
+            }),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(
+              json.error || `Failed to schedule on ${acc.platform}`
+            );
+          }
+          return json;
+        })
+      );
+
+      if (!results.length) {
+        throw new Error("No posts scheduled");
+      }
 
       setModalDate(null);
       setFile(null);
@@ -215,26 +274,26 @@ export default function CalendarPage() {
         </p>
         <h1 className="mt-2 text-4xl font-bold">Calendar</h1>
         <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
-          Next 30 days · one Instagram account per post · 24-hour times (
-          {timezone})
+          Next 30 days · multi-account scheduling (excluding X) · 24-hour times
+          ({timezone})
         </p>
 
-        {error && (
+        {error && !modalDate && (
           <p className="mt-4 text-sm text-red-400">{error}</p>
         )}
 
         {accounts.length === 0 && !loading && (
           <div
             className="mt-6 rounded-xl border p-4"
-            style={{ borderColor: "var(--border)" }}
+            style={{ background: "#141419", borderColor: "#2e2e38" }}
           >
-            <p className="text-sm">No Instagram account connected.</p>
+            <p className="text-sm">No eligible social accounts connected.</p>
             <Link
               href="/accounts"
               className="mt-2 inline-block text-sm font-medium"
               style={{ color: "#a78bfa" }}
             >
-              Connect Instagram →
+              Connect an account →
             </Link>
           </div>
         )}
@@ -267,7 +326,7 @@ export default function CalendarPage() {
                     <p className="text-lg font-semibold">{label}</p>
                     <button
                       type="button"
-                      onClick={() => setModalDate(key)}
+                      onClick={() => openModalForDate(key)}
                       className="rounded-lg px-2 py-1 text-xs font-medium"
                       style={{
                         background: "var(--foreground)",
@@ -299,6 +358,7 @@ export default function CalendarPage() {
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium">
                             {(p.scheduled_time || "").slice(0, 5)}
+                            {p.platform ? ` · ${p.platform}` : ""}
                           </p>
                           <p
                             className="truncate text-xs"
@@ -318,15 +378,22 @@ export default function CalendarPage() {
       </div>
 
       {modalDate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
           <div
-            className="w-full max-w-md rounded-2xl border p-6"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border p-6 shadow-2xl"
             style={{
-              background: "var(--card)",
-              borderColor: "var(--border)",
+              backgroundColor: "#15151c",
+              borderColor: "#2f2f3d",
+              color: "#f4f4f6",
             }}
           >
             <h2 className="text-xl font-semibold">Add post · {modalDate}</h2>
+
+            {error && (
+              <p className="mt-3 rounded-lg border border-red-500/40 bg-red-950/50 px-3 py-2 text-xs text-red-300">
+                {error}
+              </p>
+            )}
 
             <label className="mt-5 block text-sm font-medium">Media</label>
             <input
@@ -341,27 +408,72 @@ export default function CalendarPage() {
               <TimePicker24 value={time} onChange={setTime} />
             </div>
 
-            <label className="mt-4 block text-sm font-medium">
-              Instagram account
-            </label>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="mt-2 w-full rounded-lg border px-3 py-2 text-sm"
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">
+                Accounts ({selectedAccountIds.length} selected)
+              </span>
+              {accounts.length > 0 && (
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="rounded-md border px-2.5 py-1 text-xs font-medium"
+                  style={{
+                    backgroundColor: "#1f1f29",
+                    borderColor: "#383847",
+                    color: "#c4b5fd",
+                  }}
+                >
+                  {allSelected ? "Deselect all" : "Select all"}
+                </button>
+              )}
+            </div>
+
+            <div
+              className="mt-2 max-h-44 space-y-2 overflow-y-auto rounded-xl border p-3"
               style={{
-                background: "var(--background)",
-                borderColor: "var(--border)",
+                backgroundColor: "#0d0d12",
+                borderColor: "#282834",
               }}
             >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.account_name || a.id}
-                </option>
-              ))}
-            </select>
+              {accounts.length === 0 ? (
+                <p className="text-xs text-zinc-400">
+                  No accounts available (X is excluded).
+                </p>
+              ) : (
+                accounts.map((acc) => {
+                  const checked = selectedAccountIds.includes(acc.id);
+                  return (
+                    <label
+                      key={acc.id}
+                      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm transition"
+                      style={{
+                        backgroundColor: checked ? "#1d1b2e" : "#14141c",
+                        borderColor: checked ? "#7c3aed" : "#262632",
+                      }}
+                    >
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleAccount(acc.id)}
+                          className="h-4 w-4 accent-violet-500"
+                        />
+                        <span className="truncate font-medium">
+                          {acc.account_name || acc.id}
+                        </span>
+                      </span>
+                      <span className="shrink-0 rounded bg-zinc-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-zinc-300">
+                        {acc.platform}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
             <Link
               href="/accounts"
-              className="mt-1 inline-block text-xs"
+              className="mt-2 inline-block text-xs"
               style={{ color: "#a78bfa" }}
             >
               Connect another account →
@@ -373,8 +485,9 @@ export default function CalendarPage() {
               onChange={(e) => setCaption(e.target.value)}
               className="mt-2 min-h-24 w-full rounded-lg border p-3 text-sm"
               style={{
-                background: "var(--background)",
-                borderColor: "var(--border)",
+                backgroundColor: "#0d0d12",
+                borderColor: "#2e2e38",
+                color: "#f4f4f6",
               }}
             />
 
@@ -383,13 +496,17 @@ export default function CalendarPage() {
                 type="button"
                 onClick={() => setModalDate(null)}
                 className="rounded-xl border px-4 py-2 text-sm"
-                style={{ borderColor: "var(--border)" }}
+                style={{
+                  backgroundColor: "#1d1d26",
+                  borderColor: "#343442",
+                  color: "#f4f4f6",
+                }}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!file || saving}
+                disabled={!file || selectedAccountIds.length === 0 || saving}
                 onClick={submitPost}
                 className="rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40"
                 style={{
@@ -397,7 +514,9 @@ export default function CalendarPage() {
                   color: "var(--background)",
                 }}
               >
-                {saving ? "Saving…" : "Schedule"}
+                {saving
+                  ? "Saving…"
+                  : `Schedule${selectedAccountIds.length > 1 ? ` (${selectedAccountIds.length})` : ""}`}
               </button>
             </div>
           </div>

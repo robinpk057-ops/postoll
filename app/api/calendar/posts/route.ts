@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+const BLOCKED_PLATFORMS = new Set(["x", "twitter"]);
+
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
       media_url,
       caption,
       account_id,
-      platform = "instagram",
+      platform,
     } = body;
 
     if (!scheduled_date || !scheduled_time || !media_url) {
@@ -73,26 +75,53 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let resolvedAccountId = account_id as string | null;
+    let resolvedAccountId: string | null = account_id || null;
+    let resolvedPlatform: string = (platform || "").toLowerCase();
 
-    if (!resolvedAccountId) {
-      const { data: acc } = await supabase
+    if (resolvedAccountId) {
+      const { data: selectedAcc } = await supabase
         .from("accounts")
-        .select("id")
+        .select("id, platform, connected")
+        .eq("id", resolvedAccountId)
         .eq("user_id", user.id)
-        .eq("platform", "instagram")
-        .eq("connected", true)
-        .limit(1)
         .maybeSingle();
 
-      resolvedAccountId = acc?.id ?? null;
-    }
+      if (!selectedAcc) {
+        return NextResponse.json(
+          { error: "Selected account not found." },
+          { status: 404 }
+        );
+      }
 
-    if (!resolvedAccountId) {
-      return NextResponse.json(
-        { error: "Connect an Instagram account first." },
-        { status: 400 }
+      const accPlatform = (selectedAcc.platform || "").toLowerCase();
+      if (BLOCKED_PLATFORMS.has(accPlatform)) {
+        return NextResponse.json(
+          { error: "Scheduling to X is not supported." },
+          { status: 400 }
+        );
+      }
+
+      resolvedPlatform = accPlatform || resolvedPlatform || "instagram";
+    } else {
+      const { data: fallbackAcc } = await supabase
+        .from("accounts")
+        .select("id, platform, connected")
+        .eq("user_id", user.id)
+        .eq("connected", true);
+
+      const eligible = (fallbackAcc || []).find(
+        (a) => !BLOCKED_PLATFORMS.has((a.platform || "").toLowerCase())
       );
+
+      if (!eligible) {
+        return NextResponse.json(
+          { error: "Connect an eligible social account first." },
+          { status: 400 }
+        );
+      }
+
+      resolvedAccountId = eligible.id;
+      resolvedPlatform = (eligible.platform || "instagram").toLowerCase();
     }
 
     const { data, error } = await supabase
@@ -100,7 +129,7 @@ export async function POST(req: NextRequest) {
       .insert({
         user_id: user.id,
         account_id: resolvedAccountId,
-        platform,
+        platform: resolvedPlatform,
         scheduled_date,
         scheduled_time,
         timezone: timezone || "UTC",
