@@ -18,7 +18,9 @@ type Workflow = {
 type WorkflowContentItem = {
   id: string;
   title: string | null;
+  idea: string | null;
   caption: string | null;
+  hashtags: string[] | string | null;
   image_url: string | null;
   platform: string | null;
   type: string | null;
@@ -39,7 +41,23 @@ type WorkflowSlotItem = {
   enabled: boolean;
 };
 
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function isVideoUrl(url: string | null): boolean {
+  if (!url) return false;
+  return /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(url);
+}
+
+function formatContentText(item: WorkflowContentItem): string {
+  const mainText = (item.caption || item.title || item.idea || "").trim();
+  const tags = Array.isArray(item.hashtags)
+    ? item.hashtags
+        .map((t) => String(t).trim())
+        .filter(Boolean)
+        .map((t) => (t.startsWith("#") ? t : `#${t}`))
+    : [];
+
+  if (!mainText && tags.length === 0) return "No text content";
+  return [mainText, tags.join(" ")].filter(Boolean).join(" ");
+}
 
 export default function WorkflowsPage() {
   const supabase = createClient();
@@ -129,38 +147,69 @@ export default function WorkflowsPage() {
     setLoadingDetailsId(workflowId);
 
     try {
-      const [contentRes, slotsRes] = await Promise.all([
-        supabase
-          .from("content")
-          .select(
-            "id, title, caption, image_url, platform, type, status, scheduled_at, published_at, created_at"
-          )
-          .eq("workflow_id", workflowId)
-          .order("published_at", { ascending: false, nullsFirst: false })
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("workflow_schedule_slots")
-          .select(
-            "id, workflow_id, day_of_week, slot_number, post_time, pending_post_time, effective_from_date, enabled"
-          )
-          .eq("workflow_id", workflowId)
-          .order("day_of_week", { ascending: true })
-          .order("slot_number", { ascending: true }),
-      ]);
+      const [contentRes, slotsRes, scheduleRes, settingsRes] =
+        await Promise.all([
+          supabase
+            .from("content")
+            .select(
+              "id, title, idea, caption, hashtags, image_url, platform, type, status, scheduled_at, published_at, created_at"
+            )
+            .eq("workflow_id", workflowId)
+            .order("published_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("workflow_schedule_slots")
+            .select(
+              "id, workflow_id, day_of_week, slot_number, post_time, pending_post_time, effective_from_date, enabled"
+            )
+            .eq("workflow_id", workflowId)
+            .eq("enabled", true)
+            .order("slot_number", { ascending: true })
+            .order("day_of_week", { ascending: true }),
+          supabase
+            .from("workflow_schedule")
+            .select("posts_per_day, reels_per_day")
+            .eq("workflow_id", workflowId)
+            .maybeSingle(),
+          supabase
+            .from("workflow_settings")
+            .select("posts_per_day")
+            .eq("workflow_id", workflowId)
+            .maybeSingle(),
+        ]);
 
       const items = (contentRes.data || []) as WorkflowContentItem[];
-      const slots = (slotsRes.data || []) as WorkflowSlotItem[];
+      const rawSlots = (slotsRes.data || []) as WorkflowSlotItem[];
+
+      const configuredPerDay = Number(
+        scheduleRes.data?.posts_per_day ||
+          scheduleRes.data?.reels_per_day ||
+          settingsRes.data?.posts_per_day ||
+          0
+      );
+
+      // Group slots by slot_number so a workflow with 1, 2, or 3 posts/day
+      // shows only that exact number of daily time controls (1, 2, or 3).
+      const distinctBySlotNumber = Array.from(
+        new Map(rawSlots.map((s) => [s.slot_number, s])).values()
+      ).sort((a, b) => a.slot_number - b.slot_number);
+
+      const dailySlots =
+        configuredPerDay > 0
+          ? distinctBySlotNumber.slice(0, configuredPerDay)
+          : distinctBySlotNumber;
 
       setItemsByWorkflow((prev) => ({ ...prev, [workflowId]: items }));
-      setSlotsByWorkflow((prev) => ({ ...prev, [workflowId]: slots }));
+      setSlotsByWorkflow((prev) => ({ ...prev, [workflowId]: dailySlots }));
 
       setDraftTimes((prev) => {
         const next = { ...prev };
-        for (const s of slots) {
-          const activeOrPending = (s.pending_post_time || s.post_time || "").slice(
-            0,
-            5
-          );
+        for (const s of dailySlots) {
+          const activeOrPending = (
+            s.pending_post_time ||
+            s.post_time ||
+            ""
+          ).slice(0, 5);
           if (!next[s.id]) next[s.id] = activeOrPending;
         }
         return next;
@@ -196,7 +245,8 @@ export default function WorkflowsPage() {
           s.id === slotId
             ? {
                 ...s,
-                pending_post_time: data.slot?.pending_post_time ?? `${newTime}:00`,
+                pending_post_time:
+                  data.slot?.pending_post_time ?? `${newTime}:00`,
                 effective_from_date: data.slot?.effective_from_date ?? null,
               }
             : s
@@ -311,7 +361,8 @@ export default function WorkflowsPage() {
                       className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border"
                       style={{ borderColor: "var(--border)" }}
                     >
-                      {workflow.thumbnail_url ? (
+                      {workflow.thumbnail_url &&
+                      !isVideoUrl(workflow.thumbnail_url) ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={workflow.thumbnail_url}
@@ -320,7 +371,7 @@ export default function WorkflowsPage() {
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-[10px] opacity-50">
-                          No image
+                          {workflow.thumbnail_url ? "Media" : "No image"}
                         </div>
                       )}
                     </div>
@@ -391,7 +442,9 @@ export default function WorkflowsPage() {
                       {/* Schedule Time Controls (From Tomorrow Onwards) */}
                       <div>
                         <h3 className="text-sm font-semibold">
-                          Schedule Time (Effective From Tomorrow Onwards)
+                          Schedule Time ({slots.length}{" "}
+                          {slots.length === 1 ? "time" : "times"} per day ·
+                          Effective From Tomorrow Onwards)
                         </h3>
                         <p
                           className="mt-1 text-xs"
@@ -414,7 +467,7 @@ export default function WorkflowsPage() {
                           </p>
                         ) : (
                           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {slots.map((slot) => {
+                            {slots.map((slot, idx) => {
                               const currentTime = String(slot.post_time).slice(
                                 0,
                                 5
@@ -430,11 +483,7 @@ export default function WorkflowsPage() {
                                   style={{ borderColor: "var(--border)" }}
                                 >
                                   <div className="flex items-center justify-between font-medium">
-                                    <span>
-                                      {DAY_NAMES[slot.day_of_week] ??
-                                        `Day ${slot.day_of_week}`}{" "}
-                                      · Slot #{slot.slot_number}
-                                    </span>
+                                    <span>Time #{idx + 1}</span>
                                     <span style={{ color: "var(--muted)" }}>
                                       Today: {currentTime}
                                     </span>
@@ -526,6 +575,7 @@ export default function WorkflowsPage() {
                                 slots[0]?.post_time
                                   ? String(slots[0].post_time).slice(0, 5)
                                   : "Scheduled slot";
+                              const textBody = formatContentText(item);
 
                               return (
                                 <div
@@ -562,18 +612,28 @@ export default function WorkflowsPage() {
                                     className="mt-2.5 rounded-lg border p-2.5"
                                     style={{ borderColor: "var(--border)" }}
                                   >
-                                    {item.image_url && (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img
-                                        src={item.image_url}
-                                        alt=""
-                                        className="mb-2 h-24 w-full rounded object-cover"
-                                      />
-                                    )}
-                                    <p className="line-clamp-3 font-medium">
-                                      {item.caption ||
-                                        item.title ||
-                                        "Untitled content"}
+                                    {item.image_url &&
+                                      (isVideoUrl(item.image_url) ? (
+                                        <video
+                                          src={item.image_url}
+                                          controls
+                                          preload="metadata"
+                                          className="mb-2 h-24 w-full rounded object-cover"
+                                        />
+                                      ) : (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={item.image_url}
+                                          alt=""
+                                          onError={(e) => {
+                                            e.currentTarget.style.display =
+                                              "none";
+                                          }}
+                                          className="mb-2 h-24 w-full rounded object-cover"
+                                        />
+                                      ))}
+                                    <p className="whitespace-pre-line font-medium">
+                                      {textBody}
                                     </p>
                                   </div>
                                 </div>
