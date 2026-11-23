@@ -15,11 +15,6 @@ const navigation = [
     icon: "✦",
   },
   {
-    name: "Content",
-    href: "/content",
-    icon: "▣",
-  },
-  {
     name: "Calendar",
     href: "/calendar",
     icon: "□",

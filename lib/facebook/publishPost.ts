@@ -28,7 +28,8 @@ export class PublishFacebookError extends Error {
 
 export async function publishFacebookPost(
   userId: string,
-  contentId: string
+  contentId: string,
+  preferredAccountId?: string | null
 ): Promise<PublishFacebookResult> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -61,11 +62,12 @@ export async function publishFacebookPost(
 
   const isVideo =
     content.type === "reel" ||
-    /\.(mp4|mov|webm)(\?|$)/i.test(content.image_url || "");
+    content.type === "video" ||
+    /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(content.image_url || "");
 
   /*
    * ------------------------------------------------------------
-   * FIND CONNECTED FACEBOOK ACCOUNT (WITH WORKFLOW PREFERENCE)
+   * FIND CONNECTED FACEBOOK ACCOUNT (EXPLICIT ACCOUNT -> WORKFLOW -> FALLBACK)
    * ------------------------------------------------------------
    */
   let account: {
@@ -77,7 +79,33 @@ export async function publishFacebookPost(
     connected: boolean;
   } | null = null;
 
-  if (content.workflow_id) {
+  if (preferredAccountId) {
+    const { data: byRowId } = await supabaseAdmin
+      .from("accounts")
+      .select("id, platform, account_id, account_name, access_token, connected")
+      .eq("id", preferredAccountId)
+      .eq("user_id", userId)
+      .eq("platform", "facebook")
+      .eq("connected", true)
+      .maybeSingle();
+
+    if (byRowId) {
+      account = byRowId;
+    } else {
+      const { data: byFbAccountId } = await supabaseAdmin
+        .from("accounts")
+        .select("id, platform, account_id, account_name, access_token, connected")
+        .eq("account_id", preferredAccountId)
+        .eq("user_id", userId)
+        .eq("platform", "facebook")
+        .eq("connected", true)
+        .maybeSingle();
+
+      account = byFbAccountId;
+    }
+  }
+
+  if (!account && content.workflow_id) {
     const { data: linked, error: linkedError } = await supabaseAdmin
       .from("workflow_accounts")
       .select(
@@ -137,7 +165,7 @@ export async function publishFacebookPost(
 
   if (!account || !account.access_token || !account.account_id) {
     throw new PublishFacebookError(
-      "No connected Facebook Page found for this workflow.",
+      "No connected Facebook Page found. Reconnect Facebook on /accounts.",
       400
     );
   }
@@ -153,6 +181,35 @@ export async function publishFacebookPost(
   const message = [content.caption || "", hashtags]
     .filter(Boolean)
     .join("\n\n");
+
+  async function handleGraphFailure(data: any, fallbackMessage: string): Promise<never> {
+    const fbCode = data?.error?.code;
+    const rawMsg =
+      data?.error?.error_user_msg ||
+      data?.error?.message ||
+      fallbackMessage;
+
+    if (
+      fbCode === 190 ||
+      /validating access token|session has been invalidated|access token/i.test(
+        rawMsg
+      )
+    ) {
+      await supabaseAdmin
+        .from("accounts")
+        .update({ connected: false })
+        .eq("id", account!.id)
+        .eq("user_id", userId);
+
+      throw new PublishFacebookError(
+        `${rawMsg} Please reconnect ${account!.account_name || "Facebook"} on /accounts.`,
+        401,
+        data
+      );
+    }
+
+    throw new PublishFacebookError(rawMsg, 400, data);
+  }
 
   // VIDEO / REEL
   if (isVideo) {
@@ -173,13 +230,7 @@ export async function publishFacebookPost(
 
     if (!res.ok) {
       console.error("Facebook video publish error:", data);
-      throw new PublishFacebookError(
-        data?.error?.error_user_msg ||
-          data?.error?.message ||
-          "Facebook could not publish the video.",
-        400,
-        data
-      );
+      await handleGraphFailure(data, "Facebook could not publish the video.");
     }
 
     return {
@@ -213,13 +264,7 @@ export async function publishFacebookPost(
 
   if (!res.ok) {
     console.error("Facebook publish error:", data);
-    throw new PublishFacebookError(
-      data?.error?.error_user_msg ||
-        data?.error?.message ||
-        "Facebook could not publish the photo.",
-      400,
-      data
-    );
+    await handleGraphFailure(data, "Facebook could not publish the photo.");
   }
 
   return {

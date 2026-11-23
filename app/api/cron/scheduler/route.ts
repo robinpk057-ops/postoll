@@ -231,6 +231,8 @@ type ScheduleSlot = {
   post_time: string;
   content_type: string;
   enabled: boolean;
+  pending_post_time?: string | null;
+  effective_from_date?: string | null;
 };
 
 type WorkflowSettingsRow = {
@@ -326,7 +328,7 @@ async function handleScheduler(request: Request) {
     const { data: slots, error: slotsError } = await supabaseAdmin
       .from("workflow_schedule_slots")
       .select(
-        "id, workflow_id, day_of_week, slot_number, post_time, content_type, enabled"
+        "id, workflow_id, day_of_week, slot_number, post_time, content_type, enabled, pending_post_time, effective_from_date"
       )
       .eq("enabled", true);
 
@@ -400,6 +402,32 @@ async function handleScheduler(request: Request) {
           row as WorkflowSettingsRow,
         ])
       );
+
+      // Apply pending schedule changes only once the workflow's local date reaches effective_from_date
+      for (const slot of allSlots) {
+        if (slot.pending_post_time && slot.effective_from_date) {
+          const wf = workflowMap.get(slot.workflow_id);
+          if (wf) {
+            const tz =
+              settingsMap.get(slot.workflow_id)?.timezone || DEFAULT_TIMEZONE;
+            const localDate = getZonedDateString(now, tz);
+            if (localDate >= slot.effective_from_date) {
+              await supabaseAdmin
+                .from("workflow_schedule_slots")
+                .update({
+                  post_time: slot.pending_post_time,
+                  pending_post_time: null,
+                  effective_from_date: null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", slot.id);
+              slot.post_time = slot.pending_post_time;
+              slot.pending_post_time = null;
+              slot.effective_from_date = null;
+            }
+          }
+        }
+      }
 
       for (const slot of allSlots) {
         const workflow = workflowMap.get(slot.workflow_id);
