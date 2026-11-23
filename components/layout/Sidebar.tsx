@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -7,22 +7,27 @@ const navigation = [
   {
     name: "Home",
     href: "/",
-    icon: "⌂",
+    icon: "âŒ‚",
   },
   {
     name: "Workflows",
     href: "/workflows",
-    icon: "✦",
+    icon: "âœ¦",
   },
   {
+  {
+    name: "Automatic Posting",
+    href: "/automatic-posting",
+    icon: "⟳",
+  },
     name: "Calendar",
     href: "/calendar",
-    icon: "□",
+    icon: "â–¡",
   },
   {
     name: "Accounts",
     href: "/accounts",
-    icon: "↗",
+    icon: "â†—",
   },
 ];
 
@@ -112,7 +117,7 @@ export default function Sidebar() {
             }}
           >
             <span className="flex h-6 w-6 items-center justify-center text-base">
-              ⚙
+              âš™
             </span>
 
             <span>Settings</span>

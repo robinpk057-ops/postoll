@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import {
   createClient as createSupabaseClient,
   SupabaseClient,
@@ -36,7 +36,7 @@ import {
 - is generous, but still bounded. If many slots ever end up due
 - in the exact same 5-minute window for the same workflow, this
 - may need to move to a queue instead of one synchronous request
-- — fine for the current volume, worth revisiting if that grows.
+- â€” fine for the current volume, worth revisiting if that grows.
  */
 export const maxDuration = 120;
 
@@ -583,23 +583,77 @@ async function handleScheduler(request: Request) {
             workflowMeta?.mode === "user_uploaded";
 
           if (!isUserUpload) {
-            await insertRun(supabaseAdmin, {
-              schedule_slot_id: slot.id,
-              workflow_id: workflowId,
-              run_date: runDate,
-              status: "skipped",
-              content_id: null,
-              error_message: "No queued content available.",
-            });
+            try {
+              const origin = new URL(request.url).origin;
+              const genRes = await fetch(`${origin}/api/ai-director/run-daily`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${cronSecret}`,
+                },
+                body: JSON.stringify({ workflowId, runDate }),
+              });
 
-            results.push({
-              scheduleSlotId: slot.id,
-              workflowId,
-              status: "skipped",
-              detail: "No queued content available.",
-            });
+              const genJson = await genRes.json().catch(() => ({}));
+              if (!genRes.ok) {
+                throw new Error(genJson?.error || `Daily generation failed (${genRes.status})`);
+              }
 
-            continue;
+              const { data: newlyQueued, error: requeueError } = await supabaseAdmin
+                .from("content")
+                .select("id, type, status")
+                .eq("workflow_id", workflowId)
+                .eq("status", "queued")
+                .order("created_at", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+
+              if (requeueError) {
+                throw new Error(requeueError.message);
+              }
+
+              queuedContent = newlyQueued;
+            } catch (genErr) {
+              const msg = genErr instanceof Error ? genErr.message : "Daily generation failed.";
+              await insertRun(supabaseAdmin, {
+                schedule_slot_id: slot.id,
+                workflow_id: workflowId,
+                run_date: runDate,
+                status: "failed",
+                content_id: null,
+                error_message: msg,
+              });
+
+              results.push({
+                scheduleSlotId: slot.id,
+                workflowId,
+                status: "failed",
+                detail: msg,
+              });
+
+              continue;
+            }
+
+            if (!queuedContent) {
+              await insertRun(supabaseAdmin, {
+                schedule_slot_id: slot.id,
+                workflow_id: workflowId,
+                run_date: runDate,
+                status: "skipped",
+                content_id: null,
+                error_message: "No queued content available after daily generation.",
+              });
+
+              results.push({
+                scheduleSlotId: slot.id,
+                workflowId,
+                status: "skipped",
+                detail: "No queued content available after daily generation.",
+              });
+
+              continue;
+            }
+          }
           }
 
           const { data: allContent, error: allContentError } =
