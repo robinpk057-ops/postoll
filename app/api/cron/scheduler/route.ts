@@ -962,12 +962,18 @@ async function handleScheduler(request: Request) {
             claimed.media_url || ""
           );
 
+          const contentType = isVideo
+            ? platform === "instagram" || platform === "tiktok"
+              ? "reel"
+              : "video"
+            : "post";
+
           const { data: contentRow, error: contentErr } = await supabaseAdmin
             .from("content")
             .insert({
               user_id: claimed.user_id,
               workflow_id: null,
-              type: isVideo ? "video" : "post",
+              type: contentType,
               title: claimed.caption ? claimed.caption.slice(0, 80) : null,
               caption: claimed.caption,
               hashtags: [],

@@ -3,9 +3,9 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 const INSTAGRAM_GRAPH_URL = "https://graph.instagram.com";
 
 /*
- * ================================================================
- * TYPES
- * ================================================================
+- ================================================================
+- TYPES
+- ================================================================
  */
 
 export type PublishPostResult = {
@@ -36,24 +36,34 @@ export class PublishPostError extends Error {
 }
 
 /*
- * ================================================================
- * WAIT FOR CONTAINER TO FINISH PROCESSING
- * ================================================================
+- ================================================================
+- MEDIA TYPE HELPERS
+- ================================================================
+ */
+
+function isVideoMediaUrl(url: string): boolean {
+  return /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(url);
+}
+
+/*
+- ================================================================
+- WAIT FOR CONTAINER TO FINISH PROCESSING
+- ================================================================
  *
- * Instagram creates the media container asynchronously — right
- * after POST /{ig-user-id}/media returns a creation_id, the
- * actual image may still be downloading/processing on
- * Instagram's side. Calling media_publish before that finishes
- * returns errors like "Media ID is not available".
+- Instagram creates the media container asynchronously — right
+- after POST /{ig-user-id}/media returns a creation_id, the
+- actual image or video may still be downloading/processing on
+- Instagram's side. Calling media_publish before that finishes
+- returns errors like "Media ID is not available".
  *
- * Instagram's own docs recommend polling status_code until it
- * reports FINISHED before publishing.
+- Instagram's own docs recommend polling status_code until it
+- reports FINISHED before publishing.
  */
 
 async function waitForContainerReady(
   creationId: string,
   accessToken: string,
-  maxAttempts = 20,   // was 8 — reels can take 1–2+ minutes
+  maxAttempts = 20,
   delayMs = 3000
 ): Promise<void> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -69,7 +79,7 @@ async function waitForContainerReady(
     if (!statusResponse.ok) {
       throw new PublishPostError(
         statusData?.error?.message ||
-        "Unable to check media container status.",
+          "Unable to check media container status.",
         400,
         statusData
       );
@@ -89,10 +99,7 @@ async function waitForContainerReady(
       );
     }
 
-    // status_code is IN_PROGRESS (or similar) — wait and check again.
-    await new Promise((resolve) =>
-      setTimeout(resolve, delayMs)
-    );
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
   throw new PublishPostError(
@@ -102,38 +109,23 @@ async function waitForContainerReady(
 }
 
 /*
- * ================================================================
- * PUBLISH INSTAGRAM POST
- * ================================================================
+- ================================================================
+- PUBLISH INSTAGRAM POST / REEL
+- ================================================================
  *
- * This is the shared publishing logic used by:
+- This is the shared publishing logic used by:
  *
- *   - app/api/publish/instagram/route.ts (manual publish,
- *     authenticated via the user's browser session)
+-   - app/api/publish/instagram/route.ts (manual publish,
+-     authenticated via the user's browser session)
  *
- *   - app/api/cron/scheduler/route.ts (automatic publish,
- *     triggered by an external scheduler with no user session)
- *
- * Both callers already know the correct userId before calling
- * this — the route derives it from the authenticated session,
- * the scheduler derives it from the workflow's owner.
- *
- * IMPORTANT:
- *
- * This is intentionally for IMAGE POSTS.
- * Reels use a separate publishing flow that does not exist yet.
+-   - app/api/cron/scheduler/route.ts (automatic publish,
+-     triggered by an external scheduler with no user session)
  */
 
 export async function publishInstagramPost(
   userId: string,
   contentId: string
 ): Promise<PublishPostResult> {
-  /*
-   * ------------------------------------------------------------
-   * ENVIRONMENT
-   * ------------------------------------------------------------
-   */
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -151,12 +143,6 @@ export async function publishInstagramPost(
     );
   }
 
-  /*
-   * ------------------------------------------------------------
-   * SERVER-ONLY SUPABASE ADMIN CLIENT
-   * ------------------------------------------------------------
-   */
-
   const supabaseAdmin = createSupabaseClient(
     supabaseUrl,
     serviceRoleKey,
@@ -167,12 +153,6 @@ export async function publishInstagramPost(
       },
     }
   );
-
-  /*
-   * ------------------------------------------------------------
-   * LOAD CONTENT
-   * ------------------------------------------------------------
-   */
 
   const { data: content, error: contentError } = await supabaseAdmin
     .from("content")
@@ -208,43 +188,24 @@ export async function publishInstagramPost(
     );
   }
 
-  /*
-   * ------------------------------------------------------------
-   * MEDIA URL
-   * ------------------------------------------------------------
-   */
-
-  if (
-    !content.image_url ||
-    !content.image_url.startsWith("http")
-  ) {
+  if (!content.image_url || !content.image_url.startsWith("http")) {
     throw new PublishPostError(
       "This content does not have a public media URL.",
       400
     );
   }
 
-  const isReel = content.type === "reel";
-
-  /*
-   * ------------------------------------------------------------
-   * CAPTION
-   * ------------------------------------------------------------
-   */
+  const isVideo = isVideoMediaUrl(content.image_url);
+  const isReel =
+    content.type === "reel" || content.type === "video" || isVideo;
 
   const captionParts: string[] = [];
 
-  if (
-    typeof content.caption === "string" &&
-    content.caption.trim()
-  ) {
+  if (typeof content.caption === "string" && content.caption.trim()) {
     captionParts.push(content.caption.trim());
   }
 
-  if (
-    Array.isArray(content.hashtags) &&
-    content.hashtags.length > 0
-  ) {
+  if (Array.isArray(content.hashtags) && content.hashtags.length > 0) {
     const hashtags = content.hashtags
       .filter(
         (tag): tag is string =>
@@ -261,16 +222,6 @@ export async function publishInstagramPost(
   }
 
   const caption = captionParts.join("\n\n");
-
-  /*
-   * ------------------------------------------------------------
-   * FIND CONNECTED INSTAGRAM ACCOUNT
-   * ------------------------------------------------------------
-   *
-   * Preference order:
-   * 1. The specific account linked to this workflow via workflow_accounts
-   * 2. Fallback to any connected Instagram account (legacy workflows)
-   */
 
   let account: {
     id: string;
@@ -340,7 +291,7 @@ export async function publishInstagramPost(
     if (accountError) {
       throw new PublishPostError(
         accountError.message ||
-        "Unable to load the connected Instagram account.",
+          "Unable to load the connected Instagram account.",
         500,
         accountError
       );
@@ -363,15 +314,10 @@ export async function publishInstagramPost(
     );
   }
 
-  /*
-   * ------------------------------------------------------------
-   * CREATE INSTAGRAM MEDIA CONTAINER
-   * ------------------------------------------------------------
-   */
-
   console.log("Creating Instagram media container:", {
     contentId: content.id,
     type: content.type,
+    isReel,
     account: account.account_name,
     mediaUrl: content.image_url,
   });
@@ -411,7 +357,7 @@ export async function publishInstagramPost(
 
     throw new PublishPostError(
       containerData?.error?.message ||
-      "Instagram could not create the media container.",
+        "Instagram could not create the media container.",
       400,
       containerData
     );
@@ -426,19 +372,7 @@ export async function publishInstagramPost(
     );
   }
 
-  /*
-   * ------------------------------------------------------------
-   * WAIT FOR THE CONTAINER TO FINISH PROCESSING
-   * ------------------------------------------------------------
-   */
-
   await waitForContainerReady(creationId, account.access_token);
-
-  /*
-   * ------------------------------------------------------------
-   * PUBLISH MEDIA
-   * ------------------------------------------------------------
-   */
 
   console.log("Publishing Instagram media:", creationId);
 
@@ -466,7 +400,7 @@ export async function publishInstagramPost(
 
     throw new PublishPostError(
       publishData?.error?.message ||
-      "Instagram could not publish the media.",
+        "Instagram could not publish the media.",
       400,
       { ...publishData, creationId }
     );
