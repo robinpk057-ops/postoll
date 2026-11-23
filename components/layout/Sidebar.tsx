@@ -15,11 +15,11 @@ const navigation = [
     icon: "âœ¦",
   },
   {
-  {
     name: "Automatic Posting",
     href: "/automatic-posting",
     icon: "⟳",
   },
+  {
     name: "Calendar",
     href: "/calendar",
     icon: "â–¡",

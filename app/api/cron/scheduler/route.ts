@@ -654,7 +654,6 @@ async function handleScheduler(request: Request) {
               continue;
             }
           }
-          }
 
           const { data: allContent, error: allContentError } =
             await supabaseAdmin
