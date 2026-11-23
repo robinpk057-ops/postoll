@@ -188,8 +188,6 @@ export default function WorkflowsPage() {
           0
       );
 
-      // Group slots by slot_number so a workflow with 1, 2, or 3 posts/day
-      // shows only that exact number of daily time controls (1, 2, or 3).
       const distinctBySlotNumber = Array.from(
         new Map(rawSlots.map((s) => [s.slot_number, s])).values()
       ).sort((a, b) => a.slot_number - b.slot_number);
@@ -300,7 +298,7 @@ export default function WorkflowsPage() {
             <h1 className="text-4xl font-bold">Workflows</h1>
             <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
               Create automated content systems for your brands. Click a card to
-              inspect posts or schedule from tomorrow onwards.
+              inspect posts or reschedule for tomorrow onwards.
             </p>
           </div>
 
@@ -361,17 +359,29 @@ export default function WorkflowsPage() {
                       className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border"
                       style={{ borderColor: "var(--border)" }}
                     >
-                      {workflow.thumbnail_url &&
-                      !isVideoUrl(workflow.thumbnail_url) ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={workflow.thumbnail_url}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
+                      {workflow.thumbnail_url ? (
+                        isVideoUrl(workflow.thumbnail_url) ? (
+                          <video
+                            src={workflow.thumbnail_url}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={workflow.thumbnail_url}
+                            alt=""
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                            className="h-full w-full object-cover"
+                          />
+                        )
                       ) : (
                         <div className="flex h-full items-center justify-center text-[10px] opacity-50">
-                          {workflow.thumbnail_url ? "Media" : "No image"}
+                          No media
                         </div>
                       )}
                     </div>
@@ -416,14 +426,6 @@ export default function WorkflowsPage() {
                     >
                       <button
                         type="button"
-                        onClick={() => toggleWorkflowCard(workflow.id)}
-                        className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:opacity-80"
-                        style={{ borderColor: "var(--border)" }}
-                      >
-                        {isExpanded ? "Hide details" : "View posts & time"}
-                      </button>
-                      <button
-                        type="button"
                         onClick={() => setConfirmId(workflow.id)}
                         className="rounded-lg border px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
                         style={{ borderColor: "var(--border)" }}
@@ -439,10 +441,10 @@ export default function WorkflowsPage() {
                       style={{ borderColor: "var(--border)" }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {/* Schedule Time Controls (From Tomorrow Onwards) */}
+                      {/* Reschedule Controls (From Tomorrow Onwards) */}
                       <div>
                         <h3 className="text-sm font-semibold">
-                          Schedule Time ({slots.length}{" "}
+                          Reschedule ({slots.length}{" "}
                           {slots.length === 1 ? "time" : "times"} per day ·
                           Effective From Tomorrow Onwards)
                         </h3>
@@ -526,7 +528,7 @@ export default function WorkflowsPage() {
                                     >
                                       {savingSlotId === slot.id
                                         ? "Saving…"
-                                        : "Save for tomorrow"}
+                                        : "Save"}
                                     </button>
                                   </div>
 
