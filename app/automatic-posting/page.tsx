@@ -64,8 +64,8 @@ const inputClass =
   "w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white placeholder:text-neutral-400 focus:border-white/50 focus:outline-none";
 
 function clampDuration(value: number): number {
-  if (Number.isNaN(value)) return 15;
-  return Math.min(30, Math.max(5, Math.round(value)));
+  if (Number.isNaN(value)) return 30;
+  return value >= 22 ? 30 : 15;
 }
 
 export default function AutomaticPostingPage() {
@@ -94,7 +94,7 @@ export default function AutomaticPostingPage() {
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [postTime, setPostTime] = useState<string>("10:00");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
-  const [durationSeconds, setDurationSeconds] = useState<number>(15);
+  const [durationSeconds, setDurationSeconds] = useState<number>(30);
   const [autoPublish, setAutoPublish] = useState<boolean>(true);
   const [runFirstNow, setRunFirstNow] = useState<boolean>(true);
 
@@ -160,7 +160,7 @@ export default function AutomaticPostingPage() {
     setSelectedDays([1, 2, 3, 4, 5]);
     setPostTime("10:00");
     setAspectRatio("9:16");
-    setDurationSeconds(15);
+    setDurationSeconds(30);
     setAutoPublish(true);
     setRunFirstNow(true);
     setError(null);
@@ -212,6 +212,9 @@ export default function AutomaticPostingPage() {
 
       const combinedBriefText = [
         `Category: ${categoryLabel}`,
+        `Publishing Mode: ${
+          autoPublish ? "Publish video automatically" : "Ask approval before posting"
+        }`,
         creativeNotes.trim() ? `Creative Notes: ${creativeNotes.trim()}` : "",
         coreConcept.trim() ? `Core Concept: ${coreConcept.trim()}` : "",
         photoUsageRule.trim() ? `Image Usage Rule: ${photoUsageRule.trim()}` : "",
@@ -742,7 +745,7 @@ export default function AutomaticPostingPage() {
                   Posting Schedule &amp; Video Specifications
                 </h2>
                 <p className="text-sm text-neutral-300">
-                  Set publishing days, time, framing, and duration (5 to 30 seconds) before creating the workflow.
+                  Set publishing days, time, framing, and duration (15s or 30s) before creating the workflow.
                 </p>
               </div>
 
@@ -802,32 +805,85 @@ export default function AutomaticPostingPage() {
 
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-neutral-100">
-                    Video Duration (5–30s)
+                    Video Duration
                   </label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={30}
+                  <select
                     value={durationSeconds}
                     onChange={(e) =>
                       setDurationSeconds(clampDuration(Number(e.target.value)))
                     }
                     className={inputClass}
-                  />
+                  >
+                    <option value={15}>15s</option>
+                    <option value={30}>30s (Max)</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="space-y-3 pt-1">
-                <label className="flex items-center gap-2.5 text-sm text-neutral-200">
-                  <input
-                    type="checkbox"
-                    checked={autoPublish}
-                    onChange={(e) => setAutoPublish(e.target.checked)}
-                    className="h-4 w-4 accent-white"
-                  />
-                  <span>Publish automatically at scheduled slot times</span>
-                </label>
+              {/* Toggle Button: Publish video automatically vs Ask approval before posting */}
+              <div className="space-y-3 rounded-xl border border-white/15 bg-[#161616] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold text-white">
+                      {autoPublish
+                        ? "Publish video automatically"
+                        : "Ask approval before posting"}
+                    </div>
+                    <p className="text-xs text-neutral-300">
+                      {autoPublish
+                        ? "Generated videos will publish automatically at scheduled slot times."
+                        : "Generated videos will pause for your approval before posting."}
+                    </p>
+                  </div>
 
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={autoPublish}
+                    onClick={() => setAutoPublish((prev) => !prev)}
+                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
+                      autoPublish
+                        ? "border-white bg-white"
+                        : "border-white/30 bg-[#262626]"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full transition-transform ${
+                        autoPublish
+                          ? "translate-x-7 bg-black"
+                          : "translate-x-1 bg-white"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setAutoPublish(true)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      autoPublish
+                        ? "border-white bg-white text-black"
+                        : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/35"
+                    }`}
+                  >
+                    Publish video automatically
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAutoPublish(false)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      !autoPublish
+                        ? "border-white bg-white text-black"
+                        : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/35"
+                    }`}
+                  >
+                    Ask approval before posting
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-1">
                 <label className="flex items-center gap-2.5 text-sm text-neutral-200">
                   <input
                     type="checkbox"
@@ -846,6 +902,12 @@ export default function AutomaticPostingPage() {
                   {selectedPlanId === "custom" && customCategoryName.trim()
                     ? customCategoryName.trim()
                     : activePlan.label}
+                </div>
+                <div>
+                  <strong className="text-neutral-100">Publishing Mode:</strong>{" "}
+                  {autoPublish
+                    ? "Publish video automatically"
+                    : "Ask approval before posting"}
                 </div>
                 <div>
                   <strong className="text-neutral-100">Duration:</strong>{" "}
