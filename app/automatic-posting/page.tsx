@@ -45,6 +45,9 @@ const DAYS = [
   { label: "Sat", value: 6 },
 ];
 
+const inputClass =
+  "w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white placeholder:text-neutral-400 focus:border-white/50 focus:outline-none";
+
 export default function AutomaticPostingPage() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
@@ -372,16 +375,18 @@ export default function AutomaticPostingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-6 md:p-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Automatic Posting Setup</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+    <div className="mx-auto max-w-4xl space-y-8 p-6 text-white md:p-8">
+      <div className="space-y-1.5">
+        <h1 className="text-3xl font-bold tracking-tight text-white">
+          Automatic Posting Setup
+        </h1>
+        <p className="text-sm text-neutral-300">
           Step-by-step setup to create a new automatic video content &amp; posting plan from your details.
         </p>
       </div>
 
       {/* Step Indicator */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { num: 1, title: "1. Plan & Details" },
           { num: 2, title: "2. Photos & Rule" },
@@ -397,12 +402,13 @@ export default function AutomaticPostingPage() {
               onClick={() => {
                 if (!createdResult) setStep(item.num as 1 | 2 | 3 | 4);
               }}
-              className="rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition-colors"
-              style={{
-                background: active ? "var(--foreground)" : "var(--card)",
-                color: active ? "var(--background)" : "var(--foreground)",
-                borderColor: active || done ? "var(--foreground)" : "var(--border)",
-              }}
+              className={`rounded-xl border px-3.5 py-3 text-left text-xs font-semibold transition-colors ${
+                active
+                  ? "border-white bg-white text-black"
+                  : done
+                  ? "border-white/35 bg-[#161616] text-white"
+                  : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/30"
+              }`}
             >
               {item.title}
             </button>
@@ -411,23 +417,22 @@ export default function AutomaticPostingPage() {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-400">
+        <div className="rounded-xl border border-red-500/50 bg-red-500/15 p-4 text-sm text-red-200">
           {error}
         </div>
       )}
 
       {createdResult ? (
-        <div
-          className="space-y-4 rounded-2xl border p-6"
-          style={{ background: "var(--card)", borderColor: "var(--border)" }}
-        >
-          <h2 className="text-xl font-semibold">Automatic Video Workflow Created</h2>
-          <p className="text-sm" style={{ color: "var(--muted)" }}>
-            <strong>{createdResult.name}</strong> is active with{" "}
-            <strong>{createdResult.slotsCount}</strong> scheduled posting slot(s).
+        <div className="space-y-4 rounded-2xl border border-white/15 bg-[#111111] p-6">
+          <h2 className="text-xl font-semibold text-white">
+            Automatic Video Workflow Created
+          </h2>
+          <p className="text-sm text-neutral-300">
+            <strong className="text-white">{createdResult.name}</strong> is active with{" "}
+            <strong className="text-white">{createdResult.slotsCount}</strong> scheduled posting slot(s).
           </p>
           {createdResult.runSummary && (
-            <p className="rounded-xl border p-3 text-sm" style={{ borderColor: "var(--border)" }}>
+            <p className="rounded-xl border border-white/15 bg-[#161616] p-3.5 text-sm text-neutral-200">
               {createdResult.runSummary}
             </p>
           )}
@@ -435,32 +440,27 @@ export default function AutomaticPostingPage() {
             <button
               type="button"
               onClick={resetBuilder}
-              className="rounded-xl px-4 py-2.5 text-sm font-medium"
-              style={{
-                background: "var(--foreground)",
-                color: "var(--background)",
-              }}
+              className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black hover:bg-neutral-200"
             >
               Create Another Automatic Plan
             </button>
           </div>
         </div>
       ) : (
-        <div
-          className="space-y-6 rounded-2xl border p-6"
-          style={{ background: "var(--card)", borderColor: "var(--border)" }}
-        >
+        <div className="space-y-6 rounded-2xl border border-white/15 bg-[#111111] p-6">
           {/* STEP 1 */}
           {step === 1 && (
-            <div className="space-y-5">
-              <div>
-                <h2 className="text-xl font-semibold">What is your plan like?</h2>
-                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-white">
+                  What is your plan like?
+                </h2>
+                <p className="text-sm text-neutral-300">
                   Pick a plan style (Brand, Cartoon, Product, etc.) and enter your custom details.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {PLAN_OPTIONS.map((option) => {
                   const isSelected = selectedPlanId === option.id;
                   return (
@@ -468,31 +468,28 @@ export default function AutomaticPostingPage() {
                       key={option.id}
                       type="button"
                       onClick={() => setSelectedPlanId(option.id)}
-                      className="rounded-xl border p-3 text-left transition-colors"
-                      style={{
-                        background: isSelected ? "var(--foreground)" : "transparent",
-                        color: isSelected ? "var(--background)" : "var(--foreground)",
-                        borderColor: isSelected ? "var(--foreground)" : "var(--border)",
-                      }}
+                      className={`rounded-xl border p-4 text-left transition-colors ${
+                        isSelected
+                          ? "border-white bg-white text-black"
+                          : "border-white/15 bg-[#161616] text-white hover:border-white/35"
+                      }`}
                     >
                       <div className="text-sm font-semibold">{option.label}</div>
-                      <div
-                        className="mt-1 text-xs"
-                        style={{
-                          color: isSelected ? "var(--background)" : "var(--muted)",
-                          opacity: isSelected ? 0.85 : 1,
-                        }}
+                      <p
+                        className={`mt-1.5 text-xs leading-relaxed ${
+                          isSelected ? "text-neutral-800" : "text-neutral-300"
+                        }`}
                       >
                         {option.hint}
-                      </div>
+                      </p>
                     </button>
                   );
                 })}
               </div>
 
               {selectedPlanId === "custom" && (
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
                     Custom Plan Type Name
                   </label>
                   <input
@@ -500,19 +497,14 @@ export default function AutomaticPostingPage() {
                     value={customPlanName}
                     onChange={(e) => setCustomPlanName(e.target.value)}
                     placeholder="e.g., Daily Motivation Shorts, Retro Comic Series..."
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                    style={{
-                      background: "var(--background)",
-                      borderColor: "var(--border)",
-                      color: "var(--foreground)",
-                    }}
+                    className={inputClass}
                   />
                 </div>
               )}
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
                     Workflow / Series Name
                   </label>
                   <input
@@ -520,17 +512,12 @@ export default function AutomaticPostingPage() {
                     value={workflowTitle}
                     onChange={(e) => setWorkflowTitle(e.target.value)}
                     placeholder="e.g., Morning Coffee Cartoon"
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                    style={{
-                      background: "var(--background)",
-                      borderColor: "var(--border)",
-                      color: "var(--foreground)",
-                    }}
+                    className={inputClass}
                   />
                 </div>
 
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
                     Characters, Audience &amp; Tone
                   </label>
                   <input
@@ -538,18 +525,13 @@ export default function AutomaticPostingPage() {
                     value={charactersAndTone}
                     onChange={(e) => setCharactersAndTone(e.target.value)}
                     placeholder="e.g., Friendly cat mascot, witty & warm tone"
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                    style={{
-                      background: "var(--background)",
-                      borderColor: "var(--border)",
-                      color: "var(--foreground)",
-                    }}
+                    className={inputClass}
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-neutral-100">
                   Core Topic / Main Idea
                 </label>
                 <input
@@ -557,17 +539,12 @@ export default function AutomaticPostingPage() {
                   value={coreIdea}
                   onChange={(e) => setCoreIdea(e.target.value)}
                   placeholder="e.g., Short videos showing how our product solves everyday problems"
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    color: "var(--foreground)",
-                  }}
+                  className={inputClass}
                 />
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-neutral-100">
                   Additional Plan Details (Optional)
                 </label>
                 <textarea
@@ -575,12 +552,7 @@ export default function AutomaticPostingPage() {
                   value={planExtraDetails}
                   onChange={(e) => setPlanExtraDetails(e.target.value)}
                   placeholder="Enter any extra details about your brand, character traits, visual vibe, or rules..."
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    color: "var(--foreground)",
-                  }}
+                  className={inputClass}
                 />
               </div>
             </div>
@@ -588,16 +560,18 @@ export default function AutomaticPostingPage() {
 
           {/* STEP 2 */}
           {step === 2 && (
-            <div className="space-y-5">
-              <div>
-                <h2 className="text-xl font-semibold">Add Photos &amp; Image Usage Rule</h2>
-                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-white">
+                  Add Photos &amp; Image Usage Rule
+                </h2>
+                <p className="text-sm text-neutral-300">
                   Upload photos and specify how they should be used—for example, using the same image in all videos or using different product images.
                 </p>
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-neutral-100">
                   Upload Photos (Product, Character, or Reference Images)
                 </label>
                 <input
@@ -605,12 +579,7 @@ export default function AutomaticPostingPage() {
                   accept="image/*"
                   multiple
                   onChange={handlePhotoChange}
-                  className="block w-full rounded-xl border p-2.5 text-sm"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    color: "var(--foreground)",
-                  }}
+                  className="block w-full rounded-xl border border-white/20 bg-[#141414] p-3 text-sm text-neutral-200 file:mr-4 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-black"
                 />
               </div>
 
@@ -619,20 +588,19 @@ export default function AutomaticPostingPage() {
                   {photos.map((photo) => (
                     <div
                       key={photo.id}
-                      className="overflow-hidden rounded-xl border"
-                      style={{ borderColor: "var(--border)" }}
+                      className="overflow-hidden rounded-xl border border-white/15 bg-[#161616]"
                     >
                       <img
                         src={photo.previewUrl}
                         alt={photo.name}
                         className="h-28 w-full object-cover"
                       />
-                      <div className="flex items-center justify-between gap-2 p-2 text-xs">
-                        <span className="truncate">{photo.name}</span>
+                      <div className="flex items-center justify-between gap-2 p-2.5 text-xs">
+                        <span className="truncate text-neutral-200">{photo.name}</span>
                         <button
                           type="button"
                           onClick={() => removePhoto(photo.id)}
-                          className="text-red-400 hover:underline"
+                          className="text-red-300 hover:underline"
                         >
                           Remove
                         </button>
@@ -642,31 +610,31 @@ export default function AutomaticPostingPage() {
                 </div>
               )}
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-neutral-100">
                   Quick Text Options for Photo Usage
                 </label>
-                <div className="mb-3 flex flex-wrap gap-2">
-                  {PHOTO_RULE_PRESETS.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setPhotoRuleText(preset)}
-                      className="rounded-full border px-3 py-1.5 text-xs transition-colors"
-                      style={{
-                        background:
-                          photoRuleText === preset ? "var(--foreground)" : "transparent",
-                        color:
-                          photoRuleText === preset ? "var(--background)" : "var(--foreground)",
-                        borderColor: "var(--border)",
-                      }}
-                    >
-                      {preset}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap gap-2">
+                  {PHOTO_RULE_PRESETS.map((preset) => {
+                    const active = photoRuleText === preset;
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setPhotoRuleText(preset)}
+                        className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                          active
+                            ? "border-white bg-white text-black"
+                            : "border-white/20 bg-[#161616] text-neutral-200 hover:border-white/40"
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <label className="mb-1.5 block text-sm font-medium">
+                <label className="block pt-1 text-sm font-medium text-neutral-100">
                   Custom Photo Rule / Instructions
                 </label>
                 <textarea
@@ -674,12 +642,7 @@ export default function AutomaticPostingPage() {
                   value={photoRuleText}
                   onChange={(e) => setPhotoRuleText(e.target.value)}
                   placeholder="e.g., Use this same image in all videos, or use different images of the product for each scene..."
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    color: "var(--foreground)",
-                  }}
+                  className={inputClass}
                 />
               </div>
             </div>
@@ -687,16 +650,18 @@ export default function AutomaticPostingPage() {
 
           {/* STEP 3 */}
           {step === 3 && (
-            <div className="space-y-5">
-              <div>
-                <h2 className="text-xl font-semibold">Detailed Script &amp; Reference Video Links</h2>
-                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-white">
+                  Detailed Script &amp; Reference Video Links
+                </h2>
+                <p className="text-sm text-neutral-300">
                   Write a detailed script of your content idea so the video generator understands the exact flow, plus optional reference video links.
                 </p>
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-neutral-100">
                   Content Idea &amp; Detailed Script
                 </label>
                 <textarea
@@ -704,17 +669,12 @@ export default function AutomaticPostingPage() {
                   value={detailedScript}
                   onChange={(e) => setDetailedScript(e.target.value)}
                   placeholder="Write a detailed script or scene-by-scene content idea: opening hook, what happens in each part of the video, visual action, narration/dialogue, and ending..."
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    color: "var(--foreground)",
-                  }}
+                  className={inputClass}
                 />
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-neutral-100">
                   Opening Hook &amp; Call to Action (Optional)
                 </label>
                 <input
@@ -722,17 +682,12 @@ export default function AutomaticPostingPage() {
                   value={hookAndCta}
                   onChange={(e) => setHookAndCta(e.target.value)}
                   placeholder="e.g., Hook in first 2s with a surprising question; end with follow for part 2"
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    color: "var(--foreground)",
-                  }}
+                  className={inputClass}
                 />
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-neutral-100">
                   Reference Video Links (Optional — one URL per line)
                 </label>
                 <textarea
@@ -740,12 +695,7 @@ export default function AutomaticPostingPage() {
                   value={referenceVideoLinksText}
                   onChange={(e) => setReferenceVideoLinksText(e.target.value)}
                   placeholder={"https://www.youtube.com/watch?v=...\nhttps://www.instagram.com/reel/..."}
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                  style={{
-                    background: "var(--background)",
-                    borderColor: "var(--border)",
-                    color: "var(--foreground)",
-                  }}
+                  className={inputClass}
                 />
               </div>
             </div>
@@ -753,16 +703,20 @@ export default function AutomaticPostingPage() {
 
           {/* STEP 4 */}
           {step === 4 && (
-            <div className="space-y-5">
-              <div>
-                <h2 className="text-xl font-semibold">Posting Schedule &amp; Video Settings</h2>
-                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-white">
+                  Posting Schedule &amp; Video Settings
+                </h2>
+                <p className="text-sm text-neutral-300">
                   Choose when automatic generation and posting should run, then create your workflow.
                 </p>
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium">Posting Days</label>
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-neutral-100">
+                  Posting Days
+                </label>
                 <div className="flex flex-wrap gap-2">
                   {DAYS.map((day) => {
                     const active = selectedDays.includes(day.value);
@@ -771,12 +725,11 @@ export default function AutomaticPostingPage() {
                         key={day.value}
                         type="button"
                         onClick={() => toggleDay(day.value)}
-                        className="rounded-xl border px-3.5 py-2 text-xs font-semibold"
-                        style={{
-                          background: active ? "var(--foreground)" : "transparent",
-                          color: active ? "var(--background)" : "var(--foreground)",
-                          borderColor: active ? "var(--foreground)" : "var(--border)",
-                        }}
+                        className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors ${
+                          active
+                            ? "border-white bg-white text-black"
+                            : "border-white/20 bg-[#161616] text-neutral-200 hover:border-white/40"
+                        }`}
                       >
                         {day.label}
                       </button>
@@ -786,32 +739,26 @@ export default function AutomaticPostingPage() {
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">Daily Post Time</label>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Daily Post Time
+                  </label>
                   <input
                     type="time"
                     value={postTime}
                     onChange={(e) => setPostTime(e.target.value)}
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                    style={{
-                      background: "var(--background)",
-                      borderColor: "var(--border)",
-                      color: "var(--foreground)",
-                    }}
+                    className={inputClass}
                   />
                 </div>
 
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">Aspect Ratio</label>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Aspect Ratio
+                  </label>
                   <select
                     value={aspectRatio}
                     onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                    style={{
-                      background: "var(--background)",
-                      borderColor: "var(--border)",
-                      color: "var(--foreground)",
-                    }}
+                    className={inputClass}
                   >
                     <option value="9:16">9:16 (Vertical / Reels / Shorts)</option>
                     <option value="16:9">16:9 (Landscape / YouTube)</option>
@@ -820,78 +767,73 @@ export default function AutomaticPostingPage() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">Duration (seconds)</label>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Duration (seconds)
+                  </label>
                   <input
                     type="number"
                     min={5}
                     max={60}
                     value={durationSeconds}
                     onChange={(e) => setDurationSeconds(Number(e.target.value) || 15)}
-                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
-                    style={{
-                      background: "var(--background)",
-                      borderColor: "var(--border)",
-                      color: "var(--foreground)",
-                    }}
+                    className={inputClass}
                   />
                 </div>
               </div>
 
-              <div className="space-y-2.5 pt-1">
-                <label className="flex items-center gap-2.5 text-sm">
+              <div className="space-y-3 pt-1">
+                <label className="flex items-center gap-2.5 text-sm text-neutral-200">
                   <input
                     type="checkbox"
                     checked={autoPublish}
                     onChange={(e) => setAutoPublish(e.target.checked)}
+                    className="h-4 w-4 accent-white"
                   />
                   <span>Enable automatic publishing when schedule slots trigger</span>
                 </label>
 
-                <label className="flex items-center gap-2.5 text-sm">
+                <label className="flex items-center gap-2.5 text-sm text-neutral-200">
                   <input
                     type="checkbox"
                     checked={runFirstNow}
                     onChange={(e) => setRunFirstNow(e.target.checked)}
+                    className="h-4 w-4 accent-white"
                   />
                   <span>Generate the first automatic video right after creating</span>
                 </label>
               </div>
 
-              <div
-                className="space-y-1.5 rounded-xl border p-4 text-xs"
-                style={{ borderColor: "var(--border)", color: "var(--muted)" }}
-              >
-                <div className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
-                  Summary
-                </div>
+              <div className="space-y-1.5 rounded-xl border border-white/15 bg-[#161616] p-4 text-xs text-neutral-300">
+                <div className="text-sm font-semibold text-white">Summary</div>
                 <div>
-                  <strong>Plan:</strong>{" "}
+                  <strong className="text-neutral-100">Plan:</strong>{" "}
                   {selectedPlanId === "custom" && customPlanName.trim()
                     ? customPlanName.trim()
                     : activePlan.label}
                 </div>
                 <div>
-                  <strong>Photos attached:</strong> {photos.length}
+                  <strong className="text-neutral-100">Photos attached:</strong> {photos.length}
                 </div>
                 <div>
-                  <strong>Photo rule:</strong> {photoRuleText || "None specified"}
+                  <strong className="text-neutral-100">Photo rule:</strong>{" "}
+                  {photoRuleText || "None specified"}
                 </div>
                 <div>
-                  <strong>Script length:</strong> {detailedScript.trim().length} characters
+                  <strong className="text-neutral-100">Script length:</strong>{" "}
+                  {detailedScript.trim().length} characters
                 </div>
               </div>
             </div>
           )}
 
           {/* Navigation Footer: Back / Next / Create */}
-          <div className="flex items-center justify-between border-t pt-4" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between border-t border-white/15 pt-5">
             <button
               type="button"
               disabled={step === 1 || submitting}
               onClick={() => setStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2 | 3 | 4) : 1))}
-              className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-40"
-              style={{ borderColor: "var(--border)" }}
+              className="rounded-xl border border-white/20 bg-[#161616] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:border-white/40 disabled:opacity-40"
             >
               Back
             </button>
@@ -900,11 +842,7 @@ export default function AutomaticPostingPage() {
               <button
                 type="button"
                 onClick={() => setStep((prev) => ((prev + 1) as 1 | 2 | 3 | 4))}
-                className="rounded-xl px-5 py-2 text-sm font-medium"
-                style={{
-                  background: "var(--foreground)",
-                  color: "var(--background)",
-                }}
+                className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-neutral-200"
               >
                 Next
               </button>
@@ -913,11 +851,7 @@ export default function AutomaticPostingPage() {
                 type="button"
                 disabled={submitting}
                 onClick={handleCreateAutomaticWorkflow}
-                className="rounded-xl px-5 py-2.5 text-sm font-medium disabled:opacity-50"
-                style={{
-                  background: "var(--foreground)",
-                  color: "var(--background)",
-                }}
+                className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
               >
                 {submitting ? "Creating..." : "Create Automatic Workflow"}
               </button>
