@@ -1,221 +1,414 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState, type ChangeEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import type { AspectRatio, ReferenceAsset, VisualStyle } from "@/app/types/ai-director";
 
-type WorkflowRow = {
+type PlanOption = {
   id: string;
-  name?: string | null;
-  active?: boolean | null;
-  status?: string | null;
-  created_at?: string | null;
+  label: string;
+  style: VisualStyle;
+  hint: string;
 };
 
-type ScheduleSlotRow = {
+type UploadedPhotoItem = {
   id: string;
-  workflow_id: string;
-  day_of_week: number;
-  slot_number: number;
-  post_time: string;
-  content_type: string;
-  enabled: boolean;
+  name: string;
+  previewUrl: string;
+  file: File;
 };
 
-type ScheduleRunRow = {
-  id: string;
-  schedule_slot_id: string | null;
-  workflow_id: string;
-  run_date: string;
-  status: string;
-  content_id: string | null;
-  error_message: string | null;
-  created_at?: string | null;
-};
+const PLAN_OPTIONS: PlanOption[] = [
+  { id: "brand", label: "Brand", style: "brand", hint: "Consistent brand identity, clean visuals, and key message." },
+  { id: "cartoon", label: "Cartoon", style: "cartoon", hint: "Animated cartoon look, expressive characters, and fun scenes." },
+  { id: "product", label: "Product", style: "brand", hint: "Highlight product features, angles, and real-world use." },
+  { id: "storytime", label: "Storytime", style: "storytime", hint: "Engaging narrative arc with hook, plot beats, and payoff." },
+  { id: "educational", label: "Educational", style: "educational", hint: "Clear tips, step-by-step breakdowns, or quick insights." },
+  { id: "talking_character", label: "Talking Character", style: "talking_character", hint: "Character-led delivery speaking directly to the viewer." },
+  { id: "custom", label: "Custom", style: "brand", hint: "Describe your own plan type and custom rules from scratch." },
+];
 
-type GenerationJobRow = {
-  id: string;
-  workflow_id: string;
-  run_date: string;
-  status: string;
-  output_post_id: string | null;
-  error_message: string | null;
-  created_at?: string | null;
-};
+const PHOTO_RULE_PRESETS = [
+  "Use this same image in all videos",
+  "Use different images of the product",
+  "Keep the main subject consistent across scenes",
+  "Rotate uploaded photos across different posts",
+];
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function getSupabaseBrowserClient() {
-  return createClient();
-}
+const DAYS = [
+  { label: "Sun", value: 0 },
+  { label: "Mon", value: 1 },
+  { label: "Tue", value: 2 },
+  { label: "Wed", value: 3 },
+  { label: "Thu", value: 4 },
+  { label: "Fri", value: 5 },
+  { label: "Sat", value: 6 },
+];
 
 export default function AutomaticPostingPage() {
-  const [loading, setLoading] = useState(true);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Step 1: Plan & Details
+  const [selectedPlanId, setSelectedPlanId] = useState<string>("brand");
+  const [customPlanName, setCustomPlanName] = useState<string>("");
+  const [workflowTitle, setWorkflowTitle] = useState<string>("");
+  const [coreIdea, setCoreIdea] = useState<string>("");
+  const [charactersAndTone, setCharactersAndTone] = useState<string>("");
+  const [planExtraDetails, setPlanExtraDetails] = useState<string>("");
+
+  // Step 2: Photos & Image Rule Text
+  const [photos, setPhotos] = useState<UploadedPhotoItem[]>([]);
+  const [photoRuleText, setPhotoRuleText] = useState<string>(
+    "Use this same image in all videos"
+  );
+
+  // Step 3: Detailed Script & Reference Video Links
+  const [detailedScript, setDetailedScript] = useState<string>("");
+  const [hookAndCta, setHookAndCta] = useState<string>("");
+  const [referenceVideoLinksText, setReferenceVideoLinksText] = useState<string>("");
+
+  // Step 4: Schedule & Creation
+  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [postTime, setPostTime] = useState<string>("10:00");
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
+  const [durationSeconds, setDurationSeconds] = useState<number>(15);
+  const [autoPublish, setAutoPublish] = useState<boolean>(true);
+  const [runFirstNow, setRunFirstNow] = useState<boolean>(true);
+
+  const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
-  const [slots, setSlots] = useState<ScheduleSlotRow[]>([]);
-  const [runs, setRuns] = useState<ScheduleRunRow[]>([]);
-  const [jobs, setJobs] = useState<GenerationJobRow[]>([]);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>("");
-  const [runningDaily, setRunningDaily] = useState(false);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [createdResult, setCreatedResult] = useState<{
+    workflowId: string;
+    name: string;
+    slotsCount: number;
+    runSummary?: string;
+  } | null>(null);
 
-  async function loadData() {
-    setLoading(true);
-    setError(null);
+  const activePlan =
+    PLAN_OPTIONS.find((p) => p.id === selectedPlanId) ?? PLAN_OPTIONS[0];
 
-    try {
-      const supabase = getSupabaseBrowserClient();
-      if (!supabase) {
-        throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      }
+  function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-      const [wfRes, slotRes, runRes, jobRes] = await Promise.all([
-        supabase.from("workflows").select("*").order("created_at", { ascending: false }),
-        supabase
-          .from("workflow_schedule_slots")
-          .select("id, workflow_id, day_of_week, slot_number, post_time, content_type, enabled")
-          .order("day_of_week", { ascending: true })
-          .order("post_time", { ascending: true }),
-        supabase
-          .from("workflow_schedule_runs")
-          .select("id, schedule_slot_id, workflow_id, run_date, status, content_id, error_message, created_at")
-          .order("created_at", { ascending: false })
-          .limit(20),
-        supabase
-          .from("generation_jobs")
-          .select("id, workflow_id, run_date, status, output_post_id, error_message, created_at")
-          .order("created_at", { ascending: false })
-          .limit(20),
-      ]);
+    const nextItems: UploadedPhotoItem[] = files.map((file, idx) => ({
+      id: `${Date.now()}-${idx}-${file.name}`,
+      name: file.name,
+      previewUrl: URL.createObjectURL(file),
+      file,
+    }));
 
-      if (wfRes.error) throw new Error(wfRes.error.message);
-      if (slotRes.error) throw new Error(slotRes.error.message);
-      if (runRes.error) throw new Error(runRes.error.message);
-      if (jobRes.error) throw new Error(jobRes.error.message);
-
-      const wfList = (wfRes.data || []) as WorkflowRow[];
-      setWorkflows(wfList);
-      setSlots((slotRes.data || []) as ScheduleSlotRow[]);
-      setRuns((runRes.data || []) as ScheduleRunRow[]);
-      setJobs((jobRes.data || []) as GenerationJobRow[]);
-
-      if (wfList.length > 0 && !selectedWorkflowId) {
-        setSelectedWorkflowId(wfList[0].id);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load automatic posting data.");
-    } finally {
-      setLoading(false);
-    }
+    setPhotos((prev) => [...prev, ...nextItems]);
+    e.target.value = "";
   }
 
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  function removePhoto(id: string) {
+    setPhotos((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((item) => item.id !== id);
+    });
+  }
 
-  async function handleRunDailyNow() {
-    if (!selectedWorkflowId) return;
-    setRunningDaily(true);
-    setActionMessage(null);
+  function toggleDay(dayValue: number) {
+    setSelectedDays((prev) =>
+      prev.includes(dayValue)
+        ? prev.filter((d) => d !== dayValue)
+        : [...prev, dayValue].sort((a, b) => a - b)
+    );
+  }
+
+  function resetBuilder() {
+    photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+    setStep(1);
+    setSelectedPlanId("brand");
+    setCustomPlanName("");
+    setWorkflowTitle("");
+    setCoreIdea("");
+    setCharactersAndTone("");
+    setPlanExtraDetails("");
+    setPhotos([]);
+    setPhotoRuleText("Use this same image in all videos");
+    setDetailedScript("");
+    setHookAndCta("");
+    setReferenceVideoLinksText("");
+    setSelectedDays([1, 2, 3, 4, 5]);
+    setPostTime("10:00");
+    setAspectRatio("9:16");
+    setDurationSeconds(15);
+    setAutoPublish(true);
+    setRunFirstNow(true);
+    setError(null);
+    setCreatedResult(null);
+  }
+
+  async function handleCreateAutomaticWorkflow() {
+    setError(null);
+    setSubmitting(true);
 
     try {
-      const today = new Date().toISOString().slice(0, 10);
-      const res = await fetch("/api/ai-director/run-daily", {
-        method: "POST",
+      const supabase = createClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser client configuration.");
+      }
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        throw new Error("Please sign in first to create an automatic posting workflow.");
+      }
+
+      if (!coreIdea.trim() && !detailedScript.trim()) {
+        throw new Error("Please enter a core topic/idea or a detailed script before creating.");
+      }
+
+      if (selectedDays.length === 0) {
+        throw new Error("Please select at least one posting day in Step 4.");
+      }
+
+      const planLabel =
+        selectedPlanId === "custom" && customPlanName.trim()
+          ? customPlanName.trim()
+          : activePlan.label;
+
+      const resolvedName =
+        workflowTitle.trim() || `${planLabel} Automatic Video`;
+
+      const referenceLinks = referenceVideoLinksText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      const combinedBriefText = [
+        `Plan Type: ${planLabel}`,
+        planExtraDetails.trim() ? `Plan Details: ${planExtraDetails.trim()}` : "",
+        coreIdea.trim() ? `Core Idea: ${coreIdea.trim()}` : "",
+        photoRuleText.trim() ? `Photo Rule: ${photoRuleText.trim()}` : "",
+        detailedScript.trim() ? `Detailed Script:\n${detailedScript.trim()}` : "",
+        hookAndCta.trim() ? `Hook & CTA: ${hookAndCta.trim()}` : "",
+        referenceLinks.length > 0
+          ? `Reference Video Links:\n${referenceLinks.join("\n")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      // 1. Create workflow record
+      const { data: wfData, error: wfError } = await supabase
+        .from("workflows")
+        .insert({
+          user_id: user.id,
+          name: resolvedName,
+          source: "ai_generated",
+          mode: "ai_generated",
+          status: "active",
+          active: true,
+          description: combinedBriefText.slice(0, 1000),
+        })
+        .select("*")
+        .single();
+
+      if (wfError || !wfData?.id) {
+        throw new Error(wfError?.message || "Failed to create workflow.");
+      }
+
+      const workflowId: string = wfData.id;
+
+      // 2. Upload attached photos if provided
+      const uploadedAssets: ReferenceAsset[] = [];
+      const sameImageInAll = /same image|all videos|consistent|lock/i.test(
+        photoRuleText
+      );
+
+      if (photos.length > 0) {
+        const formData = new FormData();
+        formData.append("workflowId", workflowId);
+        formData.append("uploadDescription", photoRuleText.trim() || resolvedName);
+        for (const p of photos) {
+          formData.append("files", p.file, p.name);
+        }
+
+        const uploadRes = await fetch("/api/workflows/upload-content", {
+          method: "POST",
+          body: formData,
+        });
+
+        const uploadJson = await uploadRes.json().catch(() => ({}));
+        const urls: string[] = Array.isArray(uploadJson?.urls)
+          ? uploadJson.urls
+          : Array.isArray(uploadJson?.items)
+          ? uploadJson.items
+              .map((i: { image_url?: string; file_url?: string }) => i.image_url || i.file_url)
+              .filter(Boolean)
+          : [];
+
+        urls.forEach((url, index) => {
+          uploadedAssets.push({
+            id: `photo-${index + 1}`,
+            url,
+            kind: selectedPlanId === "product" ? "product" : "character",
+            label: photos[index]?.name || `Photo ${index + 1}`,
+            lockAcrossRuns: sameImageInAll,
+          });
+        });
+      }
+
+      // 3. Save AI Director settings (script, photo rule, plan style, reference links)
+      const patchRes = await fetch("/api/ai-director/workflow", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          workflowId: selectedWorkflowId,
-          runDate: today,
+          workflowId,
+          settings: {
+            content_format: "video",
+            visual_style: activePlan.style,
+            audio_mode:
+              selectedPlanId === "talking_character"
+                ? "talking_character"
+                : "voiceover_music",
+            aspect_ratio: aspectRatio,
+            duration_seconds: durationSeconds,
+            auto_publish: autoPublish,
+            detailed_brief: {
+              goal: `${planLabel} automatic video series`,
+              coreIdea: coreIdea.trim() || detailedScript.trim().slice(0, 300),
+              charactersAndTone:
+                [
+                  charactersAndTone.trim(),
+                  planExtraDetails.trim()
+                    ? `Plan notes: ${planExtraDetails.trim()}`
+                    : "",
+                  photoRuleText.trim()
+                    ? `Photo usage rule: ${photoRuleText.trim()}`
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" | ") || planLabel,
+              pacingAndCta:
+                hookAndCta.trim() || "Strong opening hook with clear call to action",
+              avoidRules: "",
+              storyArcNotes: [
+                detailedScript.trim(),
+                referenceLinks.length > 0
+                  ? `Reference videos:\n${referenceLinks.join("\n")}`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("\n\n"),
+            },
+            reference_assets: uploadedAssets,
+          },
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to trigger daily generation.");
+      if (!patchRes.ok) {
+        const patchErr = await patchRes.json().catch(() => ({}));
+        throw new Error(patchErr?.error || "Failed to save AI Director script details.");
       }
 
-      setActionMessage(
-        `Daily run finished for ${today}: job ${data?.job?.id || "ok"} (post ${data?.job?.output_post_id || "none"}).`
-      );
-      await loadData();
+      // 4. Create schedule slots for selected days
+      const normalizedTime =
+        postTime.length === 5 ? `${postTime}:00` : postTime || "10:00:00";
+      const nowIso = new Date().toISOString();
+
+      const slotRows = selectedDays.map((dayOfWeek, idx) => ({
+        workflow_id: workflowId,
+        user_id: user.id,
+        day_of_week: dayOfWeek,
+        slot_number: idx + 1,
+        post_time: normalizedTime,
+        content_type: "reel",
+        enabled: true,
+        updated_at: nowIso,
+      }));
+
+      const { error: slotError } = await supabase
+        .from("workflow_schedule_slots")
+        .insert(slotRows);
+
+      if (slotError) {
+        throw new Error(`Workflow created, but schedule slots failed: ${slotError.message}`);
+      }
+
+      // 5. Optionally trigger first daily AI generation right away
+      let runSummary: string | undefined;
+      if (runFirstNow) {
+        const today = new Date().toISOString().slice(0, 10);
+        const runRes = await fetch("/api/ai-director/run-daily", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workflowId, runDate: today }),
+        });
+        const runJson = await runRes.json().catch(() => ({}));
+        if (runRes.ok) {
+          runSummary = `Initial generation triggered for ${today} (job status: ${
+            runJson?.job?.status || "started"
+          }).`;
+        } else {
+          runSummary = `Workflow & schedule saved, though immediate run returned: ${
+            runJson?.error || "check AI Director settings"
+          }.`;
+        }
+      }
+
+      setCreatedResult({
+        workflowId,
+        name: resolvedName,
+        slotsCount: slotRows.length,
+        runSummary,
+      });
     } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : "Error triggering daily generation.");
+      setError(
+        err instanceof Error ? err.message : "Failed to create automatic posting workflow."
+      );
     } finally {
-      setRunningDaily(false);
+      setSubmitting(false);
     }
   }
 
-  const activeWorkflowCount = workflows.filter((w) => w.active === true).length;
-  const enabledSlotCount = slots.filter((s) => s.enabled).length;
-
   return (
-    <div className="mx-auto max-w-6xl space-y-8 p-6 md:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Automatic Posting</h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-            Monitor schedule slots, daily AI director generation jobs, and automated publish runs.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <select
-            value={selectedWorkflowId}
-            onChange={(e) => setSelectedWorkflowId(e.target.value)}
-            className="rounded-xl border px-3 py-2 text-sm"
-            style={{
-              background: "var(--card)",
-              borderColor: "var(--border)",
-              color: "var(--foreground)",
-            }}
-          >
-            {workflows.map((wf) => (
-              <option key={wf.id} value={wf.id}>
-                {wf.name || wf.id}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={handleRunDailyNow}
-            disabled={runningDaily || !selectedWorkflowId}
-            className="rounded-xl px-4 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
-            style={{
-              background: "var(--foreground)",
-              color: "var(--background)",
-            }}
-          >
-            {runningDaily ? "Generating..." : "Run Daily Now"}
-          </button>
-
-          <button
-            type="button"
-            onClick={loadData}
-            className="rounded-xl border px-3 py-2 text-sm font-medium"
-            style={{
-              background: "var(--card)",
-              borderColor: "var(--border)",
-            }}
-          >
-            Refresh
-          </button>
-        </div>
+    <div className="mx-auto max-w-4xl space-y-8 p-6 md:p-8">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Automatic Posting Setup</h1>
+        <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+          Step-by-step setup to create a new automatic video content &amp; posting plan from your details.
+        </p>
       </div>
 
-      {actionMessage && (
-        <div
-          className="rounded-xl border p-4 text-sm"
-          style={{
-            background: "var(--card)",
-            borderColor: "var(--border)",
-          }}
-        >
-          {actionMessage}
-        </div>
-      )}
+      {/* Step Indicator */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          { num: 1, title: "1. Plan & Details" },
+          { num: 2, title: "2. Photos & Rule" },
+          { num: 3, title: "3. Script & Links" },
+          { num: 4, title: "4. Schedule & Launch" },
+        ].map((item) => {
+          const active = step === item.num;
+          const done = step > item.num;
+          return (
+            <button
+              key={item.num}
+              type="button"
+              onClick={() => {
+                if (!createdResult) setStep(item.num as 1 | 2 | 3 | 4);
+              }}
+              className="rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition-colors"
+              style={{
+                background: active ? "var(--foreground)" : "var(--card)",
+                color: active ? "var(--background)" : "var(--foreground)",
+                borderColor: active || done ? "var(--foreground)" : "var(--border)",
+              }}
+            >
+              {item.title}
+            </button>
+          );
+        })}
+      </div>
 
       {error && (
         <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-400">
@@ -223,154 +416,515 @@ export default function AutomaticPostingPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {createdResult ? (
         <div
-          className="rounded-2xl border p-5"
+          className="space-y-4 rounded-2xl border p-6"
           style={{ background: "var(--card)", borderColor: "var(--border)" }}
         >
-          <div className="text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>
-            Active Workflows
+          <h2 className="text-xl font-semibold">Automatic Video Workflow Created</h2>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>
+            <strong>{createdResult.name}</strong> is active with{" "}
+            <strong>{createdResult.slotsCount}</strong> scheduled posting slot(s).
+          </p>
+          {createdResult.runSummary && (
+            <p className="rounded-xl border p-3 text-sm" style={{ borderColor: "var(--border)" }}>
+              {createdResult.runSummary}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-3 pt-2">
+            <button
+              type="button"
+              onClick={resetBuilder}
+              className="rounded-xl px-4 py-2.5 text-sm font-medium"
+              style={{
+                background: "var(--foreground)",
+                color: "var(--background)",
+              }}
+            >
+              Create Another Automatic Plan
+            </button>
           </div>
-          <div className="mt-2 text-2xl font-bold">
-            {activeWorkflowCount} / {workflows.length}
-          </div>
-        </div>
-
-        <div
-          className="rounded-2xl border p-5"
-          style={{ background: "var(--card)", borderColor: "var(--border)" }}
-        >
-          <div className="text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>
-            Enabled Schedule Slots
-          </div>
-          <div className="mt-2 text-2xl font-bold">
-            {enabledSlotCount} / {slots.length}
-          </div>
-        </div>
-
-        <div
-          className="rounded-2xl border p-5"
-          style={{ background: "var(--card)", borderColor: "var(--border)" }}
-        >
-          <div className="text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>
-            Recent Runs Logged
-          </div>
-          <div className="mt-2 text-2xl font-bold">{runs.length}</div>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-sm" style={{ color: "var(--muted)" }}>
-          Loading automatic posting status...
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <section
-            className="rounded-2xl border p-5"
-            style={{ background: "var(--card)", borderColor: "var(--border)" }}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Enabled Schedule Slots</h2>
-              <Link href="/workflows" className="text-xs underline" style={{ color: "var(--muted)" }}>
-                Manage Workflows
-              </Link>
+        <div
+          className="space-y-6 rounded-2xl border p-6"
+          style={{ background: "var(--card)", borderColor: "var(--border)" }}
+        >
+          {/* STEP 1 */}
+          {step === 1 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold">What is your plan like?</h2>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+                  Pick a plan style (Brand, Cartoon, Product, etc.) and enter your custom details.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                {PLAN_OPTIONS.map((option) => {
+                  const isSelected = selectedPlanId === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setSelectedPlanId(option.id)}
+                      className="rounded-xl border p-3 text-left transition-colors"
+                      style={{
+                        background: isSelected ? "var(--foreground)" : "transparent",
+                        color: isSelected ? "var(--background)" : "var(--foreground)",
+                        borderColor: isSelected ? "var(--foreground)" : "var(--border)",
+                      }}
+                    >
+                      <div className="text-sm font-semibold">{option.label}</div>
+                      <div
+                        className="mt-1 text-xs"
+                        style={{
+                          color: isSelected ? "var(--background)" : "var(--muted)",
+                          opacity: isSelected ? 0.85 : 1,
+                        }}
+                      >
+                        {option.hint}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedPlanId === "custom" && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Custom Plan Type Name
+                  </label>
+                  <input
+                    type="text"
+                    value={customPlanName}
+                    onChange={(e) => setCustomPlanName(e.target.value)}
+                    placeholder="e.g., Daily Motivation Shorts, Retro Comic Series..."
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                    style={{
+                      background: "var(--background)",
+                      borderColor: "var(--border)",
+                      color: "var(--foreground)",
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Workflow / Series Name
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowTitle}
+                    onChange={(e) => setWorkflowTitle(e.target.value)}
+                    placeholder="e.g., Morning Coffee Cartoon"
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                    style={{
+                      background: "var(--background)",
+                      borderColor: "var(--border)",
+                      color: "var(--foreground)",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Characters, Audience &amp; Tone
+                  </label>
+                  <input
+                    type="text"
+                    value={charactersAndTone}
+                    onChange={(e) => setCharactersAndTone(e.target.value)}
+                    placeholder="e.g., Friendly cat mascot, witty & warm tone"
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                    style={{
+                      background: "var(--background)",
+                      borderColor: "var(--border)",
+                      color: "var(--foreground)",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Core Topic / Main Idea
+                </label>
+                <input
+                  type="text"
+                  value={coreIdea}
+                  onChange={(e) => setCoreIdea(e.target.value)}
+                  placeholder="e.g., Short videos showing how our product solves everyday problems"
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                  style={{
+                    background: "var(--background)",
+                    borderColor: "var(--border)",
+                    color: "var(--foreground)",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Additional Plan Details (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={planExtraDetails}
+                  onChange={(e) => setPlanExtraDetails(e.target.value)}
+                  placeholder="Enter any extra details about your brand, character traits, visual vibe, or rules..."
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                  style={{
+                    background: "var(--background)",
+                    borderColor: "var(--border)",
+                    color: "var(--foreground)",
+                  }}
+                />
+              </div>
             </div>
-            {slots.filter((s) => s.enabled).length === 0 ? (
-              <p className="text-sm" style={{ color: "var(--muted)" }}>
-                No enabled schedule slots found.
-              </p>
-            ) : (
-              <div className="space-y-2 text-sm">
-                {slots
-                  .filter((s) => s.enabled)
-                  .map((slot) => (
+          )}
+
+          {/* STEP 2 */}
+          {step === 2 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold">Add Photos &amp; Image Usage Rule</h2>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+                  Upload photos and specify how they should be used—for example, using the same image in all videos or using different product images.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium">
+                  Upload Photos (Product, Character, or Reference Images)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handlePhotoChange}
+                  className="block w-full rounded-xl border p-2.5 text-sm"
+                  style={{
+                    background: "var(--background)",
+                    borderColor: "var(--border)",
+                    color: "var(--foreground)",
+                  }}
+                />
+              </div>
+
+              {photos.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {photos.map((photo) => (
                     <div
-                      key={slot.id}
-                      className="flex items-center justify-between rounded-xl border px-3 py-2"
+                      key={photo.id}
+                      className="overflow-hidden rounded-xl border"
                       style={{ borderColor: "var(--border)" }}
                     >
-                      <span>
-                        <strong>{DAYS[slot.day_of_week] ?? slot.day_of_week}</strong> · {slot.post_time} ·{" "}
-                        {slot.content_type}
-                      </span>
-                      <span className="text-xs" style={{ color: "var(--muted)" }}>
-                        wf:{slot.workflow_id.slice(0, 8)}
-                      </span>
+                      <img
+                        src={photo.previewUrl}
+                        alt={photo.name}
+                        className="h-28 w-full object-cover"
+                      />
+                      <div className="flex items-center justify-between gap-2 p-2 text-xs">
+                        <span className="truncate">{photo.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(photo.id)}
+                          className="text-red-400 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   ))}
-              </div>
-            )}
-          </section>
+                </div>
+              )}
 
-          <section
-            className="rounded-2xl border p-5"
-            style={{ background: "var(--card)", borderColor: "var(--border)" }}
-          >
-            <h2 className="mb-4 text-lg font-semibold">Recent AI Director Jobs</h2>
-            {jobs.length === 0 ? (
-              <p className="text-sm" style={{ color: "var(--muted)" }}>
-                No generation jobs recorded yet.
-              </p>
-            ) : (
-              <div className="space-y-2 text-sm">
-                {jobs.map((job) => (
-                  <div
-                    key={job.id}
-                    className="flex items-center justify-between rounded-xl border px-3 py-2"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    <div>
-                      <span className="font-medium">{job.run_date}</span> ·{" "}
-                      <span>{job.status}</span>
-                      {job.error_message && (
-                        <div className="text-xs text-red-400">{job.error_message}</div>
-                      )}
-                    </div>
-                    <span className="text-xs" style={{ color: "var(--muted)" }}>
-                      {job.output_post_id ? `post:${job.output_post_id.slice(0, 8)}` : "no post"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Quick Text Options for Photo Usage
+                </label>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {PHOTO_RULE_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setPhotoRuleText(preset)}
+                      className="rounded-full border px-3 py-1.5 text-xs transition-colors"
+                      style={{
+                        background:
+                          photoRuleText === preset ? "var(--foreground)" : "transparent",
+                        color:
+                          photoRuleText === preset ? "var(--background)" : "var(--foreground)",
+                        borderColor: "var(--border)",
+                      }}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
 
-          <section
-            className="rounded-2xl border p-5 lg:col-span-2"
-            style={{ background: "var(--card)", borderColor: "var(--border)" }}
-          >
-            <h2 className="mb-4 text-lg font-semibold">Recent Scheduler Publish Runs</h2>
-            {runs.length === 0 ? (
-              <p className="text-sm" style={{ color: "var(--muted)" }}>
-                No schedule runs recorded yet.
-              </p>
-            ) : (
-              <div className="space-y-2 text-sm">
-                {runs.map((run) => (
-                  <div
-                    key={run.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    <div>
-                      <span className="font-medium">{run.run_date}</span> ·{" "}
-                      <span>{run.status}</span>
-                      {run.error_message && (
-                        <span className="ml-2 text-xs text-red-400">({run.error_message})</span>
-                      )}
-                    </div>
-                    <span className="text-xs" style={{ color: "var(--muted)" }}>
-                      wf:{run.workflow_id.slice(0, 8)}
-                      {run.content_id ? ` · content:${run.content_id.slice(0, 8)}` : ""}
-                    </span>
-                  </div>
-                ))}
+                <label className="mb-1.5 block text-sm font-medium">
+                  Custom Photo Rule / Instructions
+                </label>
+                <textarea
+                  rows={3}
+                  value={photoRuleText}
+                  onChange={(e) => setPhotoRuleText(e.target.value)}
+                  placeholder="e.g., Use this same image in all videos, or use different images of the product for each scene..."
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                  style={{
+                    background: "var(--background)",
+                    borderColor: "var(--border)",
+                    color: "var(--foreground)",
+                  }}
+                />
               </div>
+            </div>
+          )}
+
+          {/* STEP 3 */}
+          {step === 3 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold">Detailed Script &amp; Reference Video Links</h2>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+                  Write a detailed script of your content idea so the video generator understands the exact flow, plus optional reference video links.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Content Idea &amp; Detailed Script
+                </label>
+                <textarea
+                  rows={7}
+                  value={detailedScript}
+                  onChange={(e) => setDetailedScript(e.target.value)}
+                  placeholder="Write a detailed script or scene-by-scene content idea: opening hook, what happens in each part of the video, visual action, narration/dialogue, and ending..."
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                  style={{
+                    background: "var(--background)",
+                    borderColor: "var(--border)",
+                    color: "var(--foreground)",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Opening Hook &amp; Call to Action (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={hookAndCta}
+                  onChange={(e) => setHookAndCta(e.target.value)}
+                  placeholder="e.g., Hook in first 2s with a surprising question; end with follow for part 2"
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                  style={{
+                    background: "var(--background)",
+                    borderColor: "var(--border)",
+                    color: "var(--foreground)",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Reference Video Links (Optional — one URL per line)
+                </label>
+                <textarea
+                  rows={3}
+                  value={referenceVideoLinksText}
+                  onChange={(e) => setReferenceVideoLinksText(e.target.value)}
+                  placeholder={"https://www.youtube.com/watch?v=...\nhttps://www.instagram.com/reel/..."}
+                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                  style={{
+                    background: "var(--background)",
+                    borderColor: "var(--border)",
+                    color: "var(--foreground)",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4 */}
+          {step === 4 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-semibold">Posting Schedule &amp; Video Settings</h2>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+                  Choose when automatic generation and posting should run, then create your workflow.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium">Posting Days</label>
+                <div className="flex flex-wrap gap-2">
+                  {DAYS.map((day) => {
+                    const active = selectedDays.includes(day.value);
+                    return (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => toggleDay(day.value)}
+                        className="rounded-xl border px-3.5 py-2 text-xs font-semibold"
+                        style={{
+                          background: active ? "var(--foreground)" : "transparent",
+                          color: active ? "var(--background)" : "var(--foreground)",
+                          borderColor: active ? "var(--foreground)" : "var(--border)",
+                        }}
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Daily Post Time</label>
+                  <input
+                    type="time"
+                    value={postTime}
+                    onChange={(e) => setPostTime(e.target.value)}
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                    style={{
+                      background: "var(--background)",
+                      borderColor: "var(--border)",
+                      color: "var(--foreground)",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Aspect Ratio</label>
+                  <select
+                    value={aspectRatio}
+                    onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                    style={{
+                      background: "var(--background)",
+                      borderColor: "var(--border)",
+                      color: "var(--foreground)",
+                    }}
+                  >
+                    <option value="9:16">9:16 (Vertical / Reels / Shorts)</option>
+                    <option value="16:9">16:9 (Landscape / YouTube)</option>
+                    <option value="1:1">1:1 (Square)</option>
+                    <option value="4:5">4:5 (Portrait Feed)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Duration (seconds)</label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={60}
+                    value={durationSeconds}
+                    onChange={(e) => setDurationSeconds(Number(e.target.value) || 15)}
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm"
+                    style={{
+                      background: "var(--background)",
+                      borderColor: "var(--border)",
+                      color: "var(--foreground)",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2.5 pt-1">
+                <label className="flex items-center gap-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={autoPublish}
+                    onChange={(e) => setAutoPublish(e.target.checked)}
+                  />
+                  <span>Enable automatic publishing when schedule slots trigger</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={runFirstNow}
+                    onChange={(e) => setRunFirstNow(e.target.checked)}
+                  />
+                  <span>Generate the first automatic video right after creating</span>
+                </label>
+              </div>
+
+              <div
+                className="space-y-1.5 rounded-xl border p-4 text-xs"
+                style={{ borderColor: "var(--border)", color: "var(--muted)" }}
+              >
+                <div className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+                  Summary
+                </div>
+                <div>
+                  <strong>Plan:</strong>{" "}
+                  {selectedPlanId === "custom" && customPlanName.trim()
+                    ? customPlanName.trim()
+                    : activePlan.label}
+                </div>
+                <div>
+                  <strong>Photos attached:</strong> {photos.length}
+                </div>
+                <div>
+                  <strong>Photo rule:</strong> {photoRuleText || "None specified"}
+                </div>
+                <div>
+                  <strong>Script length:</strong> {detailedScript.trim().length} characters
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Navigation Footer: Back / Next / Create */}
+          <div className="flex items-center justify-between border-t pt-4" style={{ borderColor: "var(--border)" }}>
+            <button
+              type="button"
+              disabled={step === 1 || submitting}
+              onClick={() => setStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2 | 3 | 4) : 1))}
+              className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-40"
+              style={{ borderColor: "var(--border)" }}
+            >
+              Back
+            </button>
+
+            {step < 4 ? (
+              <button
+                type="button"
+                onClick={() => setStep((prev) => ((prev + 1) as 1 | 2 | 3 | 4))}
+                className="rounded-xl px-5 py-2 text-sm font-medium"
+                style={{
+                  background: "var(--foreground)",
+                  color: "var(--background)",
+                }}
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleCreateAutomaticWorkflow}
+                className="rounded-xl px-5 py-2.5 text-sm font-medium disabled:opacity-50"
+                style={{
+                  background: "var(--foreground)",
+                  color: "var(--background)",
+                }}
+              >
+                {submitting ? "Creating..." : "Create Automatic Workflow"}
+              </button>
             )}
-          </section>
+          </div>
         </div>
       )}
     </div>
   );
 }
-

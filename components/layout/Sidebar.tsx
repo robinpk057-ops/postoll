@@ -3,32 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const navigation = [
-  {
-    name: "Home",
-    href: "/",
-    icon: "âŒ‚",
-  },
-  {
-    name: "Workflows",
-    href: "/workflows",
-    icon: "âœ¦",
-  },
-  {
-    name: "Automatic Posting",
-    href: "/automatic-posting",
-    icon: "⟳",
-  },
-  {
-    name: "Calendar",
-    href: "/calendar",
-    icon: "â–¡",
-  },
-  {
-    name: "Accounts",
-    href: "/accounts",
-    icon: "â†—",
-  },
+const navItems = [
+  { name: "Home", href: "/", icon: "⌂" },
+  { name: "Workflows", href: "/workflows", icon: "✦" },
+  { name: "Automatic Posting", href: "/automatic-posting", icon: "⟳" },
+  { name: "Calendar", href: "/calendar", icon: "◫" },
+  { name: "Accounts", href: "/accounts", icon: "◎" },
 ];
 
 export default function Sidebar() {
@@ -36,94 +16,45 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="hidden w-64 shrink-0 border-r md:block"
+      className="flex w-64 shrink-0 flex-col border-r p-5"
       style={{
         background: "var(--card)",
         borderColor: "var(--border)",
+        color: "var(--foreground)",
       }}
     >
-      <div className="sticky top-0 flex h-screen flex-col p-6">
-        {/* Logo / Home */}
-        <div className="mb-10">
-          <Link
-            href="/"
-            className="group inline-block"
-            aria-label="Go to Postoll Home"
-          >
-            <h1 className="text-2xl font-bold tracking-tight transition-opacity group-hover:opacity-75">
-              Postoll
-            </h1>
-
-            <p
-              className="mt-1 text-sm transition-opacity group-hover:opacity-75"
-              style={{ color: "var(--muted)" }}
-            >
-              AI social media assistant
-            </p>
-          </Link>
-        </div>
-
-        {/* Main Navigation */}
-        <nav className="space-y-1">
-          {navigation.map((item) => {
-            const isActive =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href);
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200"
-                style={{
-                  background: isActive
-                    ? "var(--card-hover)"
-                    : "transparent",
-
-                  color: isActive
-                    ? "var(--foreground)"
-                    : "var(--muted)",
-                }}
-              >
-                <span
-                  className="flex h-6 w-6 items-center justify-center text-base"
-                  style={{
-                    opacity: isActive ? 1 : 0.7,
-                  }}
-                >
-                  {item.icon}
-                </span>
-
-                <span>{item.name}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Bottom Navigation */}
-        <div className="mt-auto">
-          <Link
-            href="/settings"
-            className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200"
-            style={{
-              color: pathname.startsWith("/settings")
-                ? "var(--foreground)"
-                : "var(--muted)",
-
-              background: pathname.startsWith("/settings")
-                ? "var(--card-hover)"
-                : "transparent",
-            }}
-          >
-            <span className="flex h-6 w-6 items-center justify-center text-base">
-              âš™
-            </span>
-
-            <span>Settings</span>
-          </Link>
-        </div>
+      <div className="mb-8">
+        <Link href="/" className="text-xl font-bold tracking-tight">
+          Postoll
+        </Link>
+        <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
+          AI social media assistant
+        </p>
       </div>
+
+      <nav className="space-y-1.5">
+        {navItems.map((item) => {
+          const isActive =
+            item.href === "/"
+              ? pathname === "/"
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors"
+              style={{
+                background: isActive ? "var(--foreground)" : "transparent",
+                color: isActive ? "var(--background)" : "var(--foreground)",
+              }}
+            >
+              <span className="text-base leading-none">{item.icon}</span>
+              <span>{item.name}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </aside>
   );
 }
