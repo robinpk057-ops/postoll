@@ -183,6 +183,7 @@ export default function AutomaticPostingPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      if (!user) { setIsSignedIn(false); return; }
       setIsSignedIn(true);
 
       const [billingRes, accountsRes, jobsRes] = await Promise.all([
@@ -1509,6 +1510,7 @@ export default function AutomaticPostingPage() {
     </div>
   );
 }
+
 
 
 
