@@ -115,6 +115,9 @@ export default function AutomaticPostingPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [recentJobs, setRecentJobs] = useState<GeneratedJobItem[]>([]);
   const [loadingAccountData, setLoadingAccountData] = useState<boolean>(true);
+  const [buyCreditsOpen, setBuyCreditsOpen] = useState<boolean>(false);
+  const [creditPackAmount, setCreditPackAmount] = useState<number>(10);
+  const [buyingCredits, setBuyingCredits] = useState<boolean>(false);
 
   // Clip editing & regeneration state
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
@@ -181,8 +184,10 @@ export default function AutomaticPostingPage() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      const [profileRes, accountsRes, jobsRes] = await Promise.all([
-        supabase.from("profiles").select("credits").eq("id", user.id).maybeSingle(),
+      const [billingRes, accountsRes, jobsRes] = await Promise.all([
+        fetch("/api/billing/me", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
         supabase
           .from("connected_accounts")
           .select("id, platform, account_handle, display_name, is_active")
@@ -198,8 +203,8 @@ export default function AutomaticPostingPage() {
           .limit(6),
       ]);
 
-      if (typeof profileRes.data?.credits === "number") {
-        setCreditBalance(profileRes.data.credits);
+      if (typeof billingRes?.credits === "number") {
+        setCreditBalance(billingRes.credits);
       }
 
       const accts = Array.isArray(accountsRes.data)
@@ -679,11 +684,18 @@ export default function AutomaticPostingPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-xl border border-white/20 bg-[#141414] px-4 py-2 text-xs">
+          <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-[#141414] px-3.5 py-2 text-xs">
             <span className="text-neutral-400">Credit Balance: </span>
             <strong className="text-sm text-white">
               {loadingAccountData ? "..." : creditBalance ?? 0}
             </strong>
+            <button
+              type="button"
+              onClick={() => setBuyCreditsOpen((prev) => !prev)}
+              className="ml-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-neutral-200"
+            >
+              + Buy Credits
+            </button>
           </div>
 
           <Link
@@ -695,6 +707,68 @@ export default function AutomaticPostingPage() {
           </Link>
         </div>
       </div>
+
+      {buyCreditsOpen && (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/20 bg-[#141414] p-4 text-sm">
+          <div className="space-y-0.5">
+            <div className="font-semibold text-white">Purchase / Top Up Credits</div>
+            <p className="text-xs text-neutral-400">
+              Adds credits immediately to the currently signed-in user&apos;s balance and records a purchase ledger entry.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {[10, 25, 50, 100].map((pack) => (
+              <button
+                key={pack}
+                type="button"
+                onClick={() => setCreditPackAmount(pack)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                  creditPackAmount === pack
+                    ? "border-white bg-white text-black"
+                    : "border-white/20 bg-[#111111] text-neutral-200 hover:border-white/40"
+                }`}
+              >
+                +{pack}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={buyingCredits}
+              onClick={async () => {
+                setError(null);
+                setBuyingCredits(true);
+                try {
+                  const res = await fetch("/api/billing/me", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      credits: creditPackAmount,
+                      note: `Purchased +${creditPackAmount} credits`,
+                    }),
+                  });
+                  const json = await res.json().catch(() => ({}));
+                  if (!res.ok) {
+                    throw new Error(json?.error || "Failed to add credits.");
+                  }
+                  if (typeof json?.credits === "number") {
+                    setCreditBalance(json.credits);
+                  }
+                  setBuyCreditsOpen(false);
+                } catch (err) {
+                  setError(
+                    err instanceof Error ? err.message : "Could not purchase credits."
+                  );
+                } finally {
+                  setBuyingCredits(false);
+                }
+              }}
+              className="rounded-xl bg-emerald-400 px-4 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:opacity-50"
+            >
+              {buyingCredits ? "Adding..." : `Add ${creditPackAmount} Credits`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pending Approval Notification Banner */}
       {pendingApprovalJobs.length > 0 && (
@@ -1423,3 +1497,4 @@ export default function AutomaticPostingPage() {
     </div>
   );
 }
+
