@@ -19,6 +19,19 @@ type UploadedPhotoItem = {
   file: File;
 };
 
+type StoryboardPreview = {
+  hook?: string;
+  angleSummary?: string;
+  caption?: string;
+  hashtags?: string[];
+  scenes?: Array<{
+    sceneNumber?: number;
+    visualPrompt?: string;
+    narration?: string;
+    durationSeconds?: number;
+  }>;
+};
+
 const PLAN_OPTIONS: PlanOption[] = [
   {
     id: "business",
@@ -71,7 +84,6 @@ function clampDuration(value: number): number {
 export default function AutomaticPostingPage() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
-  // Step 1: Category & Series Details
   const [selectedPlanId, setSelectedPlanId] = useState<"business" | "cartoon" | "custom">("business");
   const [customCategoryName, setCustomCategoryName] = useState<string>("");
   const [seriesName, setSeriesName] = useState<string>("");
@@ -79,18 +91,15 @@ export default function AutomaticPostingPage() {
   const [coreConcept, setCoreConcept] = useState<string>("");
   const [creativeNotes, setCreativeNotes] = useState<string>("");
 
-  // Step 2: Reference Photos & Usage Rule
   const [photos, setPhotos] = useState<UploadedPhotoItem[]>([]);
   const [photoUsageRule, setPhotoUsageRule] = useState<string>(
     "Use this same image across all generated videos"
   );
 
-  // Step 3: Script & Reference Links
   const [scriptOutline, setScriptOutline] = useState<string>("");
   const [hookAndCta, setHookAndCta] = useState<string>("");
   const [referenceLinksText, setReferenceLinksText] = useState<string>("");
 
-  // Step 4: Schedule & Video Specifications
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [postTime, setPostTime] = useState<string>("10:00");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
@@ -107,6 +116,7 @@ export default function AutomaticPostingPage() {
     name: string;
     slotsCount: number;
     runSummary?: string;
+    storyboard?: StoryboardPreview;
   } | null>(null);
 
   const activePlan =
@@ -166,6 +176,7 @@ export default function AutomaticPostingPage() {
     setAutoPublish(true);
     setRunFirstNow(true);
     setError(null);
+    setStatusMessage(null);
     setCreatedResult(null);
   }
 
@@ -180,13 +191,16 @@ export default function AutomaticPostingPage() {
         body: JSON.stringify({ workflowId: createdResult.workflowId, runDate: today }),
       });
       const runJson = await runRes.json().catch(() => ({}));
+      const sb: StoryboardPreview | undefined =
+        runJson?.storyboard || runJson?.job?.storyboard_json;
       setCreatedResult((prev) =>
         prev
           ? {
               ...prev,
+              storyboard: sb ?? prev.storyboard,
               runSummary: runRes.ok
-                ? `Initial generation started for ${today} (status: ${
-                    runJson?.job?.status || "queued"
+                ? `Initial generation completed for ${today} (status: ${
+                    runJson?.job?.status || "completed"
                   }).`
                 : `Retry returned: ${runJson?.error || "Model still busy, try again shortly."}`,
             }
@@ -387,6 +401,7 @@ export default function AutomaticPostingPage() {
       }
 
       let runSummary: string | undefined;
+      let generatedStoryboard: StoryboardPreview | undefined;
       if (runFirstNow) {
         const today = new Date().toISOString().slice(0, 10);
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -402,8 +417,9 @@ export default function AutomaticPostingPage() {
           });
           const runJson = await runRes.json().catch(() => ({}));
           if (runRes.ok) {
-            runSummary = `Initial generation started for ${today} (status: ${
-              runJson?.job?.status || "queued"
+            generatedStoryboard = runJson?.storyboard || runJson?.job?.storyboard_json;
+            runSummary = `Initial generation completed for ${today} (status: ${
+              runJson?.job?.status || "completed"
             }).`;
             break;
           }
@@ -425,6 +441,7 @@ export default function AutomaticPostingPage() {
         name: resolvedName,
         slotsCount: slotRows.length,
         runSummary,
+        storyboard: generatedStoryboard,
       });
     } catch (err) {
       setError(
@@ -439,7 +456,6 @@ export default function AutomaticPostingPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 p-6 text-white md:p-8">
-      {/* Header with Back to Home */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1.5">
           <h1 className="text-3xl font-bold tracking-tight text-white">
@@ -459,7 +475,6 @@ export default function AutomaticPostingPage() {
         </Link>
       </div>
 
-      {/* Step Navigation */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { num: 1, title: "1. Plan & Direction" },
@@ -510,6 +525,52 @@ export default function AutomaticPostingPage() {
               {createdResult.runSummary}
             </p>
           )}
+          {createdResult.storyboard && (
+            <div className="space-y-3 rounded-xl border border-white/15 bg-[#161616] p-4 text-sm text-neutral-200">
+              <div className="font-semibold text-white">Generated Storyboard Preview</div>
+              {createdResult.storyboard.hook && (
+                <div>
+                  <span className="font-medium text-neutral-400">Hook: </span>
+                  {createdResult.storyboard.hook}
+                </div>
+              )}
+              {createdResult.storyboard.caption && (
+                <div>
+                  <span className="font-medium text-neutral-400">Caption: </span>
+                  <span className="whitespace-pre-line">{createdResult.storyboard.caption}</span>
+                </div>
+              )}
+              {Array.isArray(createdResult.storyboard.scenes) &&
+                createdResult.storyboard.scenes.length > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                      Scenes
+                    </div>
+                    {createdResult.storyboard.scenes.map((sc, idx) => (
+                      <div
+                        key={idx}
+                        className="rounded-lg border border-white/10 bg-[#111111] p-3 text-xs"
+                      >
+                        <div className="font-semibold text-white">
+                          Scene {sc.sceneNumber ?? idx + 1}
+                          {sc.durationSeconds ? ` (${sc.durationSeconds}s)` : ""}
+                        </div>
+                        {sc.visualPrompt && (
+                          <div className="mt-1 text-neutral-300">
+                            <strong>Visual:</strong> {sc.visualPrompt}
+                          </div>
+                        )}
+                        {sc.narration && (
+                          <div className="mt-1 text-neutral-300">
+                            <strong>Narration:</strong> {sc.narration}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="button"
@@ -536,7 +597,6 @@ export default function AutomaticPostingPage() {
         </div>
       ) : (
         <div className="space-y-6 rounded-2xl border border-white/15 bg-[#111111] p-6">
-          {/* STEP 1 */}
           {step === 1 && (
             <div className="space-y-6">
               <div className="space-y-1">
@@ -646,7 +706,6 @@ export default function AutomaticPostingPage() {
             </div>
           )}
 
-          {/* STEP 2 */}
           {step === 2 && (
             <div className="space-y-6">
               <div className="space-y-1">
@@ -736,7 +795,6 @@ export default function AutomaticPostingPage() {
             </div>
           )}
 
-          {/* STEP 3 */}
           {step === 3 && (
             <div className="space-y-6">
               <div className="space-y-1">
@@ -789,7 +847,6 @@ export default function AutomaticPostingPage() {
             </div>
           )}
 
-          {/* STEP 4 */}
           {step === 4 && (
             <div className="space-y-6">
               <div className="space-y-1">
@@ -872,7 +929,6 @@ export default function AutomaticPostingPage() {
                 </div>
               </div>
 
-              {/* Toggle Button: Publish video automatically vs Ask approval before posting */}
               <div className="space-y-3 rounded-xl border border-white/15 bg-[#161616] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div className="space-y-1">
@@ -976,7 +1032,6 @@ export default function AutomaticPostingPage() {
             </div>
           )}
 
-          {/* Footer Controls */}
           <div className="flex items-center justify-between border-t border-white/15 pt-5">
             <button
               type="button"
@@ -1013,4 +1068,3 @@ export default function AutomaticPostingPage() {
     </div>
   );
 }
-
