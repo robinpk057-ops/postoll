@@ -1,4 +1,5 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+﻿import { assertGeminiResponseSafe, STRICT_GEMINI_SAFETY_SETTINGS, validateSafetyText } from "@/lib/safety-guardrail";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createSessionClient } from "@/lib/supabase/server";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
@@ -307,6 +308,7 @@ export async function POST(req: NextRequest) {
             config: {
               responseMimeType: "application/json",
               responseSchema: storyboardResponseSchema,
+              safetySettings: STRICT_GEMINI_SAFETY_SETTINGS,
             },
           });
           break;
@@ -336,6 +338,7 @@ export async function POST(req: NextRequest) {
       throw lastGenError || new Error("All Gemini models returned high demand / unavailable.");
     }
 
+    assertGeminiResponseSafe(response);
     const rawText = response.text;
     if (!rawText) {
       throw new Error("Gemini returned an empty storyboard response.");
@@ -432,6 +435,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 
 

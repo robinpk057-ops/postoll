@@ -1,8 +1,9 @@
 ﻿"use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { validateSafetyText } from "@/lib/safety-guardrail";
 import type { AspectRatio, ReferenceAsset, VisualStyle } from "@/app/types/ai-director";
 
 type PlanOption = {
@@ -19,17 +20,41 @@ type UploadedPhotoItem = {
   file: File;
 };
 
+type ConnectedAccount = {
+  id: string;
+  platform: string;
+  account_handle: string;
+  display_name: string | null;
+  is_active: boolean;
+};
+
+type ClipScene = {
+  sceneNumber?: number;
+  visualPrompt?: string;
+  narration?: string;
+  durationSeconds?: number;
+};
+
 type StoryboardPreview = {
   hook?: string;
   angleSummary?: string;
   caption?: string;
   hashtags?: string[];
-  scenes?: Array<{
-    sceneNumber?: number;
-    visualPrompt?: string;
-    narration?: string;
-    durationSeconds?: number;
-  }>;
+  scenes?: ClipScene[];
+};
+
+type GeneratedJobItem = {
+  id: string;
+  workflow_id: string;
+  run_date: string;
+  status: string;
+  approval_status: string;
+  target_account_ids: string[];
+  credits_charged: number;
+  credits_refunded: boolean;
+  storyboard_json: StoryboardPreview | null;
+  final_video_url?: string | null;
+  created_at: string;
 };
 
 const PLAN_OPTIONS: PlanOption[] = [
@@ -84,6 +109,22 @@ function clampDuration(value: number): number {
 export default function AutomaticPostingPage() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
+  // Account & Credit state
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [recentJobs, setRecentJobs] = useState<GeneratedJobItem[]>([]);
+  const [loadingAccountData, setLoadingAccountData] = useState<boolean>(true);
+
+  // Clip editing & regeneration state
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [editingSceneIndex, setEditingSceneIndex] = useState<number | null>(null);
+  const [editVisualPrompt, setEditVisualPrompt] = useState<string>("");
+  const [editNarration, setEditNarration] = useState<string>("");
+  const [regeneratingClipKey, setRegeneratingClipKey] = useState<string | null>(null);
+  const [stitchingJobId, setStitchingJobId] = useState<string | null>(null);
+
+  // Step 1
   const [selectedPlanId, setSelectedPlanId] = useState<"business" | "cartoon" | "custom">("business");
   const [customCategoryName, setCustomCategoryName] = useState<string>("");
   const [seriesName, setSeriesName] = useState<string>("");
@@ -91,15 +132,18 @@ export default function AutomaticPostingPage() {
   const [coreConcept, setCoreConcept] = useState<string>("");
   const [creativeNotes, setCreativeNotes] = useState<string>("");
 
+  // Step 2
   const [photos, setPhotos] = useState<UploadedPhotoItem[]>([]);
   const [photoUsageRule, setPhotoUsageRule] = useState<string>(
     "Use this same image across all generated videos"
   );
 
+  // Step 3
   const [scriptOutline, setScriptOutline] = useState<string>("");
   const [hookAndCta, setHookAndCta] = useState<string>("");
   const [referenceLinksText, setReferenceLinksText] = useState<string>("");
 
+  // Step 4
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [postTime, setPostTime] = useState<string>("10:00");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
@@ -113,6 +157,7 @@ export default function AutomaticPostingPage() {
   const [error, setError] = useState<string | null>(null);
   const [createdResult, setCreatedResult] = useState<{
     workflowId: string;
+    jobId?: string;
     name: string;
     slotsCount: number;
     runSummary?: string;
@@ -121,6 +166,69 @@ export default function AutomaticPostingPage() {
 
   const activePlan =
     PLAN_OPTIONS.find((p) => p.id === selectedPlanId) ?? PLAN_OPTIONS[0];
+
+  const pendingApprovalJobs = recentJobs.filter(
+    (j) => j.approval_status === "pending_approval" && j.status === "completed"
+  );
+
+  async function refreshAccountAndJobs() {
+    setLoadingAccountData(true);
+    try {
+      const supabase = createClient();
+      if (!supabase) return;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const [profileRes, accountsRes, jobsRes] = await Promise.all([
+        supabase.from("profiles").select("credits").eq("id", user.id).maybeSingle(),
+        supabase
+          .from("connected_accounts")
+          .select("id, platform, account_handle, display_name, is_active")
+          .eq("user_id", user.id)
+          .eq("is_active", true),
+        supabase
+          .from("generation_jobs")
+          .select(
+            "id, workflow_id, run_date, status, approval_status, target_account_ids, credits_charged, credits_refunded, storyboard_json, final_video_url, created_at"
+          )
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(6),
+      ]);
+
+      if (typeof profileRes.data?.credits === "number") {
+        setCreditBalance(profileRes.data.credits);
+      }
+
+      const accts = Array.isArray(accountsRes.data)
+        ? (accountsRes.data as ConnectedAccount[])
+        : [];
+      setConnectedAccounts(accts);
+      setSelectedAccountIds((prev) =>
+        prev.length > 0 ? prev : accts.map((a) => a.id)
+      );
+
+      if (Array.isArray(jobsRes.data)) {
+        setRecentJobs(jobsRes.data as GeneratedJobItem[]);
+      }
+    } finally {
+      setLoadingAccountData(false);
+    }
+  }
+
+  useEffect(() => {
+    refreshAccountAndJobs();
+  }, []);
+
+  function toggleAccountSelection(accountId: string) {
+    setSelectedAccountIds((prev) =>
+      prev.includes(accountId)
+        ? prev.filter((id) => id !== accountId)
+        : [...prev, accountId]
+    );
+  }
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
@@ -180,6 +288,85 @@ export default function AutomaticPostingPage() {
     setCreatedResult(null);
   }
 
+  function startEditingClip(jobId: string, sceneIndex: number, scene: ClipScene) {
+    setEditingJobId(jobId);
+    setEditingSceneIndex(sceneIndex);
+    setEditVisualPrompt(scene.visualPrompt || "");
+    setEditNarration(scene.narration || "");
+  }
+
+  async function handleRegenerateSingleClip(
+    jobId: string,
+    sceneIndex: number,
+    durationSec: number
+  ) {
+    setError(null);
+    const key = `${jobId}-${sceneIndex}`;
+    setRegeneratingClipKey(key);
+    try {
+      const res = await fetch("/api/ai-director/regenerate-clip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId,
+          sceneIndex,
+          visualPrompt: editVisualPrompt,
+          narration: editNarration,
+          durationSeconds: durationSec || 10,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to regenerate clip.");
+      }
+      if (typeof json?.remainingCredits === "number") {
+        setCreditBalance(json.remainingCredits);
+      }
+      setEditingJobId(null);
+      setEditingSceneIndex(null);
+      await refreshAccountAndJobs();
+      if (createdResult?.jobId === jobId && json?.job?.storyboard_json) {
+        setCreatedResult((prev) =>
+          prev ? { ...prev, storyboard: json.job.storyboard_json } : prev
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Clip regeneration failed.");
+      await refreshAccountAndJobs();
+    } finally {
+      setRegeneratingClipKey(null);
+    }
+  }
+
+  async function handleCombineClipsAndPublish(job: GeneratedJobItem) {
+    setError(null);
+    setStitchingJobId(job.id);
+    try {
+      const targetIds =
+        selectedAccountIds.length > 0
+          ? selectedAccountIds
+          : job.target_account_ids || [];
+
+      const res = await fetch("/api/ai-director/stitch-publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: job.id,
+          targetAccountIds: targetIds,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to combine clips and publish.");
+      }
+      await refreshAccountAndJobs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Stitch and publish failed.");
+    } finally {
+      setStitchingJobId(null);
+    }
+  }
+
   async function handleRetryInitialRun() {
     if (!createdResult) return;
     setRetryingRun(true);
@@ -193,10 +380,12 @@ export default function AutomaticPostingPage() {
       const runJson = await runRes.json().catch(() => ({}));
       const sb: StoryboardPreview | undefined =
         runJson?.storyboard || runJson?.job?.storyboard_json;
+      await refreshAccountAndJobs();
       setCreatedResult((prev) =>
         prev
           ? {
               ...prev,
+              jobId: runJson?.job?.id || prev.jobId,
               storyboard: sb ?? prev.storyboard,
               runSummary: runRes.ok
                 ? `Initial generation completed for ${today} (status: ${
@@ -230,6 +419,13 @@ export default function AutomaticPostingPage() {
         throw new Error("Please sign in to create an automated posting workflow.");
       }
 
+      const safetyCheck = validateSafetyText(
+        `${seriesName}\n${coreConcept}\n${creativeNotes}\n${scriptOutline}\n${hookAndCta}`
+      );
+      if (!safetyCheck.allowed) {
+        throw new Error(safetyCheck.reason);
+      }
+
       if (!coreConcept.trim() && !scriptOutline.trim()) {
         throw new Error(
           "Please provide a core video concept or a detailed script before creating the workflow."
@@ -238,6 +434,12 @@ export default function AutomaticPostingPage() {
 
       if (selectedDays.length === 0) {
         throw new Error("Select at least one posting day in Step 4.");
+      }
+
+      if (runFirstNow && creditBalance !== null && creditBalance < 1) {
+        throw new Error(
+          "Insufficient credits (0 remaining). Add credits or uncheck immediate generation."
+        );
       }
 
       const safeDuration = clampDuration(durationSeconds);
@@ -259,6 +461,7 @@ export default function AutomaticPostingPage() {
         `Publishing Mode: ${
           autoPublish ? "Publish video automatically" : "Ask approval before posting"
         }`,
+        `Target Account IDs: ${selectedAccountIds.join(", ") || "All connected"}`,
         creativeNotes.trim() ? `Creative Notes: ${creativeNotes.trim()}` : "",
         coreConcept.trim() ? `Core Concept: ${coreConcept.trim()}` : "",
         photoUsageRule.trim() ? `Image Usage Rule: ${photoUsageRule.trim()}` : "",
@@ -402,6 +605,8 @@ export default function AutomaticPostingPage() {
 
       let runSummary: string | undefined;
       let generatedStoryboard: StoryboardPreview | undefined;
+      let createdJobId: string | undefined;
+
       if (runFirstNow) {
         const today = new Date().toISOString().slice(0, 10);
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -417,9 +622,12 @@ export default function AutomaticPostingPage() {
           });
           const runJson = await runRes.json().catch(() => ({}));
           if (runRes.ok) {
+            createdJobId = runJson?.job?.id;
             generatedStoryboard = runJson?.storyboard || runJson?.job?.storyboard_json;
-            runSummary = `Initial generation completed for ${today} (status: ${
-              runJson?.job?.status || "completed"
+            runSummary = `Initial generation completed for ${today} (${
+              autoPublish
+                ? "queued for scheduled auto-publish"
+                : "awaiting your approval before posting"
             }).`;
             break;
           }
@@ -436,8 +644,11 @@ export default function AutomaticPostingPage() {
         setStatusMessage(null);
       }
 
+      await refreshAccountAndJobs();
+
       setCreatedResult({
         workflowId,
+        jobId: createdJobId,
         name: resolvedName,
         slotsCount: slotRows.length,
         runSummary,
@@ -456,25 +667,49 @@ export default function AutomaticPostingPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 p-6 text-white md:p-8">
+      {/* Header + Credits + Back to Home */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1.5">
           <h1 className="text-3xl font-bold tracking-tight text-white">
             Automated Video Posting Setup
           </h1>
           <p className="text-sm text-neutral-300">
-            Configure your video plan, visual assets, script, and publishing schedule step by step.
+            Generates content 30 minutes before scheduled slots. Full run: 1 credit · Single clip regen: 1 credit · Auto-refunded on failure.
           </p>
         </div>
 
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-[#141414] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:border-white/45"
-        >
-          <span>←</span>
-          <span>Back to Home</span>
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="rounded-xl border border-white/20 bg-[#141414] px-4 py-2 text-xs">
+            <span className="text-neutral-400">Credit Balance: </span>
+            <strong className="text-sm text-white">
+              {loadingAccountData ? "..." : creditBalance ?? 0}
+            </strong>
+          </div>
+
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-[#141414] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:border-white/45"
+          >
+            <span>←</span>
+            <span>Back to Home</span>
+          </Link>
+        </div>
       </div>
 
+      {/* Pending Approval Notification Banner */}
+      {pendingApprovalJobs.length > 0 && (
+        <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+          <div className="font-semibold">
+            Approval Needed: {pendingApprovalJobs.length} generated video plan(s) waiting for review
+          </div>
+          <p className="mt-1 text-xs text-amber-200/90">
+            Review individual clips below, regenerate any single clip if needed, and click{" "}
+            <strong>Combine Clips &amp; Publish</strong> to post to your selected accounts.
+          </p>
+        </div>
+      )}
+
+      {/* Step Navigation */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { num: 1, title: "1. Plan & Direction" },
@@ -525,52 +760,6 @@ export default function AutomaticPostingPage() {
               {createdResult.runSummary}
             </p>
           )}
-          {createdResult.storyboard && (
-            <div className="space-y-3 rounded-xl border border-white/15 bg-[#161616] p-4 text-sm text-neutral-200">
-              <div className="font-semibold text-white">Generated Storyboard Preview</div>
-              {createdResult.storyboard.hook && (
-                <div>
-                  <span className="font-medium text-neutral-400">Hook: </span>
-                  {createdResult.storyboard.hook}
-                </div>
-              )}
-              {createdResult.storyboard.caption && (
-                <div>
-                  <span className="font-medium text-neutral-400">Caption: </span>
-                  <span className="whitespace-pre-line">{createdResult.storyboard.caption}</span>
-                </div>
-              )}
-              {Array.isArray(createdResult.storyboard.scenes) &&
-                createdResult.storyboard.scenes.length > 0 && (
-                  <div className="space-y-2 pt-1">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                      Scenes
-                    </div>
-                    {createdResult.storyboard.scenes.map((sc, idx) => (
-                      <div
-                        key={idx}
-                        className="rounded-lg border border-white/10 bg-[#111111] p-3 text-xs"
-                      >
-                        <div className="font-semibold text-white">
-                          Scene {sc.sceneNumber ?? idx + 1}
-                          {sc.durationSeconds ? ` (${sc.durationSeconds}s)` : ""}
-                        </div>
-                        {sc.visualPrompt && (
-                          <div className="mt-1 text-neutral-300">
-                            <strong>Visual:</strong> {sc.visualPrompt}
-                          </div>
-                        )}
-                        {sc.narration && (
-                          <div className="mt-1 text-neutral-300">
-                            <strong>Narration:</strong> {sc.narration}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-            </div>
-          )}
           <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="button"
@@ -597,6 +786,7 @@ export default function AutomaticPostingPage() {
         </div>
       ) : (
         <div className="space-y-6 rounded-2xl border border-white/15 bg-[#111111] p-6">
+          {/* STEP 1 */}
           {step === 1 && (
             <div className="space-y-6">
               <div className="space-y-1">
@@ -644,7 +834,7 @@ export default function AutomaticPostingPage() {
                     type="text"
                     value={customCategoryName}
                     onChange={(e) => setCustomCategoryName(e.target.value)}
-                    placeholder="Enter custom category name (e.g., Documentary Shorts, Product Walkthroughs)"
+                    placeholder="Enter custom category name"
                     className={inputClass}
                   />
                 </div>
@@ -672,7 +862,7 @@ export default function AutomaticPostingPage() {
                     type="text"
                     value={audienceAndTone}
                     onChange={(e) => setAudienceAndTone(e.target.value)}
-                    placeholder="e.g., Small business owners; clear, authoritative, and friendly"
+                    placeholder="e.g., Small business owners; clear and friendly"
                     className={inputClass}
                   />
                 </div>
@@ -686,7 +876,7 @@ export default function AutomaticPostingPage() {
                   type="text"
                   value={coreConcept}
                   onChange={(e) => setCoreConcept(e.target.value)}
-                  placeholder="e.g., Demonstrate practical workflows and key benefits in short vertical videos"
+                  placeholder="e.g., Demonstrate practical workflows in short vertical videos"
                   className={inputClass}
                 />
               </div>
@@ -699,13 +889,14 @@ export default function AutomaticPostingPage() {
                   rows={3}
                   value={creativeNotes}
                   onChange={(e) => setCreativeNotes(e.target.value)}
-                  placeholder="Specify visual palette, character traits, brand positioning, or styling guidelines..."
+                  placeholder="Specify visual palette, character traits, or styling guidelines..."
                   className={inputClass}
                 />
               </div>
             </div>
           )}
 
+          {/* STEP 2 */}
           {step === 2 && (
             <div className="space-y-6">
               <div className="space-y-1">
@@ -795,6 +986,7 @@ export default function AutomaticPostingPage() {
             </div>
           )}
 
+          {/* STEP 3 */}
           {step === 3 && (
             <div className="space-y-6">
               <div className="space-y-1">
@@ -847,15 +1039,61 @@ export default function AutomaticPostingPage() {
             </div>
           )}
 
+          {/* STEP 4 */}
           {step === 4 && (
             <div className="space-y-6">
               <div className="space-y-1">
                 <h2 className="text-xl font-semibold text-white">
-                  Posting Schedule &amp; Video Specifications
+                  Posting Schedule, Target Accounts &amp; Specifications
                 </h2>
                 <p className="text-sm text-neutral-300">
-                  Set publishing days, time, framing, and duration (15s or 30s) before creating the workflow.
+                  Content generates 30 minutes before your scheduled time. Select target accounts, framing, and duration (15s or 30s).
                 </p>
+              </div>
+
+              {/* Target Social Accounts Picker */}
+              <div className="space-y-2 rounded-xl border border-white/15 bg-[#161616] p-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-white">
+                    Target Accounts (Post only to selected accounts)
+                  </label>
+                  <Link
+                    href="/accounts"
+                    className="text-xs font-medium text-neutral-300 underline hover:text-white"
+                  >
+                    Manage Accounts
+                  </Link>
+                </div>
+
+                {connectedAccounts.length === 0 ? (
+                  <p className="text-xs text-neutral-400">
+                    No active connected accounts found yet. Connect accounts on the{" "}
+                    <Link href="/accounts" className="text-white underline">
+                      Accounts page
+                    </Link>{" "}
+                    to target specific channels.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {connectedAccounts.map((acct) => {
+                      const checked = selectedAccountIds.includes(acct.id);
+                      return (
+                        <button
+                          key={acct.id}
+                          type="button"
+                          onClick={() => toggleAccountSelection(acct.id)}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            checked
+                              ? "border-white bg-white text-black"
+                              : "border-white/20 bg-[#111111] text-neutral-300 hover:border-white/40"
+                          }`}
+                        >
+                          {acct.platform}: {acct.display_name || acct.account_handle}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -929,6 +1167,7 @@ export default function AutomaticPostingPage() {
                 </div>
               </div>
 
+              {/* Publish Automatically vs Ask Approval Toggle */}
               <div className="space-y-3 rounded-xl border border-white/15 bg-[#161616] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div className="space-y-1">
@@ -939,8 +1178,8 @@ export default function AutomaticPostingPage() {
                     </div>
                     <p className="text-xs text-neutral-300">
                       {autoPublish
-                        ? "Generated videos will publish automatically at scheduled slot times."
-                        : "Generated videos will pause for your approval before posting."}
+                        ? "Clips generate 30 mins ahead, combine, and publish automatically at scheduled slot times."
+                        : "Clips generate 30 mins ahead and wait for your review/clip edits before combining & posting."}
                     </p>
                   </div>
 
@@ -999,39 +1238,13 @@ export default function AutomaticPostingPage() {
                     onChange={(e) => setRunFirstNow(e.target.checked)}
                     className="h-4 w-4 accent-white"
                   />
-                  <span>Run initial video generation immediately after creation</span>
+                  <span>Run initial video generation immediately (1 credit)</span>
                 </label>
-              </div>
-
-              <div className="space-y-1.5 rounded-xl border border-white/15 bg-[#161616] p-4 text-xs text-neutral-300">
-                <div className="text-sm font-semibold text-white">Configuration Summary</div>
-                <div>
-                  <strong className="text-neutral-100">Category:</strong>{" "}
-                  {selectedPlanId === "custom" && customCategoryName.trim()
-                    ? customCategoryName.trim()
-                    : activePlan.label}
-                </div>
-                <div>
-                  <strong className="text-neutral-100">Publishing Mode:</strong>{" "}
-                  {autoPublish
-                    ? "Publish video automatically"
-                    : "Ask approval before posting"}
-                </div>
-                <div>
-                  <strong className="text-neutral-100">Duration:</strong>{" "}
-                  {clampDuration(durationSeconds)} seconds ({aspectRatio})
-                </div>
-                <div>
-                  <strong className="text-neutral-100">Reference Photos:</strong> {photos.length}
-                </div>
-                <div>
-                  <strong className="text-neutral-100">Image Rule:</strong>{" "}
-                  {photoUsageRule || "None specified"}
-                </div>
               </div>
             </div>
           )}
 
+          {/* Footer Controls */}
           <div className="flex items-center justify-between border-t border-white/15 pt-5">
             <button
               type="button"
@@ -1062,6 +1275,148 @@ export default function AutomaticPostingPage() {
                 {submitting ? statusMessage || "Creating..." : "Create Workflow"}
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Generated Content, Clip-by-Clip Editor, Single-Clip Regeneration & Final Stitch/Publish */}
+      {recentJobs.length > 0 && (
+        <div className="space-y-4 rounded-2xl border border-white/15 bg-[#111111] p-6">
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold text-white">
+              Generated Content &amp; Clip Studio
+            </h2>
+            <p className="text-xs text-neutral-300">
+              View individual clips separately, edit and regenerate a single clip (1 credit), or combine all clips and publish to your selected accounts.
+            </p>
+          </div>
+
+          <div className="space-y-5">
+            {recentJobs.map((job) => {
+              const scenes = Array.isArray(job.storyboard_json?.scenes)
+                ? job.storyboard_json!.scenes!
+                : [];
+              return (
+                <div
+                  key={job.id}
+                  className="space-y-4 rounded-xl border border-white/15 bg-[#161616] p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-semibold text-white">
+                        {job.storyboard_json?.hook || `Run ${job.run_date}`}
+                      </div>
+                      <div className="text-xs text-neutral-400">
+                        Status: <strong className="text-neutral-200">{job.status}</strong> ·
+                        Approval:{" "}
+                        <strong className="text-neutral-200">{job.approval_status}</strong> ·
+                        Credits charged: {job.credits_charged}
+                        {job.credits_refunded ? " (Refunded)" : ""}
+                      </div>
+                    </div>
+
+                    {job.status === "completed" && (
+                      <button
+                        type="button"
+                        disabled={stitchingJobId === job.id}
+                        onClick={() => handleCombineClipsAndPublish(job)}
+                        className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
+                      >
+                        {stitchingJobId === job.id
+                          ? "Combining & Publishing..."
+                          : "Combine Clips & Publish"}
+                      </button>
+                    )}
+                  </div>
+
+                  {job.storyboard_json?.caption && (
+                    <p className="rounded-lg border border-white/10 bg-[#111111] p-3 text-xs text-neutral-200">
+                      {job.storyboard_json.caption}
+                    </p>
+                  )}
+
+                  {scenes.length > 0 && (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {scenes.map((scene, idx) => {
+                        const isEditing =
+                          editingJobId === job.id && editingSceneIndex === idx;
+                        const clipKey = `${job.id}-${idx}`;
+                        return (
+                          <div
+                            key={idx}
+                            className="space-y-2 rounded-xl border border-white/15 bg-[#111111] p-3.5 text-xs"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-white">
+                                Clip {scene.sceneNumber ?? idx + 1} (
+                                {scene.durationSeconds ?? 10}s)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  isEditing
+                                    ? setEditingJobId(null)
+                                    : startEditingClip(job.id, idx, scene)
+                                }
+                                className="text-neutral-300 underline hover:text-white"
+                              >
+                                {isEditing ? "Cancel" : "Edit / Regenerate Clip"}
+                              </button>
+                            </div>
+
+                            {isEditing ? (
+                              <div className="space-y-2 pt-1">
+                                <textarea
+                                  rows={2}
+                                  value={editVisualPrompt}
+                                  onChange={(e) => setEditVisualPrompt(e.target.value)}
+                                  placeholder="Visual prompt for this clip..."
+                                  className={inputClass}
+                                />
+                                <textarea
+                                  rows={2}
+                                  value={editNarration}
+                                  onChange={(e) => setEditNarration(e.target.value)}
+                                  placeholder="Narration for this clip..."
+                                  className={inputClass}
+                                />
+                                <button
+                                  type="button"
+                                  disabled={regeneratingClipKey === clipKey}
+                                  onClick={() =>
+                                    handleRegenerateSingleClip(
+                                      job.id,
+                                      idx,
+                                      scene.durationSeconds || 10
+                                    )
+                                  }
+                                  className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
+                                >
+                                  {regeneratingClipKey === clipKey
+                                    ? "Regenerating Clip..."
+                                    : "Regenerate Only This Clip (1 Credit)"}
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="text-neutral-300">
+                                  <strong className="text-neutral-100">Visual:</strong>{" "}
+                                  {scene.visualPrompt}
+                                </div>
+                                <div className="text-neutral-300">
+                                  <strong className="text-neutral-100">Narration:</strong>{" "}
+                                  {scene.narration}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
