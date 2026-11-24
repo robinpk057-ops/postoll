@@ -204,9 +204,7 @@ export default function AutomaticPostingPage() {
           .limit(6),
       ]);
 
-      if (typeof billingRes?.credits === "number") {
-        setCreditBalance(billingRes.credits);
-      }
+      if (billingRes && typeof (billingRes as { credits?: unknown }).credits === "number") { setCreditBalance((billingRes as { credits: number }).credits); }
 
       const accts = Array.isArray(accountsRes.data)
         ? (accountsRes.data as ConnectedAccount[])
@@ -1511,5 +1509,6 @@ export default function AutomaticPostingPage() {
     </div>
   );
 }
+
 
 
