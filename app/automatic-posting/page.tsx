@@ -99,6 +99,8 @@ export default function AutomaticPostingPage() {
   const [runFirstNow, setRunFirstNow] = useState<boolean>(true);
 
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [retryingRun, setRetryingRun] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [createdResult, setCreatedResult] = useState<{
     workflowId: string;
@@ -165,6 +167,34 @@ export default function AutomaticPostingPage() {
     setRunFirstNow(true);
     setError(null);
     setCreatedResult(null);
+  }
+
+  async function handleRetryInitialRun() {
+    if (!createdResult) return;
+    setRetryingRun(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const runRes = await fetch("/api/ai-director/run-daily", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workflowId: createdResult.workflowId, runDate: today }),
+      });
+      const runJson = await runRes.json().catch(() => ({}));
+      setCreatedResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              runSummary: runRes.ok
+                ? `Initial generation started for ${today} (status: ${
+                    runJson?.job?.status || "queued"
+                  }).`
+                : `Retry returned: ${runJson?.error || "Model still busy, try again shortly."}`,
+            }
+          : prev
+      );
+    } finally {
+      setRetryingRun(false);
+    }
   }
 
   async function handleCreateAutomaticWorkflow() {
@@ -359,21 +389,35 @@ export default function AutomaticPostingPage() {
       let runSummary: string | undefined;
       if (runFirstNow) {
         const today = new Date().toISOString().slice(0, 10);
-        const runRes = await fetch("/api/ai-director/run-daily", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ workflowId, runDate: today }),
-        });
-        const runJson = await runRes.json().catch(() => ({}));
-        if (runRes.ok) {
-          runSummary = `Initial generation started for ${today} (status: ${
-            runJson?.job?.status || "queued"
-          }).`;
-        } else {
-          runSummary = `Workflow and schedule saved. Initial run returned: ${
-            runJson?.error || "check AI Director configuration"
-          }.`;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          setStatusMessage(
+            attempt === 1
+              ? "Triggering initial video generation..."
+              : `Model experiencing high demand — retrying automatically (${attempt}/3)...`
+          );
+          const runRes = await fetch("/api/ai-director/run-daily", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ workflowId, runDate: today }),
+          });
+          const runJson = await runRes.json().catch(() => ({}));
+          if (runRes.ok) {
+            runSummary = `Initial generation started for ${today} (status: ${
+              runJson?.job?.status || "queued"
+            }).`;
+            break;
+          }
+          const errText = String(runJson?.error || "");
+          const isTransient = /503|UNAVAILABLE|high demand|overloaded|429/i.test(errText);
+          if (!isTransient || attempt === 3) {
+            runSummary = `Workflow and schedule saved. Initial run returned: ${
+              errText || "check AI Director configuration"
+            }.`;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 2500 * attempt));
         }
+        setStatusMessage(null);
       }
 
       setCreatedResult({
@@ -467,6 +511,14 @@ export default function AutomaticPostingPage() {
             </p>
           )}
           <div className="flex flex-wrap gap-3 pt-2">
+            <button
+              type="button"
+              disabled={retryingRun}
+              onClick={handleRetryInitialRun}
+              className="rounded-xl border border-white/25 bg-[#161616] px-4 py-2.5 text-sm font-semibold text-white hover:border-white/50 disabled:opacity-50"
+            >
+              {retryingRun ? "Retrying Generation..." : "Retry Initial Generation"}
+            </button>
             <button
               type="button"
               onClick={resetBuilder}
@@ -952,7 +1004,7 @@ export default function AutomaticPostingPage() {
                 onClick={handleCreateAutomaticWorkflow}
                 className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
               >
-                {submitting ? "Creating..." : "Create Workflow"}
+                {submitting ? statusMessage || "Creating..." : "Create Workflow"}
               </button>
             )}
           </div>
@@ -961,3 +1013,4 @@ export default function AutomaticPostingPage() {
     </div>
   );
 }
+

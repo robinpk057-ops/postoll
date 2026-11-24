@@ -289,11 +289,17 @@ export async function POST(req: NextRequest) {
     const ai = new GoogleGenAI({ apiKey });
     const prompt = buildDailyPrompt(settings);
 
-    const modelsToTry = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"];
+    const modelsToTry = [
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-3.8-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash-lite",
+    ];
     let response;
     let lastGenError: unknown;
     for (const modelName of modelsToTry) {
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           response = await ai.models.generateContent({
             model: modelName,
@@ -306,16 +312,22 @@ export async function POST(req: NextRequest) {
           break;
         } catch (genErr: unknown) {
           lastGenError = genErr;
-          const msg = genErr instanceof Error ? genErr.message : String(genErr);
+          const msg = (
+            genErr instanceof Error ? genErr.message : String(genErr)
+          ).toLowerCase();
           const isTransient =
             msg.includes("503") ||
-            msg.includes("UNAVAILABLE") ||
+            msg.includes("unavailable") ||
             msg.includes("429") ||
-            msg.includes("high demand");
-          if (!isTransient || attempt === 2) {
+            msg.includes("resource_exhausted") ||
+            msg.includes("high demand") ||
+            msg.includes("overloaded") ||
+            msg.includes("fetch failed");
+          if (!isTransient || attempt === 3) {
             break;
           }
-          await new Promise((r) => setTimeout(r, 1500 * attempt));
+          const backoffMs = 1500 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 500);
+          await new Promise((r) => setTimeout(r, backoffMs));
         }
       }
       if (response) break;
@@ -420,6 +432,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 
 
