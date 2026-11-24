@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -33,35 +34,64 @@ export default function LoginPage() {
     const supabase = createClient();
     if (!supabase) return;
 
-    const params = new URLSearchParams(window.location.search);
-    const qMode = params.get("mode");
-    const code = params.get("code");
-    const hash = window.location.hash || "";
-    const isRecoveryHash = /type=recovery/.test(hash);
+    let mounted = true;
 
-    if (qMode === "forgot" || qMode === "update") {
-      setMode(qMode);
-    } else if (isRecoveryHash) {
-      setMode("update");
-    }
+    async function initAuthSession() {
+      const params = new URLSearchParams(window.location.search);
+      const qMode = params.get("mode");
+      const code = params.get("code");
+      const hash = window.location.hash.replace(/^#/, "");
+      const hashParams = new URLSearchParams(hash);
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      const hashType = hashParams.get("type");
 
-    if (code) {
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (!error) {
+      if (qMode === "forgot" || qMode === "update") {
+        setMode(qMode);
+      } else if (hashType === "recovery") {
+        setMode("update");
+      }
+
+      if (code) {
+        const { error } = await supabase!.auth.exchangeCodeForSession(code);
+        if (!error && mounted) {
           setMode("update");
+          setSessionReady(true);
         }
-      });
+      } else if (accessToken && refreshToken) {
+        const { error } = await supabase!.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (!error && mounted) {
+          setMode("update");
+          setSessionReady(true);
+        }
+      }
+
+      const {
+        data: { session },
+      } = await supabase!.auth.getSession();
+      if (mounted && session?.user) {
+        setSessionReady(true);
+      }
     }
+
+    initAuthSession();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY") {
         setMode("update");
+        setSessionReady(true);
+      } else if (session?.user) {
+        setSessionReady(true);
       }
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -125,11 +155,16 @@ export default function LoginPage() {
       );
 
       if (error) {
+        if (/rate limit/i.test(error.message)) {
+          throw new Error(
+            "Too many reset emails were sent recently (Supabase default limit is 2 emails/hour). Please wait about an hour or configure Custom SMTP in Supabase Authentication settings."
+          );
+        }
         throw new Error(error.message);
       }
 
       setSuccessMsg(
-        "Password reset link sent! Check your inbox/spam folder and click the link to open the Update password form."
+        "Password reset link sent! Open the newest email in your inbox/spam folder and click the link to set your new password."
       );
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to send reset link.");
@@ -160,12 +195,12 @@ export default function LoginPage() {
       if (!supabase) throw new Error("Supabase client is not configured.");
 
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      if (!user) {
+      if (!session?.user) {
         throw new Error(
-          "No active or recovery session found. Click the reset link from your email again or sign in first to update your password."
+          "Your reset link was already used or expired. Request a new link from Forgot PW (or sign in with your current password first) before updating."
         );
       }
 
@@ -179,7 +214,7 @@ export default function LoginPage() {
 
       setNewPassword("");
       setConfirmPassword("");
-      setSuccessMsg("Password updated successfully! You can now continue to your dashboard.");
+      setSuccessMsg("Password updated successfully! You can now sign in or go to your dashboard.");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to update password.");
     } finally {
@@ -256,8 +291,13 @@ export default function LoginPage() {
         )}
 
         {successMsg && (
-          <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 p-3.5 text-sm text-emerald-200">
-            {successMsg}
+          <div className="space-y-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 p-3.5 text-sm text-emerald-200">
+            <div>{successMsg}</div>
+            <div className="text-xs font-semibold">
+              <Link href="/" className="underline text-white">
+                Go to Dashboard →
+              </Link>
+            </div>
           </div>
         )}
 
@@ -345,6 +385,12 @@ export default function LoginPage() {
 
         {mode === "update" && (
           <form onSubmit={handleUpdatePassword} className="space-y-4">
+            {!sessionReady && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                Tip: Open the password reset link sent to your email—or sign in on the Login tab first—so your session is active before saving a new password.
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-neutral-200">
                 New Password
