@@ -19,6 +19,10 @@ export default function LoginPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -26,14 +30,28 @@ export default function LoginPage() {
   const newPwChecks = getPasswordChecklist(newPassword);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const qMode = params.get("mode");
-    if (qMode === "forgot" || qMode === "update") {
-      setMode(qMode);
-    }
-
     const supabase = createClient();
     if (!supabase) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const qMode = params.get("mode");
+    const code = params.get("code");
+    const hash = window.location.hash || "";
+    const isRecoveryHash = /type=recovery/.test(hash);
+
+    if (qMode === "forgot" || qMode === "update") {
+      setMode(qMode);
+    } else if (isRecoveryHash) {
+      setMode("update");
+    }
+
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (!error) {
+          setMode("update");
+        }
+      });
+    }
 
     const {
       data: { subscription },
@@ -111,7 +129,7 @@ export default function LoginPage() {
       }
 
       setSuccessMsg(
-        "Password reset link sent! Check your inbox/spam folder. If email delivery is delayed or rate-limited in Supabase, you can also sign in and use Update Password."
+        "Password reset link sent! Check your inbox/spam folder and click the link to open the Update password form."
       );
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to send reset link.");
@@ -147,7 +165,7 @@ export default function LoginPage() {
 
       if (!user) {
         throw new Error(
-          "No active or recovery session found. Open the reset link from your email or sign in first to update your password."
+          "No active or recovery session found. Click the reset link from your email again or sign in first to update your password."
         );
       }
 
@@ -270,14 +288,23 @@ export default function LoginPage() {
                   Forgot password?
                 </button>
               </div>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Your password"
-                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
-              />
+              <div className="relative">
+                <input
+                  type={showLoginPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Your password"
+                  className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 pr-16 text-sm text-white focus:border-white/50 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-white"
+                >
+                  {showLoginPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </div>
 
             <button
@@ -322,14 +349,23 @@ export default function LoginPage() {
               <label className="block text-sm font-medium text-neutral-200">
                 New Password
               </label>
-              <input
-                type="password"
-                required
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Create a strong password"
-                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
-              />
+              <div className="relative">
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Create a strong password"
+                  className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 pr-16 text-sm text-white focus:border-white/50 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-white"
+                >
+                  {showNewPassword ? "Hide" : "Show"}
+                </button>
+              </div>
               <ul className="space-y-1 pt-1.5 text-xs">
                 <li
                   className={`flex items-center gap-2 ${
@@ -370,14 +406,23 @@ export default function LoginPage() {
               <label className="block text-sm font-medium text-neutral-200">
                 Confirm New Password
               </label>
-              <input
-                type="password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter new password"
-                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
-              />
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter new password"
+                  className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 pr-16 text-sm text-white focus:border-white/50 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-white"
+                >
+                  {showConfirmPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </div>
 
             <button

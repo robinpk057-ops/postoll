@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -195,6 +195,18 @@ export default function ContentPage() {
   }, [router, supabase]);
 
   useEffect(() => {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  const isRecovery = /type=recovery/.test(window.location.hash || "");
+  if (code || isRecovery) {
+    const target = code
+      ? `/login?mode=update&code=${encodeURIComponent(code)}`
+      : "/login?mode=update";
+    window.location.replace(target);
+  }
+}, []);
+useEffect(() => {
     loadContent();
   }, [loadContent]);
 
@@ -248,7 +260,7 @@ export default function ContentPage() {
                 className="text-sm font-medium"
                 style={{ color: "#a78bfa" }}
               >
-                ✦ Your content
+                âœ¦ Your content
               </p>
 
               <h1 className="mt-1 text-3xl font-semibold">
@@ -405,7 +417,7 @@ export default function ContentPage() {
               }}
             >
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10 text-xl">
-                ✦
+                âœ¦
               </div>
 
               <h2 className="mt-5 text-lg font-semibold">No content found</h2>
@@ -443,11 +455,11 @@ export default function ContentPage() {
                           className="h-full w-full object-cover"
                         />
                       ) : item.type === "reel" ? (
-                        "▶"
+                        "â–¶"
                       ) : item.type === "video" ? (
-                        "◉"
+                        "â—‰"
                       ) : (
-                        "✦"
+                        "âœ¦"
                       )}
                     </div>
 
@@ -507,7 +519,7 @@ export default function ContentPage() {
               borderColor: "var(--border)",
             }}
           >
-            <div className="text-xl">✦</div>
+            <div className="text-xl">âœ¦</div>
             <h3 className="mt-4 font-semibold">AI Generated</h3>
             <p
               className="mt-2 text-sm leading-6"
@@ -524,7 +536,7 @@ export default function ContentPage() {
               borderColor: "var(--border)",
             }}
           >
-            <div className="text-xl">↑</div>
+            <div className="text-xl">â†‘</div>
             <h3 className="mt-4 font-semibold">Uploaded Content</h3>
             <p
               className="mt-2 text-sm leading-6"
@@ -541,7 +553,7 @@ export default function ContentPage() {
               borderColor: "var(--border)",
             }}
           >
-            <div className="text-xl">◫</div>
+            <div className="text-xl">â—«</div>
             <h3 className="mt-4 font-semibold">Product Assets</h3>
             <p
               className="mt-2 text-sm leading-6"
@@ -556,3 +568,4 @@ export default function ContentPage() {
     </AppShell>
   );
 }
+
