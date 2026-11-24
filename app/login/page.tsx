@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<"google" | "apple" | "azure" | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -38,12 +39,17 @@ export default function LoginPage() {
     async function initAuthSession() {
       const params = new URLSearchParams(window.location.search);
       const qMode = params.get("mode");
+      const qError = params.get("error");
       const code = params.get("code");
       const hash = window.location.hash.replace(/^#/, "");
       const hashParams = new URLSearchParams(hash);
       const accessToken = hashParams.get("access_token");
       const refreshToken = hashParams.get("refresh_token");
       const hashType = hashParams.get("type");
+
+      if (qError) {
+        setErrorMsg(qError);
+      }
 
       if (qMode === "forgot") {
         setMode("forgot");
@@ -82,6 +88,37 @@ export default function LoginPage() {
       subscription.unsubscribe();
     };
   }, []);
+
+  async function handleSocialSignIn(provider: "google" | "apple" | "azure") {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setOauthLoading(provider);
+
+    try {
+      const supabase = createClient();
+      if (!supabase) throw new Error("Supabase client is not configured.");
+
+      const origin = window.location.origin;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${origin}/auth/callback?next=/`,
+          ...(provider === "azure" ? { scopes: "email profile openid" } : {}),
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : "Social sign-in is not enabled yet in Supabase."
+      );
+      setOauthLoading(null);
+    }
+  }
 
   async function handleSignIn(e: FormEvent) {
     e.preventDefault();
@@ -137,7 +174,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
         {
-          redirectTo: `${origin}/login?mode=update`,
+          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent("/login?mode=update")}`,
         }
       );
 
@@ -222,7 +259,7 @@ export default function LoginPage() {
           </h1>
           <p className="text-sm text-neutral-400">
             {mode === "login"
-              ? "Access your workflows, credits, and scheduled posts."
+              ? "Continue with a social account or sign in with your email."
               : mode === "forgot"
               ? "Enter your account email and we will send you a password reset link."
               : "Choose a strong new password for your Postoll account."}
@@ -247,63 +284,113 @@ export default function LoginPage() {
         )}
 
         {mode === "login" && (
-          <form onSubmit={handleSignIn} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-neutral-200">Email</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
-              />
+          <>
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                disabled={oauthLoading !== null || loading}
+                onClick={() => handleSocialSignIn("google")}
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
+              >
+                <span>G</span>
+                <span>
+                  {oauthLoading === "google" ? "Connecting to Google..." : "Continue with Google"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                disabled={oauthLoading !== null || loading}
+                onClick={() => handleSocialSignIn("apple")}
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
+              >
+                <span></span>
+                <span>
+                  {oauthLoading === "apple" ? "Connecting to Apple..." : "Continue with Apple"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                disabled={oauthLoading !== null || loading}
+                onClick={() => handleSocialSignIn("azure")}
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
+              >
+                <span>⊞</span>
+                <span>
+                  {oauthLoading === "azure"
+                    ? "Connecting to Microsoft..."
+                    : "Continue with Microsoft"}
+                </span>
+              </button>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-sm font-medium text-neutral-200">
-                  Password
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("forgot");
-                    setErrorMsg(null);
-                    setSuccessMsg(null);
-                  }}
-                  className="text-xs text-neutral-300 underline hover:text-white"
-                >
-                  Forgot password?
-                </button>
-              </div>
-              <div className="relative">
+            <div className="relative flex items-center py-1">
+              <div className="flex-grow border-t border-white/15" />
+              <span className="mx-3 shrink text-xs uppercase tracking-wider text-neutral-500">
+                or with email
+              </span>
+              <div className="flex-grow border-t border-white/15" />
+            </div>
+
+            <form onSubmit={handleSignIn} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-neutral-200">Email</label>
                 <input
-                  type={showLoginPassword ? "text" : "password"}
+                  type="email"
                   required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Your password"
-                  className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 pr-16 text-sm text-white focus:border-white/50 focus:outline-none"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowLoginPassword((prev) => !prev)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-white"
-                >
-                  {showLoginPassword ? "Hide" : "Show"}
-                </button>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-white py-3 text-sm font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
-            >
-              {loading ? "Signing in..." : "Sign in"}
-            </button>
-          </form>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-neutral-200">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("forgot");
+                      setErrorMsg(null);
+                      setSuccessMsg(null);
+                    }}
+                    className="text-xs text-neutral-300 underline hover:text-white"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? "text" : "password"}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Your password"
+                    className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 pr-16 text-sm text-white focus:border-white/50 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-white"
+                  >
+                    {showLoginPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || oauthLoading !== null}
+                className="w-full rounded-xl bg-white py-3 text-sm font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
+              >
+                {loading ? "Signing in..." : "Sign in"}
+              </button>
+            </form>
+          </>
         )}
 
         {mode === "forgot" && (
