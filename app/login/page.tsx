@@ -12,7 +12,7 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "forgot" | "update">("login");
+  const [mode, setMode] = useState<"login" | "forgot" | "recovery">("login");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +24,6 @@ export default function LoginPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -46,17 +45,16 @@ export default function LoginPage() {
       const refreshToken = hashParams.get("refresh_token");
       const hashType = hashParams.get("type");
 
-      if (qMode === "forgot" || qMode === "update") {
-        setMode(qMode);
-      } else if (hashType === "recovery") {
-        setMode("update");
+      if (qMode === "forgot") {
+        setMode("forgot");
+      } else if (qMode === "update" || hashType === "recovery") {
+        setMode("recovery");
       }
 
       if (code) {
         const { error } = await supabase!.auth.exchangeCodeForSession(code);
         if (!error && mounted) {
-          setMode("update");
-          setSessionReady(true);
+          setMode("recovery");
         }
       } else if (accessToken && refreshToken) {
         const { error } = await supabase!.auth.setSession({
@@ -64,16 +62,8 @@ export default function LoginPage() {
           refresh_token: refreshToken,
         });
         if (!error && mounted) {
-          setMode("update");
-          setSessionReady(true);
+          setMode("recovery");
         }
-      }
-
-      const {
-        data: { session },
-      } = await supabase!.auth.getSession();
-      if (mounted && session?.user) {
-        setSessionReady(true);
       }
     }
 
@@ -81,12 +71,9 @@ export default function LoginPage() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
-        setMode("update");
-        setSessionReady(true);
-      } else if (session?.user) {
-        setSessionReady(true);
+        setMode("recovery");
       }
     });
 
@@ -173,7 +160,7 @@ export default function LoginPage() {
     }
   }
 
-  async function handleUpdatePassword(e: FormEvent) {
+  async function handleRecoveryUpdatePassword(e: FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -200,7 +187,7 @@ export default function LoginPage() {
 
       if (!session?.user) {
         throw new Error(
-          "Your reset link was already used or expired. Request a new link from Forgot PW (or sign in with your current password first) before updating."
+          "Your reset link expired or was already used. Request a new reset link below."
         );
       }
 
@@ -214,7 +201,7 @@ export default function LoginPage() {
 
       setNewPassword("");
       setConfirmPassword("");
-      setSuccessMsg("Password updated successfully! You can now sign in or go to your dashboard.");
+      setSuccessMsg("Password updated successfully! You can now continue to your dashboard.");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to update password.");
     } finally {
@@ -230,58 +217,16 @@ export default function LoginPage() {
             {mode === "login"
               ? "Sign in to Postoll"
               : mode === "forgot"
-              ? "Forgot password"
-              : "Update password"}
+              ? "Reset your password"
+              : "Set a new password"}
           </h1>
           <p className="text-sm text-neutral-400">
             {mode === "login"
               ? "Access your workflows, credits, and scheduled posts."
               : mode === "forgot"
-              ? "Request a password recovery link for your account."
-              : "Set a new password for your account."}
+              ? "Enter your account email and we will send you a password reset link."
+              : "Choose a strong new password for your Postoll account."}
           </p>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/15 bg-[#141414] p-1 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => {
-              setMode("login");
-              setErrorMsg(null);
-              setSuccessMsg(null);
-            }}
-            className={`rounded-lg py-2 transition-colors ${
-              mode === "login" ? "bg-white text-black" : "text-neutral-300 hover:text-white"
-            }`}
-          >
-            Login
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode("forgot");
-              setErrorMsg(null);
-              setSuccessMsg(null);
-            }}
-            className={`rounded-lg py-2 transition-colors ${
-              mode === "forgot" ? "bg-white text-black" : "text-neutral-300 hover:text-white"
-            }`}
-          >
-            Forgot PW
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode("update");
-              setErrorMsg(null);
-              setSuccessMsg(null);
-            }}
-            className={`rounded-lg py-2 transition-colors ${
-              mode === "update" ? "bg-white text-black" : "text-neutral-300 hover:text-white"
-            }`}
-          >
-            Update PW
-          </button>
         </div>
 
         {errorMsg && (
@@ -322,7 +267,11 @@ export default function LoginPage() {
                 </label>
                 <button
                   type="button"
-                  onClick={() => setMode("forgot")}
+                  onClick={() => {
+                    setMode("forgot");
+                    setErrorMsg(null);
+                    setSuccessMsg(null);
+                  }}
                   className="text-xs text-neutral-300 underline hover:text-white"
                 >
                   Forgot password?
@@ -380,17 +329,25 @@ export default function LoginPage() {
             >
               {loading ? "Sending reset link..." : "Send password reset link"}
             </button>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("login");
+                  setErrorMsg(null);
+                  setSuccessMsg(null);
+                }}
+                className="text-xs text-neutral-300 underline hover:text-white"
+              >
+                ← Back to Sign in
+              </button>
+            </div>
           </form>
         )}
 
-        {mode === "update" && (
-          <form onSubmit={handleUpdatePassword} className="space-y-4">
-            {!sessionReady && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-                Tip: Open the password reset link sent to your email—or sign in on the Login tab first—so your session is active before saving a new password.
-              </div>
-            )}
-
+        {mode === "recovery" && (
+          <form onSubmit={handleRecoveryUpdatePassword} className="space-y-4">
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-neutral-200">
                 New Password
@@ -478,6 +435,20 @@ export default function LoginPage() {
             >
               {loading ? "Updating password..." : "Update password"}
             </button>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("forgot");
+                  setErrorMsg(null);
+                  setSuccessMsg(null);
+                }}
+                className="text-xs text-neutral-300 underline hover:text-white"
+              >
+                Need a new reset link?
+              </button>
+            </div>
           </form>
         )}
 

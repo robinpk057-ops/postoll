@@ -1,8 +1,12 @@
-"use client";
+﻿"use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import AppShell from "../AppShell";
 import { createClient } from "@/lib/supabase/client";
+import {
+  getPasswordChecklist,
+  validateStrongPassword,
+} from "@/lib/security";
 
 type DayKey =
   | "sunday"
@@ -32,48 +36,13 @@ type ScheduleSlot = {
 };
 
 const DAYS: Day[] = [
-  {
-    key: "monday",
-    label: "Monday",
-    short: "Mon",
-    value: 1,
-  },
-  {
-    key: "tuesday",
-    label: "Tuesday",
-    short: "Tue",
-    value: 2,
-  },
-  {
-    key: "wednesday",
-    label: "Wednesday",
-    short: "Wed",
-    value: 3,
-  },
-  {
-    key: "thursday",
-    label: "Thursday",
-    short: "Thu",
-    value: 4,
-  },
-  {
-    key: "friday",
-    label: "Friday",
-    short: "Fri",
-    value: 5,
-  },
-  {
-    key: "saturday",
-    label: "Saturday",
-    short: "Sat",
-    value: 6,
-  },
-  {
-    key: "sunday",
-    label: "Sunday",
-    short: "Sun",
-    value: 0,
-  },
+  { key: "monday", label: "Monday", short: "Mon", value: 1 },
+  { key: "tuesday", label: "Tuesday", short: "Tue", value: 2 },
+  { key: "wednesday", label: "Wednesday", short: "Wed", value: 3 },
+  { key: "thursday", label: "Thursday", short: "Thu", value: 4 },
+  { key: "friday", label: "Friday", short: "Fri", value: 5 },
+  { key: "saturday", label: "Saturday", short: "Sat", value: 6 },
+  { key: "sunday", label: "Sunday", short: "Sun", value: 0 },
 ];
 
 const TIMEZONES = [
@@ -113,39 +82,29 @@ export default function SettingsPage() {
   const supabase = createClient();
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  const [automaticScheduling, setAutomaticScheduling] =
-    useState(false);
+  const [automaticScheduling, setAutomaticScheduling] = useState(false);
+  const [timezone, setTimezone] = useState("Asia/Kolkata");
+  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [slots, setSlots] = useState<ScheduleSlot[]>([]);
 
-  const [timezone, setTimezone] =
-    useState("Asia/Kolkata");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [addingDay, setAddingDay] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  const [selectedDays, setSelectedDays] =
-    useState<number[]>([
-      1,
-      2,
-      3,
-      4,
-      5,
-    ]);
+  // Change password state
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
-  const [slots, setSlots] =
-    useState<ScheduleSlot[]>([]);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [addingDay, setAddingDay] =
-    useState<number | null>(null);
-
-  const [error, setError] =
-    useState<string | null>(null);
-
-  const [success, setSuccess] =
-    useState<string | null>(null);
+  const pwChecks = getPasswordChecklist(newPassword);
 
   type ApiKeyRow = {
     id: string;
@@ -162,6 +121,48 @@ export default function SettingsPage() {
   const [apiKeySecretOnce, setApiKeySecretOnce] = useState<string | null>(null);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
+  async function handleUpdateAccountPassword(e: FormEvent) {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    if (!userId) {
+      setPasswordError("Please log in to update your password.");
+      return;
+    }
+
+    const check = validateStrongPassword(newPassword);
+    if (!check.valid) {
+      setPasswordError(check.error || "New password does not meet security requirements.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New password and confirmation password do not match.");
+      return;
+    }
+
+    try {
+      setUpdatingPassword(true);
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateErr) {
+        throw new Error(updateErr.message);
+      }
+
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordSuccess("Your account password has been updated.");
+    } catch (err) {
+      setPasswordError(
+        err instanceof Error ? err.message : "Unable to update password."
+      );
+    } finally {
+      setUpdatingPassword(false);
+    }
+  }
 
   async function loadApiKeys() {
     try {
@@ -219,12 +220,6 @@ export default function SettingsPage() {
     }
   }
 
-  /*
-   * --------------------------------------------------
-   * LOAD SETTINGS
-   * --------------------------------------------------
-   */
-
   const loadSettings = useCallback(async () => {
     try {
       setLoading(true);
@@ -246,10 +241,7 @@ export default function SettingsPage() {
       }
 
       setUserId(user.id);
-
-      /*
-       * Load existing schedule settings.
-       */
+      setUserEmail(user.email || null);
 
       const {
         data: settings,
@@ -265,42 +257,22 @@ export default function SettingsPage() {
       }
 
       if (settings) {
-        if (
-          typeof settings.automatic_scheduling ===
-          "boolean"
-        ) {
-          setAutomaticScheduling(
-            settings.automatic_scheduling
-          );
+        if (typeof settings.automatic_scheduling === "boolean") {
+          setAutomaticScheduling(settings.automatic_scheduling);
         }
 
-        if (
-          typeof settings.timezone ===
-          "string" &&
-          settings.timezone
-        ) {
+        if (typeof settings.timezone === "string" && settings.timezone) {
           setTimezone(settings.timezone);
         }
 
-        if (
-          Array.isArray(settings.posting_days)
-        ) {
+        if (Array.isArray(settings.posting_days)) {
           setSelectedDays(
             settings.posting_days
-              .map((day: unknown) =>
-                Number(day)
-              )
-              .filter(
-                (day: number) =>
-                  day >= 0 && day <= 6
-              )
+              .map((day: unknown) => Number(day))
+              .filter((day: number) => day >= 0 && day <= 6)
           );
         }
       }
-
-      /*
-       * Load recurring time slots.
-       */
 
       const {
         data: slotData,
@@ -309,25 +281,16 @@ export default function SettingsPage() {
         .from("schedule_slots")
         .select("*")
         .eq("user_id", user.id)
-        .order("day_of_week", {
-          ascending: true,
-        })
-        .order("time", {
-          ascending: true,
-        });
+        .order("day_of_week", { ascending: true })
+        .order("time", { ascending: true });
 
       if (slotsError) {
         throw slotsError;
       }
 
-      setSlots(
-        (slotData as ScheduleSlot[]) || []
-      );
+      setSlots((slotData as ScheduleSlot[]) || []);
     } catch (err) {
-      console.error(
-        "Load schedule settings error:",
-        err
-      );
+      console.error("Load schedule settings error:", err);
 
       setError(
         err instanceof Error
@@ -343,29 +306,14 @@ export default function SettingsPage() {
     loadSettings();
   }, [loadSettings]);
 
-
   useEffect(() => {
     loadApiKeys();
   }, []);
 
-  /*
-   * --------------------------------------------------
-   * SAVE MAIN SETTINGS
-   * --------------------------------------------------
-   */
-
-  async function saveMainSettings(
-    updates: Record<string, unknown>
-  ) {
+  async function saveMainSettings(updates: Record<string, unknown>) {
     if (!userId) {
-      throw new Error(
-        "You must be logged in."
-      );
+      throw new Error("You must be logged in.");
     }
-
-    /*
-     * Try to update the existing row first.
-     */
 
     const {
       data: existing,
@@ -381,9 +329,7 @@ export default function SettingsPage() {
     }
 
     if (existing) {
-      const {
-        error: updateError,
-      } = await supabase
+      const { error: updateError } = await supabase
         .from("schedule_settings")
         .update(updates)
         .eq("id", existing.id)
@@ -396,13 +342,7 @@ export default function SettingsPage() {
       return;
     }
 
-    /*
-     * No settings row exists yet.
-     */
-
-    const {
-      error: insertError,
-    } = await supabase
+    const { error: insertError } = await supabase
       .from("schedule_settings")
       .insert({
         user_id: userId,
@@ -414,15 +354,8 @@ export default function SettingsPage() {
     }
   }
 
-  /*
-   * --------------------------------------------------
-   * TOGGLE AUTOMATIC SCHEDULING
-   * --------------------------------------------------
-   */
-
   async function toggleAutomaticScheduling() {
-    const nextValue =
-      !automaticScheduling;
+    const nextValue = !automaticScheduling;
 
     try {
       setSaving(true);
@@ -441,10 +374,7 @@ export default function SettingsPage() {
           : "Automatic scheduling is now disabled."
       );
     } catch (err) {
-      console.error(
-        "Automatic scheduling update error:",
-        err
-      );
+      console.error("Automatic scheduling update error:", err);
 
       setError(
         err instanceof Error
@@ -456,23 +386,12 @@ export default function SettingsPage() {
     }
   }
 
-  /*
-   * --------------------------------------------------
-   * TOGGLE DAY
-   * --------------------------------------------------
-   */
-
   async function toggleDay(day: number) {
-    const isSelected =
-      selectedDays.includes(day);
+    const isSelected = selectedDays.includes(day);
 
     const nextDays = isSelected
-      ? selectedDays.filter(
-        (value) => value !== day
-      )
-      : [...selectedDays, day].sort(
-        (a, b) => a - b
-      );
+      ? selectedDays.filter((value) => value !== day)
+      : [...selectedDays, day].sort((a, b) => a - b);
 
     try {
       setSaving(true);
@@ -485,14 +404,9 @@ export default function SettingsPage() {
 
       setSelectedDays(nextDays);
 
-      setSuccess(
-        "Posting days updated."
-      );
+      setSuccess("Posting days updated.");
     } catch (err) {
-      console.error(
-        "Posting days update error:",
-        err
-      );
+      console.error("Posting days update error:", err);
 
       setError(
         err instanceof Error
@@ -504,15 +418,7 @@ export default function SettingsPage() {
     }
   }
 
-  /*
-   * --------------------------------------------------
-   * CHANGE TIMEZONE
-   * --------------------------------------------------
-   */
-
-  async function changeTimezone(
-    nextTimezone: string
-  ) {
+  async function changeTimezone(nextTimezone: string) {
     try {
       setTimezone(nextTimezone);
       setSaving(true);
@@ -523,14 +429,9 @@ export default function SettingsPage() {
         timezone: nextTimezone,
       });
 
-      setSuccess(
-        "Timezone updated."
-      );
+      setSuccess("Timezone updated.");
     } catch (err) {
-      console.error(
-        "Timezone update error:",
-        err
-      );
+      console.error("Timezone update error:", err);
 
       setError(
         err instanceof Error
@@ -542,15 +443,7 @@ export default function SettingsPage() {
     }
   }
 
-  /*
-   * --------------------------------------------------
-   * ADD SLOT
-   * --------------------------------------------------
-   */
-
-  async function addSlot(
-    dayOfWeek: number
-  ) {
+  async function addSlot(dayOfWeek: number) {
     if (!userId) {
       return;
     }
@@ -560,37 +453,22 @@ export default function SettingsPage() {
       setError(null);
       setSuccess(null);
 
-      /*
-       * Default time.
-       */
-
-      const existingForDay =
-        slots.filter(
-          (slot) =>
-            slot.day_of_week === dayOfWeek
-        );
+      const existingForDay = slots.filter(
+        (slot) => slot.day_of_week === dayOfWeek
+      );
 
       let defaultTime = "09:00";
 
       if (existingForDay.length > 0) {
-        const last =
-          existingForDay[
-          existingForDay.length - 1
-          ];
+        const last = existingForDay[existingForDay.length - 1];
+        const [hour, minute] = last.time.split(":");
 
-        const [hour, minute] =
-          last.time.split(":");
-
-        let nextHour =
-          Number(hour) + 2;
-
+        let nextHour = Number(hour) + 2;
         if (nextHour > 23) {
           nextHour = 23;
         }
 
-        defaultTime = `${String(
-          nextHour
-        ).padStart(2, "0")}:${minute}`;
+        defaultTime = `${String(nextHour).padStart(2, "0")}:${minute}`;
       }
 
       const {
@@ -614,34 +492,18 @@ export default function SettingsPage() {
 
       if (data) {
         setSlots((current) =>
-          [...current, data as ScheduleSlot].sort(
-            (a, b) => {
-              if (
-                a.day_of_week !==
-                b.day_of_week
-              ) {
-                return (
-                  a.day_of_week -
-                  b.day_of_week
-                );
-              }
-
-              return a.time.localeCompare(
-                b.time
-              );
+          [...current, data as ScheduleSlot].sort((a, b) => {
+            if (a.day_of_week !== b.day_of_week) {
+              return a.day_of_week - b.day_of_week;
             }
-          )
+            return a.time.localeCompare(b.time);
+          })
         );
       }
 
-      setSuccess(
-        "Posting time added."
-      );
+      setSuccess("Posting time added.");
     } catch (err) {
-      console.error(
-        "Add schedule slot error:",
-        err
-      );
+      console.error("Add schedule slot error:", err);
 
       setError(
         err instanceof Error
@@ -653,23 +515,12 @@ export default function SettingsPage() {
     }
   }
 
-  /*
-   * --------------------------------------------------
-   * UPDATE SLOT
-   * --------------------------------------------------
-   */
-
-  async function updateSlot(
-    id: string,
-    updates: Partial<ScheduleSlot>
-  ) {
+  async function updateSlot(id: string, updates: Partial<ScheduleSlot>) {
     try {
       setError(null);
       setSuccess(null);
 
-      const {
-        error: updateError,
-      } = await supabase
+      const { error: updateError } = await supabase
         .from("schedule_slots")
         .update(updates)
         .eq("id", id)
@@ -683,21 +534,16 @@ export default function SettingsPage() {
         current.map((slot) =>
           slot.id === id
             ? {
-              ...slot,
-              ...updates,
-            }
+                ...slot,
+                ...updates,
+              }
             : slot
         )
       );
 
-      setSuccess(
-        "Posting time updated."
-      );
+      setSuccess("Posting time updated.");
     } catch (err) {
-      console.error(
-        "Update schedule slot error:",
-        err
-      );
+      console.error("Update schedule slot error:", err);
 
       setError(
         err instanceof Error
@@ -707,19 +553,8 @@ export default function SettingsPage() {
     }
   }
 
-  /*
-   * --------------------------------------------------
-   * DELETE SLOT
-   * --------------------------------------------------
-   */
-
-  async function deleteSlot(
-    id: string
-  ) {
-    const confirmed =
-      window.confirm(
-        "Remove this posting time?"
-      );
+  async function deleteSlot(id: string) {
+    const confirmed = window.confirm("Remove this posting time?");
 
     if (!confirmed) {
       return;
@@ -729,9 +564,7 @@ export default function SettingsPage() {
       setError(null);
       setSuccess(null);
 
-      const {
-        error: deleteError,
-      } = await supabase
+      const { error: deleteError } = await supabase
         .from("schedule_slots")
         .delete()
         .eq("id", id)
@@ -741,20 +574,11 @@ export default function SettingsPage() {
         throw deleteError;
       }
 
-      setSlots((current) =>
-        current.filter(
-          (slot) => slot.id !== id
-        )
-      );
+      setSlots((current) => current.filter((slot) => slot.id !== id));
 
-      setSuccess(
-        "Posting time removed."
-      );
+      setSuccess("Posting time removed.");
     } catch (err) {
-      console.error(
-        "Delete schedule slot error:",
-        err
-      );
+      console.error("Delete schedule slot error:", err);
 
       setError(
         err instanceof Error
@@ -764,31 +588,11 @@ export default function SettingsPage() {
     }
   }
 
-  /*
-   * --------------------------------------------------
-   * GET SLOTS FOR DAY
-   * --------------------------------------------------
-   */
-
-  function getSlotsForDay(
-    day: number
-  ) {
+  function getSlotsForDay(day: number) {
     return slots
-      .filter(
-        (slot) =>
-          slot.day_of_week === day &&
-          slot.enabled
-      )
-      .sort((a, b) =>
-        a.time.localeCompare(b.time)
-      );
+      .filter((slot) => slot.day_of_week === day && slot.enabled)
+      .sort((a, b) => a.time.localeCompare(b.time));
   }
-
-  /*
-   * --------------------------------------------------
-   * LOADING
-   * --------------------------------------------------
-   */
 
   if (loading) {
     return (
@@ -796,14 +600,10 @@ export default function SettingsPage() {
         <main className="min-h-screen">
           <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
             <div className="h-10 w-48 animate-pulse rounded-xl bg-white/10" />
-
             <div className="mt-3 h-5 w-96 max-w-full animate-pulse rounded bg-white/10" />
-
             <div className="mt-10 space-y-6">
               <div className="h-32 animate-pulse rounded-2xl bg-white/[0.04]" />
-
               <div className="h-48 animate-pulse rounded-2xl bg-white/[0.04]" />
-
               <div className="h-96 animate-pulse rounded-2xl bg-white/[0.04]" />
             </div>
           </div>
@@ -812,19 +612,11 @@ export default function SettingsPage() {
     );
   }
 
-  /*
-   * --------------------------------------------------
-   * PAGE
-   * --------------------------------------------------
-   */
-
   return (
     <AppShell>
       <main className="min-h-screen">
         <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
-
           {/* HEADER */}
-
           <div className="mb-10">
             <h1 className="text-3xl font-semibold tracking-tight">
               Settings
@@ -836,13 +628,11 @@ export default function SettingsPage() {
                 color: "var(--muted)",
               }}
             >
-              Manage your Postoll account and
-              automatic publishing preferences.
+              Manage your Postoll account, password, and automatic publishing preferences.
             </p>
           </div>
 
           {/* SUCCESS */}
-
           {success && (
             <div className="mb-6 rounded-xl border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-300">
               {success}
@@ -850,12 +640,159 @@ export default function SettingsPage() {
           )}
 
           {/* ERROR */}
-
           {error && (
             <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
             </div>
           )}
+
+          {/* ================================================= */}
+          {/* ACCOUNT & PASSWORD */}
+          {/* ================================================= */}
+
+          <section
+            className="mb-6 rounded-2xl border p-6"
+            style={{
+              background: "var(--card)",
+              borderColor: "var(--border)",
+            }}
+          >
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">
+                Update password
+              </h2>
+              <p
+                className="mt-1 text-sm"
+                style={{
+                  color: "var(--muted)",
+                }}
+              >
+                Change the password for your account
+                {userEmail ? ` (${userEmail})` : ""}.
+              </p>
+            </div>
+
+            {passwordError && (
+              <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {passwordError}
+              </div>
+            )}
+
+            {passwordSuccess && (
+              <div className="mb-4 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+                {passwordSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateAccountPassword} className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-medium">
+                    New password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      required
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Create a strong password"
+                      className="w-full rounded-xl border px-3.5 py-2.5 pr-16 text-sm outline-none"
+                      style={{
+                        background: "var(--background)",
+                        color: "var(--foreground)",
+                        borderColor: "var(--border)",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium opacity-80 hover:opacity-100"
+                    >
+                      {showNewPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-medium">
+                    Confirm new password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter new password"
+                      className="w-full rounded-xl border px-3.5 py-2.5 pr-16 text-sm outline-none"
+                      style={{
+                        background: "var(--background)",
+                        color: "var(--foreground)",
+                        borderColor: "var(--border)",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium opacity-80 hover:opacity-100"
+                    >
+                      {showConfirmPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <ul className="grid gap-1.5 text-xs sm:grid-cols-2">
+                <li
+                  className={`flex items-center gap-2 ${
+                    pwChecks.minLength ? "text-emerald-400" : "text-neutral-400"
+                  }`}
+                >
+                  <span>{pwChecks.minLength ? "✓" : "○"}</span>
+                  <span>At least 8 characters</span>
+                </li>
+                <li
+                  className={`flex items-center gap-2 ${
+                    pwChecks.hasAlphabet ? "text-emerald-400" : "text-neutral-400"
+                  }`}
+                >
+                  <span>{pwChecks.hasAlphabet ? "✓" : "○"}</span>
+                  <span>Contains an alphabet letter (A–Z)</span>
+                </li>
+                <li
+                  className={`flex items-center gap-2 ${
+                    pwChecks.hasNumber ? "text-emerald-400" : "text-neutral-400"
+                  }`}
+                >
+                  <span>{pwChecks.hasNumber ? "✓" : "○"}</span>
+                  <span>Contains 1 or more numbers (0–9)</span>
+                </li>
+                <li
+                  className={`flex items-center gap-2 ${
+                    pwChecks.hasSpecial ? "text-emerald-400" : "text-neutral-400"
+                  }`}
+                >
+                  <span>{pwChecks.hasSpecial ? "✓" : "○"}</span>
+                  <span>Contains 1 or more special characters (!@#$%^&amp;*)</span>
+                </li>
+              </ul>
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={updatingPassword}
+                  className="rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
+                  style={{
+                    background: "var(--foreground)",
+                    color: "var(--background)",
+                  }}
+                >
+                  {updatingPassword ? "Updating password..." : "Update password"}
+                </button>
+              </div>
+            </form>
+          </section>
 
           {/* ================================================= */}
           {/* AUTOMATIC SCHEDULING */}
@@ -869,14 +806,11 @@ export default function SettingsPage() {
             }}
           >
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-
               <div className="flex items-start gap-4">
-
                 <div
                   className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl"
                   style={{
-                    background:
-                      "rgba(124,58,237,0.14)",
+                    background: "rgba(124,58,237,0.14)",
                   }}
                 >
                   ⚡
@@ -893,41 +827,33 @@ export default function SettingsPage() {
                       color: "var(--muted)",
                     }}
                   >
-                    Let Postoll automatically
-                    choose the next available
-                    posting slot for your approved
-                    content.
+                    Let Postoll automatically choose the next available
+                    posting slot for your approved content.
                   </p>
                 </div>
               </div>
 
               <button
                 type="button"
-                onClick={
-                  toggleAutomaticScheduling
-                }
+                onClick={toggleAutomaticScheduling}
                 disabled={saving}
                 aria-label="Toggle automatic scheduling"
                 className="flex shrink-0 items-center gap-3"
               >
                 <span
-                  className={`relative h-8 w-14 rounded-full transition ${automaticScheduling
-                    ? "bg-violet-600"
-                    : "bg-white/10"
-                    }`}
+                  className={`relative h-8 w-14 rounded-full transition ${
+                    automaticScheduling ? "bg-violet-600" : "bg-white/10"
+                  }`}
                 >
                   <span
-                    className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition ${automaticScheduling
-                      ? "left-7"
-                      : "left-1"
-                      }`}
+                    className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition ${
+                      automaticScheduling ? "left-7" : "left-1"
+                    }`}
                   />
                 </span>
 
                 <span className="text-sm font-medium">
-                  {automaticScheduling
-                    ? "On"
-                    : "Off"}
+                  {automaticScheduling ? "On" : "Off"}
                 </span>
               </button>
             </div>
@@ -945,7 +871,6 @@ export default function SettingsPage() {
             }}
           >
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
               <div>
                 <h2 className="text-lg font-semibold">
                   Timezone
@@ -957,40 +882,27 @@ export default function SettingsPage() {
                     color: "var(--muted)",
                   }}
                 >
-                  Postoll will use this timezone
-                  when calculating automatic
+                  Postoll will use this timezone when calculating automatic
                   publishing times.
                 </p>
               </div>
 
               <select
                 value={timezone}
-                onChange={(event) =>
-                  changeTimezone(
-                    event.target.value
-                  )
-                }
+                onChange={(event) => changeTimezone(event.target.value)}
                 className="rounded-xl border px-4 py-3 text-sm outline-none"
                 style={{
                   minWidth: "220px",
-                  background:
-                    "var(--background)",
-                  color:
-                    "var(--foreground)",
-                  borderColor:
-                    "var(--border)",
+                  background: "var(--background)",
+                  color: "var(--foreground)",
+                  borderColor: "var(--border)",
                 }}
               >
-                {TIMEZONES.map(
-                  (zone) => (
-                    <option
-                      key={zone}
-                      value={zone}
-                    >
-                      {zone}
-                    </option>
-                  )
-                )}
+                {TIMEZONES.map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ))}
               </select>
             </div>
           </section>
@@ -1017,37 +929,28 @@ export default function SettingsPage() {
                   color: "var(--muted)",
                 }}
               >
-                Choose the days when Postoll can
-                automatically schedule your content.
+                Choose the days when Postoll can automatically schedule your
+                content.
               </p>
             </div>
 
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
               {DAYS.map((day) => {
-                const selected =
-                  selectedDays.includes(
-                    day.value
-                  );
+                const selected = selectedDays.includes(day.value);
 
                 return (
                   <button
                     key={day.key}
                     type="button"
-                    onClick={() =>
-                      toggleDay(day.value)
-                    }
+                    onClick={() => toggleDay(day.value)}
                     disabled={saving}
                     className="rounded-xl border px-4 py-4 text-sm font-medium transition"
                     style={{
-                      borderColor: selected
-                        ? "#8b5cf6"
-                        : "var(--border)",
+                      borderColor: selected ? "#8b5cf6" : "var(--border)",
                       background: selected
                         ? "rgba(124,58,237,0.12)"
                         : "transparent",
-                      color: selected
-                        ? "#c4b5fd"
-                        : "var(--foreground)",
+                      color: selected ? "#c4b5fd" : "var(--foreground)",
                     }}
                   >
                     {day.short}
@@ -1069,7 +972,6 @@ export default function SettingsPage() {
             }}
           >
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-
               <div>
                 <h2 className="text-lg font-semibold">
                   Posting times
@@ -1081,298 +983,186 @@ export default function SettingsPage() {
                     color: "var(--muted)",
                   }}
                 >
-                  Add one or more automatic
-                  scheduling slots for each day.
-                  You can have different times for
-                  posts and reels.
+                  Add one or more automatic scheduling slots for each day. You
+                  can have different times for posts and reels.
                 </p>
               </div>
 
               <div
                 className="rounded-lg px-3 py-2 text-xs"
                 style={{
-                  background:
-                    "rgba(255,255,255,0.04)",
+                  background: "rgba(255,255,255,0.04)",
                   color: "var(--muted)",
                 }}
               >
-                {slots.length}{" "}
-                {slots.length === 1
-                  ? "slot"
-                  : "slots"}
+                {slots.length} {slots.length === 1 ? "slot" : "slots"}
               </div>
             </div>
 
-            {/* DAYS */}
-
             <div className="mt-8 space-y-4">
               {DAYS.map((day) => {
-                const daySlots =
-                  getSlotsForDay(
-                    day.value
-                  );
-
-                const selected =
-                  selectedDays.includes(
-                    day.value
-                  );
+                const daySlots = getSlotsForDay(day.value);
+                const selected = selectedDays.includes(day.value);
 
                 return (
                   <div
                     key={day.key}
                     className="rounded-xl border p-4"
                     style={{
-                      borderColor:
-                        selected
-                          ? "rgba(139,92,246,0.35)"
-                          : "var(--border)",
-                      background:
-                        selected
-                          ? "rgba(124,58,237,0.03)"
-                          : "transparent",
+                      borderColor: selected
+                        ? "rgba(139,92,246,0.35)"
+                        : "var(--border)",
+                      background: selected
+                        ? "rgba(124,58,237,0.03)"
+                        : "transparent",
                     }}
                   >
-
-                    {/* DAY HEADER */}
-
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
                       <div className="flex items-center gap-3">
-
                         <div
                           className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold"
                           style={{
-                            background:
-                              selected
-                                ? "rgba(124,58,237,0.14)"
-                                : "rgba(255,255,255,0.04)",
-                            color:
-                              selected
-                                ? "#c4b5fd"
-                                : "var(--muted)",
+                            background: selected
+                              ? "rgba(124,58,237,0.14)"
+                              : "rgba(255,255,255,0.04)",
+                            color: selected ? "#c4b5fd" : "var(--muted)",
                           }}
                         >
                           {day.short}
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium">
-                            {day.label}
-                          </p>
+                          <p className="text-sm font-medium">{day.label}</p>
 
                           <p
                             className="mt-0.5 text-xs"
                             style={{
-                              color:
-                                "var(--muted)",
+                              color: "var(--muted)",
                             }}
                           >
-                            {daySlots.length ===
-                              0
+                            {daySlots.length === 0
                               ? "No posting times"
-                              : `${daySlots.length} ${daySlots.length ===
-                                1
-                                ? "posting time"
-                                : "posting times"
-                              }`}
+                              : `${daySlots.length} ${
+                                  daySlots.length === 1
+                                    ? "posting time"
+                                    : "posting times"
+                                }`}
                           </p>
                         </div>
                       </div>
 
                       <button
                         type="button"
-                        onClick={() =>
-                          addSlot(
-                            day.value
-                          )
-                        }
-                        disabled={
-                          addingDay ===
-                          day.value
-                        }
+                        onClick={() => addSlot(day.value)}
+                        disabled={addingDay === day.value}
                         className="rounded-lg border px-3 py-2 text-xs font-medium transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
                         style={{
-                          borderColor:
-                            "var(--border)",
+                          borderColor: "var(--border)",
                         }}
                       >
-                        {addingDay ===
-                          day.value
-                          ? "Adding..."
-                          : "+ Add time"}
+                        {addingDay === day.value ? "Adding..." : "+ Add time"}
                       </button>
                     </div>
 
-                    {/* SLOT LIST */}
-
                     {daySlots.length > 0 && (
                       <div className="mt-4 space-y-2">
-
-                        {daySlots.map(
-                          (slot) => (
-                            <div
-                              key={
-                                slot.id
+                        {daySlots.map((slot) => (
+                          <div
+                            key={slot.id}
+                            className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center"
+                            style={{
+                              borderColor: "var(--border)",
+                              background: "rgba(255,255,255,0.02)",
+                            }}
+                          >
+                            <input
+                              type="time"
+                              value={slot.time.slice(0, 5)}
+                              onChange={(event) =>
+                                updateSlot(slot.id, {
+                                  time: event.target.value,
+                                })
                               }
-                              className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center"
+                              className="rounded-lg border px-3 py-2 text-sm outline-none"
                               style={{
-                                borderColor:
-                                  "var(--border)",
-                                background:
-                                  "rgba(255,255,255,0.02)",
+                                background: "var(--background)",
+                                color: "var(--foreground)",
+                                borderColor: "var(--border)",
+                              }}
+                            />
+
+                            <select
+                              value={slot.content_type}
+                              onChange={(event) =>
+                                updateSlot(slot.id, {
+                                  content_type: event.target.value as
+                                    | "all"
+                                    | "post"
+                                    | "reel",
+                                })
+                              }
+                              className="rounded-lg border px-3 py-2 text-sm outline-none"
+                              style={{
+                                background: "var(--background)",
+                                color: "var(--foreground)",
+                                borderColor: "var(--border)",
                               }}
                             >
+                              <option value="all">All content</option>
+                              <option value="post">Posts only</option>
+                              <option value="reel">Reels only</option>
+                            </select>
 
-                              {/* TIME */}
-
-                              <input
-                                type="time"
-                                value={slot.time.slice(
-                                  0,
-                                  5
-                                )}
-                                onChange={(
-                                  event
-                                ) =>
-                                  updateSlot(
-                                    slot.id,
-                                    {
-                                      time:
-                                        event
-                                          .target
-                                          .value,
-                                    }
-                                  )
-                                }
-                                className="rounded-lg border px-3 py-2 text-sm outline-none"
+                            <div className="flex-1">
+                              <span
+                                className="text-sm"
                                 style={{
-                                  background:
-                                    "var(--background)",
-                                  color:
-                                    "var(--foreground)",
-                                  borderColor:
-                                    "var(--border)",
-                                }}
-                              />
-
-                              {/* CONTENT TYPE */}
-
-                              <select
-                                value={
-                                  slot.content_type
-                                }
-                                onChange={(
-                                  event
-                                ) =>
-                                  updateSlot(
-                                    slot.id,
-                                    {
-                                      content_type:
-                                        event
-                                          .target
-                                          .value as
-                                        | "all"
-                                        | "post"
-                                        | "reel",
-                                    }
-                                  )
-                                }
-                                className="rounded-lg border px-3 py-2 text-sm outline-none"
-                                style={{
-                                  background:
-                                    "var(--background)",
-                                  color:
-                                    "var(--foreground)",
-                                  borderColor:
-                                    "var(--border)",
+                                  color: "var(--foreground)",
                                 }}
                               >
-                                <option value="all">
-                                  All content
-                                </option>
+                                {formatTime(slot.time)}
+                              </span>
 
-                                <option value="post">
-                                  Posts only
-                                </option>
-
-                                <option value="reel">
-                                  Reels only
-                                </option>
-                              </select>
-
-                              {/* PREVIEW */}
-
-                              <div className="flex-1">
-                                <span
-                                  className="text-sm"
-                                  style={{
-                                    color:
-                                      "var(--foreground)",
-                                  }}
-                                >
-                                  {formatTime(
-                                    slot.time
-                                  )}
-                                </span>
-
-                                <span
-                                  className="ml-2 text-xs"
-                                  style={{
-                                    color:
-                                      "var(--muted)",
-                                  }}
-                                >
-                                  {slot.content_type ===
-                                    "all"
-                                    ? "All content"
-                                    : slot.content_type ===
-                                      "post"
-                                      ? "Post"
-                                      : "Reel"}
-                                </span>
-                              </div>
-
-                              {/* DELETE */}
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  deleteSlot(
-                                    slot.id
-                                  )
-                                }
-                                className="rounded-lg border px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/10"
+                              <span
+                                className="ml-2 text-xs"
                                 style={{
-                                  borderColor:
-                                    "rgba(239,68,68,0.15)",
+                                  color: "var(--muted)",
                                 }}
                               >
-                                Remove
-                              </button>
+                                {slot.content_type === "all"
+                                  ? "All content"
+                                  : slot.content_type === "post"
+                                  ? "Post"
+                                  : "Reel"}
+                              </span>
                             </div>
-                          )
-                        )}
+
+                            <button
+                              type="button"
+                              onClick={() => deleteSlot(slot.id)}
+                              className="rounded-lg border px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/10"
+                              style={{
+                                borderColor: "rgba(239,68,68,0.15)",
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
 
-                    {/* EMPTY */}
-
-                    {daySlots.length ===
-                      0 && (
-                        <div
-                          className="mt-4 rounded-lg border border-dashed px-4 py-5 text-center text-xs"
-                          style={{
-                            borderColor:
-                              "var(--border)",
-                            color:
-                              "var(--muted)",
-                          }}
-                        >
-                          No automatic posting
-                          time configured for{" "}
-                          {day.label}.
-                        </div>
-                      )}
+                    {daySlots.length === 0 && (
+                      <div
+                        className="mt-4 rounded-lg border border-dashed px-4 py-5 text-center text-xs"
+                        style={{
+                          borderColor: "var(--border)",
+                          color: "var(--muted)",
+                        }}
+                      >
+                        No automatic posting time configured for {day.label}.
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1395,21 +1185,15 @@ export default function SettingsPage() {
             </h2>
 
             <div className="mt-5 grid gap-4 md:grid-cols-3">
-
               <div
                 className="rounded-xl border p-4"
                 style={{
-                  borderColor:
-                    "var(--border)",
+                  borderColor: "var(--border)",
                 }}
               >
-                <div className="text-lg">
-                  1️⃣
-                </div>
+                <div className="text-lg">1️⃣</div>
 
-                <p className="mt-3 text-sm font-medium">
-                  Create content
-                </p>
+                <p className="mt-3 text-sm font-medium">Create content</p>
 
                 <p
                   className="mt-1 text-xs leading-5"
@@ -1417,25 +1201,19 @@ export default function SettingsPage() {
                     color: "var(--muted)",
                   }}
                 >
-                  Create posts and reels in
-                  Postoll and approve them.
+                  Create posts and reels in Postoll and approve them.
                 </p>
               </div>
 
               <div
                 className="rounded-xl border p-4"
                 style={{
-                  borderColor:
-                    "var(--border)",
+                  borderColor: "var(--border)",
                 }}
               >
-                <div className="text-lg">
-                  2️⃣
-                </div>
+                <div className="text-lg">2️⃣</div>
 
-                <p className="mt-3 text-sm font-medium">
-                  Postoll finds a slot
-                </p>
+                <p className="mt-3 text-sm font-medium">Postoll finds a slot</p>
 
                 <p
                   className="mt-1 text-xs leading-5"
@@ -1443,21 +1221,17 @@ export default function SettingsPage() {
                     color: "var(--muted)",
                   }}
                 >
-                  Postoll looks at your selected
-                  days and available times.
+                  Postoll looks at your selected days and available times.
                 </p>
               </div>
 
               <div
                 className="rounded-xl border p-4"
                 style={{
-                  borderColor:
-                    "var(--border)",
+                  borderColor: "var(--border)",
                 }}
               >
-                <div className="text-lg">
-                  3️⃣
-                </div>
+                <div className="text-lg">3️⃣</div>
 
                 <p className="mt-3 text-sm font-medium">
                   Content gets scheduled
@@ -1469,9 +1243,8 @@ export default function SettingsPage() {
                     color: "var(--muted)",
                   }}
                 >
-                  The selected slot will become
-                  the content's scheduled publishing
-                  time.
+                  The selected slot will become the content&apos;s scheduled
+                  publishing time.
                 </p>
               </div>
             </div>
@@ -1565,8 +1338,7 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-sm font-medium">{k.name}</p>
                     <p className="text-xs" style={{ color: "var(--muted)" }}>
-                      {k.key_prefix}… ·{" "}
-                      {new Date(k.created_at).toLocaleString()}
+                      {k.key_prefix}… · {new Date(k.created_at).toLocaleString()}
                       {k.last_used_at
                         ? ` · last used ${new Date(k.last_used_at).toLocaleString()}`
                         : ""}
@@ -1599,7 +1371,8 @@ export default function SettingsPage() {
           {/* BOTTOM STATUS */}
           {/* ================================================= */}
 
-          <div className="mt-8 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between"
+          <div
+            className="mt-8 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between"
             style={{
               borderColor: "var(--border)",
             }}
@@ -1607,9 +1380,7 @@ export default function SettingsPage() {
             <div>
               <p className="text-sm font-medium">
                 Automatic scheduling{" "}
-                {automaticScheduling
-                  ? "enabled"
-                  : "disabled"}
+                {automaticScheduling ? "enabled" : "disabled"}
               </p>
 
               <p
@@ -1619,14 +1390,9 @@ export default function SettingsPage() {
                 }}
               >
                 {selectedDays.length} posting{" "}
-                {selectedDays.length === 1
-                  ? "day"
-                  : "days"}{" "}
-                selected · {slots.length}{" "}
-                recurring{" "}
-                {slots.length === 1
-                  ? "slot"
-                  : "slots"}
+                {selectedDays.length === 1 ? "day" : "days"} selected ·{" "}
+                {slots.length} recurring{" "}
+                {slots.length === 1 ? "slot" : "slots"}
               </p>
             </div>
 
@@ -1636,8 +1402,7 @@ export default function SettingsPage() {
               disabled={loading}
               className="rounded-xl border px-4 py-2.5 text-sm font-medium transition hover:bg-white/[0.05] disabled:opacity-50"
               style={{
-                borderColor:
-                  "var(--border)",
+                borderColor: "var(--border)",
               }}
             >
               ↻ Refresh
