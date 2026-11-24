@@ -10,6 +10,48 @@ import {
   validateStrongPassword,
 } from "@/lib/security";
 
+function GoogleIcon() {
+  return (
+    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.5-1.14 2.77-2.4 3.62v3.01h3.88c2.27-2.09 3.54-5.17 3.54-8.87z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.94-2.91l-3.88-3.01c-1.08.72-2.45 1.16-4.06 1.16-3.12 0-5.77-2.11-6.72-4.96H1.22v3.11C3.2 21.3 7.27 24 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.28 14.28c-.24-.72-.38-1.49-.38-2.28s.14-1.56.38-2.28V6.61H1.22A11.98 11.98 0 0 0 0 12c0 1.94.46 3.77 1.22 5.39l4.06-3.11z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.76 0 3.35.61 4.6 1.8l3.45-3.45C17.95 1.19 15.24 0 12 0 7.27 0 3.2 2.7 1.22 6.61l4.06 3.11c.95-2.85 3.6-4.97 6.72-4.97z"
+      />
+    </svg>
+  );
+}
+
+function AppleIcon() {
+  return (
+    <svg className="h-4 w-4 shrink-0 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.67.91-1.377 0-2.332-1.26-3.428-2.8-1.287-1.82-2.323-4.63-2.323-7.28 0-4.28 2.797-6.55 5.552-6.55 1.448 0 2.675.95 3.6.95.865 0 2.222-1.01 3.902-1.01.613 0 2.886.06 4.374 2.19-.13.09-2.383 1.37-2.383 4.19 0 3.26 2.854 4.42 2.955 4.45z" />
+    </svg>
+  );
+}
+
+function MicrosoftIcon() {
+  return (
+    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+      <rect x="13" y="1" width="10" height="10" fill="#7FBA00" />
+      <rect x="1" y="13" width="10" height="10" fill="#00A4EF" />
+      <rect x="13" y="13" width="10" height="10" fill="#FFB900" />
+    </svg>
+  );
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "forgot" | "recovery">("login");
@@ -290,9 +332,9 @@ export default function LoginPage() {
                 type="button"
                 disabled={oauthLoading !== null || loading}
                 onClick={() => handleSocialSignIn("google")}
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
               >
-                <span>G</span>
+                <GoogleIcon />
                 <span>
                   {oauthLoading === "google" ? "Connecting to Google..." : "Continue with Google"}
                 </span>
@@ -302,9 +344,9 @@ export default function LoginPage() {
                 type="button"
                 disabled={oauthLoading !== null || loading}
                 onClick={() => handleSocialSignIn("apple")}
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
               >
-                <span></span>
+                <AppleIcon />
                 <span>
                   {oauthLoading === "apple" ? "Connecting to Apple..." : "Continue with Apple"}
                 </span>
@@ -314,9 +356,9 @@ export default function LoginPage() {
                 type="button"
                 disabled={oauthLoading !== null || loading}
                 onClick={() => handleSocialSignIn("azure")}
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/20 bg-[#141414] py-2.5 text-sm font-medium text-white hover:border-white/40 hover:bg-white/10 disabled:opacity-50"
               >
-                <span>⊞</span>
+                <MicrosoftIcon />
                 <span>
                   {oauthLoading === "azure"
                     ? "Connecting to Microsoft..."
