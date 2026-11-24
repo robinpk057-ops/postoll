@@ -111,6 +111,7 @@ export default function AutomaticPostingPage() {
 
   // Account & Credit state
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [isSignedIn, setIsSignedIn] = useState<boolean>(false);
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [recentJobs, setRecentJobs] = useState<GeneratedJobItem[]>([]);
@@ -182,7 +183,7 @@ export default function AutomaticPostingPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
+      setIsSignedIn(true);
 
       const [billingRes, accountsRes, jobsRes] = await Promise.all([
         fetch("/api/billing/me", { cache: "no-store" })
@@ -687,15 +688,28 @@ export default function AutomaticPostingPage() {
           <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-[#141414] px-3.5 py-2 text-xs">
             <span className="text-neutral-400">Credit Balance: </span>
             <strong className="text-sm text-white">
-              {loadingAccountData ? "..." : creditBalance ?? 0}
+              {loadingAccountData
+                ? "..."
+                : !isSignedIn
+                ? "Sign in required"
+                : creditBalance ?? 0}
             </strong>
-            <button
-              type="button"
-              onClick={() => setBuyCreditsOpen((prev) => !prev)}
-              className="ml-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-neutral-200"
-            >
-              + Buy Credits
-            </button>
+            {isSignedIn ? (
+              <button
+                type="button"
+                onClick={() => setBuyCreditsOpen((prev) => !prev)}
+                className="ml-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-neutral-200"
+              >
+                + Buy Credits
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                className="ml-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-neutral-200"
+              >
+                Login
+              </Link>
+            )}
           </div>
 
           <Link
@@ -1497,4 +1511,5 @@ export default function AutomaticPostingPage() {
     </div>
   );
 }
+
 
