@@ -1,273 +1,358 @@
-"use client";
+﻿"use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { validateEmailAddress } from "@/lib/security";
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [mode, setMode] = useState<"login" | "forgot" | "update">("login");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qMode = params.get("mode");
+    if (qMode === "forgot" || qMode === "update") {
+      setMode(qMode);
+    }
 
-    setLoading(true);
-    setError("");
-    setSuccess("");
+    const supabase = createClient();
+    if (!supabase) return;
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setMode("update");
+      }
     });
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  async function handleSignIn(e: FormEvent) {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const check = validateEmailAddress(email);
+    if (!check.valid) {
+      setErrorMsg(check.error || "Enter a valid email.");
       return;
     }
 
-    setSuccess("Login successful. Redirecting...");
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      if (!supabase) throw new Error("Supabase client is not configured.");
 
-    router.push("/");
-    router.refresh();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to sign in.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword(e: FormEvent) {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const check = validateEmailAddress(email);
+    if (!check.valid) {
+      setErrorMsg(check.error || "Enter a valid email address.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      if (!supabase) throw new Error("Supabase client is not configured.");
+
+      const origin = window.location.origin;
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        {
+          redirectTo: `${origin}/login?mode=update`,
+        }
+      );
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setSuccessMsg(
+        "Password reset link sent! Check your inbox/spam folder. If email delivery is delayed or rate-limited in Supabase, you can also sign in and use Update Password."
+      );
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to send reset link.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUpdatePassword(e: FormEvent) {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (newPassword.length < 8) {
+      setErrorMsg("New password must be at least 8 characters long.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setErrorMsg("New password and confirmation password do not match.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      if (!supabase) throw new Error("Supabase client is not configured.");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error(
+          "No active or recovery session found. Open the reset link from your email or sign in first to update your password."
+        );
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setNewPassword("");
+      setConfirmPassword("");
+      setSuccessMsg("Password updated successfully! You can now continue to your dashboard.");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to update password.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#000",
-        color: "#fff",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "420px",
-          border: "1px solid #333",
-          borderRadius: "16px",
-          padding: "32px",
-          background: "#080808",
-        }}
-      >
-        <h1
-          style={{
-            fontSize: "32px",
-            fontWeight: 600,
-            marginBottom: "8px",
-          }}
-        >
-          Welcome back
-        </h1>
+    <main className="flex min-h-screen items-center justify-center bg-black p-6 text-white">
+      <div className="w-full max-w-md space-y-6 rounded-2xl border border-white/15 bg-[#0c0c0c] p-8">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {mode === "login"
+              ? "Sign in to Postoll"
+              : mode === "forgot"
+              ? "Forgot password"
+              : "Update password"}
+          </h1>
+          <p className="text-sm text-neutral-400">
+            {mode === "login"
+              ? "Access your workflows, credits, and scheduled posts."
+              : mode === "forgot"
+              ? "Request a password recovery link for your account."
+              : "Set a new password for your account."}
+          </p>
+        </div>
 
-        <p
-          style={{
-            color: "#999",
-            marginBottom: "28px",
-          }}
-        >
-          Login to your Postoll account.
-        </p>
-
-        <form onSubmit={handleLogin}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "14px",
+        <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/15 bg-[#141414] p-1 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => {
+              setMode("login");
+              setErrorMsg(null);
+              setSuccessMsg(null);
             }}
+            className={`rounded-lg py-2 transition-colors ${
+              mode === "login" ? "bg-white text-black" : "text-neutral-300 hover:text-white"
+            }`}
           >
-            Email
-          </label>
-
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              marginBottom: "18px",
-              borderRadius: "8px",
-              border: "1px solid #333",
-              background: "#111",
-              color: "#fff",
-              outline: "none",
+            Login
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("forgot");
+              setErrorMsg(null);
+              setSuccessMsg(null);
             }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "14px",
-            }}
+            className={`rounded-lg py-2 transition-colors ${
+              mode === "forgot" ? "bg-white text-black" : "text-neutral-300 hover:text-white"
+            }`}
           >
-            Password
-          </label>
-
-          <div
-            style={{
-              position: "relative",
-              marginBottom: "20px",
+            Forgot PW
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("update");
+              setErrorMsg(null);
+              setSuccessMsg(null);
             }}
+            className={`rounded-lg py-2 transition-colors ${
+              mode === "update" ? "bg-white text-black" : "text-neutral-300 hover:text-white"
+            }`}
           >
-            <input
-              type={showPassword ? "text" : "password"}
-              placeholder="Your password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              style={{
-                width: "100%",
-                padding: "12px 44px 12px 14px",
-                borderRadius: "8px",
-                border: "1px solid #333",
-                background: "#111",
-                color: "#fff",
-                outline: "none",
-              }}
-            />
+            Update PW
+          </button>
+        </div>
+
+        {errorMsg && (
+          <div className="rounded-xl border border-red-500/40 bg-red-500/15 p-3.5 text-sm text-red-200">
+            {errorMsg}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 p-3.5 text-sm text-emerald-200">
+            {successMsg}
+          </div>
+        )}
+
+        {mode === "login" && (
+          <form onSubmit={handleSignIn} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-neutral-200">Email</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium text-neutral-200">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setMode("forgot")}
+                  className="text-xs text-neutral-300 underline hover:text-white"
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Your password"
+                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
+              />
+            </div>
 
             <button
-              type="button"
-              onClick={() => setShowPassword((value) => !value)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              title={showPassword ? "Hide password" : "Show password"}
-              style={{
-                position: "absolute",
-                right: "10px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: "30px",
-                height: "30px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "none",
-                background: "transparent",
-                color: "#888",
-                cursor: "pointer",
-                padding: 0,
-              }}
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-white py-3 text-sm font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
             >
-              {showPassword ? (
-                <svg
-                  width="19"
-                  height="19"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M2 2l20 20" />
-                  <path d="M6.7 6.7C4.9 8 3.5 9.8 2.5 12c2 4.2 5.5 7 9.5 7 1.7 0 3.3-.5 4.7-1.3" />
-                  <path d="M10.7 10.7a2 2 0 0 0 2.6 2.6" />
-                  <path d="M9.9 4.3C10.6 4.1 11.3 4 12 4c4 0 7.5 2.8 9.5 7-.4.9-.9 1.8-1.5 2.6" />
-                </svg>
-              ) : (
-                <svg
-                  width="19"
-                  height="19"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
+              {loading ? "Signing in..." : "Sign in"}
             </button>
-          </div>
+          </form>
+        )}
 
-          {error && (
-            <div
-              style={{
-                marginBottom: "16px",
-                padding: "12px",
-                borderRadius: "8px",
-                background: "#220909",
-                border: "1px solid #552020",
-                color: "#ff7777",
-                fontSize: "14px",
-              }}
-            >
-              {error}
+        {mode === "forgot" && (
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-neutral-200">
+                Account Email
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
+              />
             </div>
-          )}
 
-          {success && (
-            <div
-              style={{
-                marginBottom: "16px",
-                padding: "12px",
-                borderRadius: "8px",
-                background: "#09220f",
-                border: "1px solid #20552d",
-                color: "#72e28b",
-                fontSize: "14px",
-              }}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-white py-3 text-sm font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
             >
-              {success}
+              {loading ? "Sending reset link..." : "Send password reset link"}
+            </button>
+          </form>
+        )}
+
+        {mode === "update" && (
+          <form onSubmit={handleUpdatePassword} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-neutral-200">
+                New Password
+              </label>
+              <input
+                type="password"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: "13px",
-              borderRadius: "8px",
-              border: "none",
-              background: "#fff",
-              color: "#000",
-              fontWeight: 600,
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.6 : 1,
-            }}
-          >
-            {loading ? "Logging in..." : "Login"}
-          </button>
-        </form>
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-neutral-200">
+                Confirm New Password
+              </label>
+              <input
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter new password"
+                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
+              />
+            </div>
 
-        <p
-          style={{
-            marginTop: "24px",
-            textAlign: "center",
-            color: "#999",
-            fontSize: "14px",
-          }}
-        >
-          Don't have an account?{" "}
-          <Link
-            href="/signup"
-            style={{
-              color: "#fff",
-              textDecoration: "underline",
-            }}
-          >
-            Create one
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-white py-3 text-sm font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
+            >
+              {loading ? "Updating password..." : "Update password"}
+            </button>
+          </form>
+        )}
+
+        <p className="text-center text-xs text-neutral-400">
+          Need an account?{" "}
+          <Link href="/signup" className="font-semibold text-white underline">
+            Create account
           </Link>
         </p>
       </div>

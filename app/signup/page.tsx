@@ -1,339 +1,250 @@
-"use client";
+﻿"use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import {
+  validateEmailAddress,
+  validateFullName,
+  validateInstagramUsername,
+} from "@/lib/security";
 
 export default function SignupPage() {
-  const router = useRouter();
-  const supabase = createClient();
-
   const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [showPassword, setShowPassword] = useState(false);
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
+  const [alreadySignedUpEmail, setAlreadySignedUpEmail] = useState<string | null>(null);
 
-  async function handleSignup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSignup(e: FormEvent) {
+    e.preventDefault();
+    setErrorMsg(null);
+    setInfoMsg(null);
+    setAlreadySignedUpEmail(null);
 
-    setLoading(true);
-    setError("");
-    setSuccess("");
-
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      setLoading(false);
+    const nameCheck = validateFullName(fullName);
+    if (!nameCheck.valid) {
+      setErrorMsg(nameCheck.error || "Invalid full name.");
       return;
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
+    const userCheck = validateInstagramUsername(username);
+    if (!userCheck.valid) {
+      setErrorMsg(userCheck.error || "Invalid username.");
+      return;
+    }
+
+    const emailCheck = validateEmailAddress(email);
+    if (!emailCheck.valid) {
+      setErrorMsg(emailCheck.error || "Invalid email.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setErrorMsg("Password must be at least 8 characters long.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const supabase = createClient();
+      if (!supabase) {
+        throw new Error("Supabase client is not configured.");
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanUsername = userCheck.normalized;
+
+      const { data: availRows, error: availError } = await supabase.rpc(
+        "check_signup_availability",
+        {
+          p_email: cleanEmail,
+          p_username: cleanUsername,
+        }
+      );
+
+      const avail = Array.isArray(availRows) ? availRows[0] : availRows;
+      if (!availError && avail) {
+        if (avail.email_exists) {
+          setAlreadySignedUpEmail(cleanEmail);
+          setErrorMsg(
+            "An account with this email is already signed up. Please sign in or use Forgot password."
+          );
+          return;
+        }
+        if (avail.username_exists) {
+          setErrorMsg(
+            `The username "@${cleanUsername}" is already taken. Choose another unique username.`
+          );
+          return;
+        }
+      }
+
+      const origin = window.location.origin;
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          emailRedirectTo: `${origin}/login`,
+          data: {
+            full_name: fullName.trim(),
+            username: cleanUsername,
+          },
         },
-      },
-    });
+      });
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
+      if (signUpError) {
+        if (/already registered|already exists/i.test(signUpError.message)) {
+          setAlreadySignedUpEmail(cleanEmail);
+          setErrorMsg(
+            "An account with this email is already signed up. Please sign in or reset your password."
+          );
+          return;
+        }
+        throw new Error(signUpError.message);
+      }
+
+      if (signUpData.user) {
+        await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: signUpData.user.id,
+              full_name: fullName.trim(),
+              username: cleanUsername,
+              email: cleanEmail,
+            },
+            { onConflict: "id" }
+          );
+      }
+
+      setInfoMsg(
+        "Account created! If a confirmation email does not arrive in your inbox or spam folder (for example due to email rate limits), you can sign in directly or use Forgot password on the Login page."
+      );
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Could not create account.");
+    } finally {
+      setSubmitting(false);
     }
-
-    if (data.session) {
-      setSuccess("Account created successfully. Redirecting...");
-
-      router.push("/");
-      router.refresh();
-
-      return;
-    }
-
-    setSuccess(
-      "Account created. Please check your email to confirm your account."
-    );
-
-    setLoading(false);
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#000",
-        color: "#fff",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "420px",
-          border: "1px solid #333",
-          borderRadius: "16px",
-          padding: "32px",
-          background: "#080808",
-          boxSizing: "border-box",
-        }}
-      >
-        <h1
-          style={{
-            fontSize: "32px",
-            fontWeight: 600,
-            marginBottom: "8px",
-          }}
-        >
-          Create your account
-        </h1>
+    <main className="flex min-h-screen items-center justify-center bg-black p-6 text-white">
+      <div className="w-full max-w-md space-y-6 rounded-2xl border border-white/15 bg-[#0c0c0c] p-8">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">Create your account</h1>
+          <p className="text-sm text-neutral-400">Start building with Postoll.</p>
+        </div>
 
-        <p
-          style={{
-            color: "#999",
-            marginBottom: "28px",
-          }}
-        >
-          Start building with Postoll.
-        </p>
+        {errorMsg && (
+          <div className="space-y-2 rounded-xl border border-red-500/40 bg-red-500/15 p-3.5 text-sm text-red-200">
+            <div>{errorMsg}</div>
+            {alreadySignedUpEmail && (
+              <div className="flex flex-wrap gap-3 pt-1 text-xs font-semibold">
+                <Link href="/login" className="underline text-white">
+                  Go to Login
+                </Link>
+                <Link href="/login?mode=forgot" className="underline text-amber-200">
+                  Forgot password?
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
 
-        <form onSubmit={handleSignup}>
-          {/* Full Name */}
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "14px",
-            }}
-          >
-            Full name
-          </label>
+        {infoMsg && (
+          <div className="space-y-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 p-3.5 text-sm text-emerald-200">
+            <div>{infoMsg}</div>
+            <div className="pt-1 text-xs font-semibold">
+              <Link href="/login" className="underline text-white">
+                Continue to Login →
+              </Link>
+            </div>
+          </div>
+        )}
 
-          <input
-            type="text"
-            placeholder="Your name"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
-            required
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              marginBottom: "18px",
-              borderRadius: "8px",
-              border: "1px solid #333",
-              background: "#111",
-              color: "#fff",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-          />
-
-          {/* Email */}
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "14px",
-            }}
-          >
-            Email
-          </label>
-
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              marginBottom: "18px",
-              borderRadius: "8px",
-              border: "1px solid #333",
-              background: "#111",
-              color: "#fff",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-          />
-
-          {/* Password */}
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "14px",
-            }}
-          >
-            Password
-          </label>
-
-          <div
-            style={{
-              position: "relative",
-              marginBottom: "20px",
-            }}
-          >
+        <form onSubmit={handleSignup} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-neutral-200">
+              Full name
+            </label>
             <input
-              type={showPassword ? "text" : "password"}
-              placeholder="At least 6 characters"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              type="text"
               required
-              minLength={6}
-              style={{
-                width: "100%",
-                padding: "12px 48px 12px 14px",
-                borderRadius: "8px",
-                border: "1px solid #333",
-                background: "#111",
-                color: "#fff",
-                outline: "none",
-                boxSizing: "border-box",
-              }}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Robin P K"
+              className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
             />
-
-            <button
-              type="button"
-              onClick={() => setShowPassword((current) => !current)}
-              aria-label={
-                showPassword ? "Hide password" : "Show password"
-              }
-              title={showPassword ? "Hide password" : "Show password"}
-              style={{
-                position: "absolute",
-                right: "10px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: "32px",
-                height: "32px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "none",
-                background: "transparent",
-                color: "#888",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              {showPassword ? (
-                /* Eye Off */
-                <svg
-                  width="19"
-                  height="19"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M2 2l20 20" />
-                  <path d="M6.7 6.7C4.9 8 3.5 9.8 2.5 12c2 4.2 5.5 7 9.5 7 1.7 0 3.3-.5 4.7-1.3" />
-                  <path d="M10.7 10.7a2 2 0 0 0 2.6 2.6" />
-                  <path d="M9.9 4.3C10.6 4.1 11.3 4 12 4c4 0 7.5 2.8 9.5 7-.4.9-.9 1.8-1.5 2.6" />
-                </svg>
-              ) : (
-                /* Eye */
-                <svg
-                  width="19"
-                  height="19"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
-            </button>
           </div>
 
-          {/* Error */}
-          {error && (
-            <div
-              style={{
-                marginBottom: "16px",
-                padding: "12px",
-                borderRadius: "8px",
-                background: "#220909",
-                border: "1px solid #552020",
-                color: "#ff7777",
-                fontSize: "14px",
-              }}
-            >
-              {error}
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-neutral-200">
+              Username (unique, like Instagram)
+            </label>
+            <input
+              type="text"
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="robin.pk_official"
+              className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
+            />
+            <p className="text-xs text-neutral-400">
+              3–30 characters: lowercase letters, numbers, periods (.), or underscores (_).
+            </p>
+          </div>
 
-          {/* Success */}
-          {success && (
-            <div
-              style={{
-                marginBottom: "16px",
-                padding: "12px",
-                borderRadius: "8px",
-                background: "#09220f",
-                border: "1px solid #20552d",
-                color: "#72e28b",
-                fontSize: "14px",
-              }}
-            >
-              {success}
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-neutral-200">Email</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
+            />
+          </div>
 
-          {/* Create Account */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-neutral-200">Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 pr-16 text-sm text-white focus:border-white/50 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-white"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
+
           <button
             type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: "13px",
-              borderRadius: "8px",
-              border: "none",
-              background: "#fff",
-              color: "#000",
-              fontWeight: 600,
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.6 : 1,
-            }}
+            disabled={submitting}
+            className="w-full rounded-xl bg-white py-3 text-sm font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
           >
-            {loading ? "Creating account..." : "Create account"}
+            {submitting ? "Creating account..." : "Create account"}
           </button>
         </form>
 
-        {/* Login Link */}
-        <p
-          style={{
-            marginTop: "24px",
-            textAlign: "center",
-            color: "#999",
-            fontSize: "14px",
-          }}
-        >
+        <p className="text-center text-xs text-neutral-400">
           Already have an account?{" "}
-          <Link
-            href="/login"
-            style={{
-              color: "#fff",
-              textDecoration: "underline",
-            }}
-          >
+          <Link href="/login" className="font-semibold text-white underline">
             Login
           </Link>
         </p>
