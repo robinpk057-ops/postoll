@@ -4,9 +4,11 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
+  getPasswordChecklist,
   validateEmailAddress,
   validateFullName,
   validateInstagramUsername,
+  validateStrongPassword,
 } from "@/lib/security";
 
 export default function SignupPage() {
@@ -20,6 +22,8 @@ export default function SignupPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [alreadySignedUpEmail, setAlreadySignedUpEmail] = useState<string | null>(null);
+
+  const pwChecks = getPasswordChecklist(password);
 
   async function handleSignup(e: FormEvent) {
     e.preventDefault();
@@ -45,8 +49,9 @@ export default function SignupPage() {
       return;
     }
 
-    if (password.length < 8) {
-      setErrorMsg("Password must be at least 8 characters long.");
+    const pwCheck = validateStrongPassword(password);
+    if (!pwCheck.valid) {
+      setErrorMsg(pwCheck.error || "Password does not meet security requirements.");
       return;
     }
 
@@ -110,17 +115,15 @@ export default function SignupPage() {
       }
 
       if (signUpData.user) {
-        await supabase
-          .from("profiles")
-          .upsert(
-            {
-              id: signUpData.user.id,
-              full_name: fullName.trim(),
-              username: cleanUsername,
-              email: cleanEmail,
-            },
-            { onConflict: "id" }
-          );
+        await supabase.from("profiles").upsert(
+          {
+            id: signUpData.user.id,
+            full_name: fullName.trim(),
+            username: cleanUsername,
+            email: cleanEmail,
+          },
+          { onConflict: "id" }
+        );
       }
 
       setInfoMsg(
@@ -178,21 +181,21 @@ export default function SignupPage() {
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Robin P K"
+              placeholder="Enter your full name"
               className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
             />
           </div>
 
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-neutral-200">
-              Username (unique, like Instagram)
+              Username
             </label>
             <input
               type="text"
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="robin.pk_official"
+              placeholder="your_username"
               className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
             />
             <p className="text-xs text-neutral-400">
@@ -220,7 +223,7 @@ export default function SignupPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 8 characters"
+                placeholder="Create a strong password"
                 className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 pr-16 text-sm text-white focus:border-white/50 focus:outline-none"
               />
               <button
@@ -231,6 +234,41 @@ export default function SignupPage() {
                 {showPassword ? "Hide" : "Show"}
               </button>
             </div>
+
+            <ul className="space-y-1 pt-1.5 text-xs">
+              <li
+                className={`flex items-center gap-2 ${
+                  pwChecks.minLength ? "text-emerald-400" : "text-neutral-400"
+                }`}
+              >
+                <span>{pwChecks.minLength ? "✓" : "○"}</span>
+                <span>At least 8 characters</span>
+              </li>
+              <li
+                className={`flex items-center gap-2 ${
+                  pwChecks.hasAlphabet ? "text-emerald-400" : "text-neutral-400"
+                }`}
+              >
+                <span>{pwChecks.hasAlphabet ? "✓" : "○"}</span>
+                <span>Contains an alphabet letter (A–Z)</span>
+              </li>
+              <li
+                className={`flex items-center gap-2 ${
+                  pwChecks.hasNumber ? "text-emerald-400" : "text-neutral-400"
+                }`}
+              >
+                <span>{pwChecks.hasNumber ? "✓" : "○"}</span>
+                <span>Contains 1 or more numbers (0–9)</span>
+              </li>
+              <li
+                className={`flex items-center gap-2 ${
+                  pwChecks.hasSpecial ? "text-emerald-400" : "text-neutral-400"
+                }`}
+              >
+                <span>{pwChecks.hasSpecial ? "✓" : "○"}</span>
+                <span>Contains 1 or more special characters (!@#$%^&amp;*)</span>
+              </li>
+            </ul>
           </div>
 
           <button

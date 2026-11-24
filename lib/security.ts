@@ -5,7 +5,6 @@ export function validateFullName(name: string): { valid: boolean; error?: string
   if (trimmed.length < 2 || trimmed.length > 80) {
     return { valid: false, error: "Full name must be between 2 and 80 characters." };
   }
-  // Allows letters (including accented/Unicode letters), spaces, apostrophes, hyphens, and periods
   if (!/^[\p{L}\s.'-]+$/u.test(trimmed)) {
     return {
       valid: false,
@@ -45,6 +44,38 @@ export function validateInstagramUsername(username: string): {
     };
   }
   return { valid: true, normalized };
+}
+
+export function getPasswordChecklist(password: string) {
+  return {
+    minLength: password.length >= 8,
+    hasAlphabet: /[A-Za-z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecial: /[^A-Za-z0-9\s]/.test(password),
+  };
+}
+
+export function validateStrongPassword(password: string): {
+  valid: boolean;
+  error?: string;
+} {
+  const checks = getPasswordChecklist(password);
+  if (!checks.minLength) {
+    return { valid: false, error: "Password must be at least 8 characters long." };
+  }
+  if (!checks.hasAlphabet) {
+    return { valid: false, error: "Password must contain at least one letter (A–Z)." };
+  }
+  if (!checks.hasNumber) {
+    return { valid: false, error: "Password must contain at least one number (0–9)." };
+  }
+  if (!checks.hasSpecial) {
+    return {
+      valid: false,
+      error: "Password must contain at least one special character (e.g., !@#$%^&*).",
+    };
+  }
+  return { valid: true };
 }
 
 export function checkRateLimit(

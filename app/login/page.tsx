@@ -4,7 +4,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { validateEmailAddress } from "@/lib/security";
+import {
+  getPasswordChecklist,
+  validateEmailAddress,
+  validateStrongPassword,
+} from "@/lib/security";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +22,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const newPwChecks = getPasswordChecklist(newPassword);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -119,8 +125,9 @@ export default function LoginPage() {
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    if (newPassword.length < 8) {
-      setErrorMsg("New password must be at least 8 characters long.");
+    const pwCheck = validateStrongPassword(newPassword);
+    if (!pwCheck.valid) {
+      setErrorMsg(pwCheck.error || "New password does not meet security requirements.");
       return;
     }
 
@@ -320,9 +327,43 @@ export default function LoginPage() {
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="At least 8 characters"
+                placeholder="Create a strong password"
                 className="w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white focus:border-white/50 focus:outline-none"
               />
+              <ul className="space-y-1 pt-1.5 text-xs">
+                <li
+                  className={`flex items-center gap-2 ${
+                    newPwChecks.minLength ? "text-emerald-400" : "text-neutral-400"
+                  }`}
+                >
+                  <span>{newPwChecks.minLength ? "✓" : "○"}</span>
+                  <span>At least 8 characters</span>
+                </li>
+                <li
+                  className={`flex items-center gap-2 ${
+                    newPwChecks.hasAlphabet ? "text-emerald-400" : "text-neutral-400"
+                  }`}
+                >
+                  <span>{newPwChecks.hasAlphabet ? "✓" : "○"}</span>
+                  <span>Contains an alphabet letter (A–Z)</span>
+                </li>
+                <li
+                  className={`flex items-center gap-2 ${
+                    newPwChecks.hasNumber ? "text-emerald-400" : "text-neutral-400"
+                  }`}
+                >
+                  <span>{newPwChecks.hasNumber ? "✓" : "○"}</span>
+                  <span>Contains 1 or more numbers (0–9)</span>
+                </li>
+                <li
+                  className={`flex items-center gap-2 ${
+                    newPwChecks.hasSpecial ? "text-emerald-400" : "text-neutral-400"
+                  }`}
+                >
+                  <span>{newPwChecks.hasSpecial ? "✓" : "○"}</span>
+                  <span>Contains 1 or more special characters (!@#$%^&amp;*)</span>
+                </li>
+              </ul>
             </div>
 
             <div className="space-y-1.5">
