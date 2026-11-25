@@ -1,9 +1,11 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AppShell from "../AppShell";
 import { createClient } from "@/lib/supabase/client";
+import { DEFAULT_HERO_CONTENT, type HeroCmsContent } from "@/lib/cms-defaults";
 
 type ContentType =
   | "all"
@@ -46,6 +48,41 @@ type ContentItem = {
   description: string;
   imageUrl: string | null;
 };
+
+const STUDIO_VIDEO_SHOWCASE = [
+  {
+    title: "30s Product Launch Reel",
+    tag: "AI REEL · 9:16",
+    duration: "0:30",
+    gradient: "from-[#7C5CFF] via-[#A855F7] to-[#EC4899]",
+    href: "/create",
+    cta: "Generate Reel",
+  },
+  {
+    title: "Daily Autopilot Slot Queue",
+    tag: "WORKFLOW · CRON",
+    duration: "24/7",
+    gradient: "from-[#10B981] via-[#059669] to-[#0EA5E9]",
+    href: "/workflows",
+    cta: "Open Workflows",
+  },
+  {
+    title: "Multi-Channel Calendar Grid",
+    tag: "CALENDAR · SYNC",
+    duration: "LIVE",
+    gradient: "from-[#F59E0B] via-[#F97316] to-[#EC4899]",
+    href: "/calendar",
+    cta: "View Calendar",
+  },
+  {
+    title: "Connected Social Channels",
+    tag: "ACCOUNTS · OAUTH",
+    duration: "6 APPS",
+    gradient: "from-[#38BDF8] via-[#6366F1] to-[#A855F7]",
+    href: "/accounts",
+    cta: "Manage Accounts",
+  },
+];
 
 const filters: {
   id: ContentType;
@@ -94,17 +131,17 @@ function getTypeLabel(type: ContentItem["type"]) {
 function getStatusClass(status: string) {
   switch (status.toLowerCase()) {
     case "approved":
-      return "bg-purple-500/10 text-purple-400";
+      return "bg-purple-500/15 text-purple-300 border border-purple-500/30";
     case "scheduled":
     case "queued":
     case "publishing":
-      return "bg-blue-500/10 text-blue-400";
+      return "bg-sky-500/15 text-sky-300 border border-sky-500/30";
     case "published":
-      return "bg-green-500/10 text-green-400";
+      return "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
     case "failed":
-      return "bg-red-500/10 text-red-400";
+      return "bg-rose-500/15 text-rose-300 border border-rose-500/30";
     default:
-      return "bg-gray-500/10 text-gray-300";
+      return "bg-white/10 text-neutral-300 border border-white/15";
   }
 }
 
@@ -127,6 +164,13 @@ export default function ContentLibraryDashboard() {
   const [items, setItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [heroMedia, setHeroMedia] = useState<{
+    heroVideoUrl: string;
+    heroPosterUrl: string;
+  }>({
+    heroVideoUrl: DEFAULT_HERO_CONTENT.heroVideoUrl,
+    heroPosterUrl: DEFAULT_HERO_CONTENT.heroPosterUrl,
+  });
 
   const [typeFilter, setTypeFilter] = useState<ContentType>("all");
   const [statusFilter, setStatusFilter] = useState<ContentStatus>("all");
@@ -211,6 +255,32 @@ export default function ContentLibraryDashboard() {
     loadContent();
   }, [loadContent]);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("site_content")
+          .select("content")
+          .eq("section_key", "home.hero")
+          .maybeSingle();
+
+        if (active && data?.content && typeof data.content === "object") {
+          const c = data.content as Partial<HeroCmsContent>;
+          setHeroMedia({
+            heroVideoUrl: c.heroVideoUrl || "",
+            heroPosterUrl: c.heroPosterUrl || "",
+          });
+        }
+      } catch {
+        // Ignore optional CMS media fetch errors
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
   const stats = useMemo(() => {
     const total = items.length;
     const scheduled = items.filter(
@@ -251,28 +321,198 @@ export default function ContentLibraryDashboard() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-6xl px-6 py-10 md:px-10">
-        {/* HEADER */}
-        <div className="mb-8">
-          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p
-                className="text-sm font-medium"
-                style={{ color: "#a78bfa" }}
-              >
-                ✦ Your content
-              </p>
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 md:px-10">
+        {/* LEONARDO-STYLE HERO BANNER WITH QUICK ACTION BUTTONS & VIDEO/MOTION STAGE */}
+        <section
+          className="relative overflow-hidden rounded-3xl border p-6 sm:p-8 lg:p-10"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(124,92,255,0.22) 0%, rgba(16,16,22,0.96) 52%, rgba(236,72,153,0.18) 100%)",
+            borderColor: "var(--border)",
+          }}
+        >
+          <div className="grid items-center gap-8 lg:grid-cols-12">
+            <div className="space-y-5 lg:col-span-7">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#7C5CFF]/40 bg-[#7C5CFF]/15 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-[#C4B5FD]">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span>Postoll AI Creation &amp; Autopilot Hub</span>
+              </div>
 
-              <h1 className="mt-1 text-3xl font-semibold">
-                Content Library
+              <h1
+                className="font-black uppercase tracking-tight text-white"
+                style={{
+                  fontSize: "clamp(1.85rem, 4vw, 3.25rem)",
+                  lineHeight: 1.02,
+                }}
+              >
+                CREATE, AUTOMATE &amp; PUBLISH AT STUDIO SPEED
               </h1>
 
               <p
-                className="mt-2 max-w-2xl"
+                className="max-w-2xl text-sm leading-relaxed sm:text-base"
                 style={{ color: "var(--muted)" }}
               >
-                Manage everything Postoll creates, everything you upload, and
-                everything you plan to publish.
+                Launch automated AI workflows, manage your publishing calendar, and connect social channels from one vibrant studio—or jump straight into your library below.
+              </p>
+
+              {/* Quick Studio Buttons (Workflows, Calendar, Accounts, Create) */}
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                <Link
+                  href="/create"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-[#7C5CFF] px-5 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-[#6A48F5]"
+                >
+                  <span>✦</span>
+                  <span>Create Content</span>
+                </Link>
+                <Link
+                  href="/workflows"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-sky-400/35 bg-sky-500/15 px-4 py-3 text-sm font-bold text-sky-200 transition hover:bg-sky-500/25"
+                >
+                  <span>◈</span>
+                  <span>Workflows</span>
+                </Link>
+                <Link
+                  href="/calendar"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/35 bg-amber-500/15 px-4 py-3 text-sm font-bold text-amber-200 transition hover:bg-amber-500/25"
+                >
+                  <span>◫</span>
+                  <span>Calendar</span>
+                </Link>
+                <Link
+                  href="/accounts"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/35 bg-emerald-500/15 px-4 py-3 text-sm font-bold text-emerald-200 transition hover:bg-emerald-500/25"
+                >
+                  <span>◎</span>
+                  <span>Accounts</span>
+                </Link>
+              </div>
+            </div>
+
+            {/* Playing AI Video / Motion Stage */}
+            <div className="lg:col-span-5">
+              <div className="overflow-hidden rounded-2xl border border-white/15 bg-[#09090D] shadow-2xl">
+                {heroMedia.heroVideoUrl ? (
+                  <video
+                    src={heroMedia.heroVideoUrl}
+                    poster={heroMedia.heroPosterUrl || undefined}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    className="aspect-video w-full object-cover"
+                  />
+                ) : (
+                  <div className="relative aspect-video w-full overflow-hidden bg-gradient-to-br from-[#2E1065] via-[#0F172A] to-[#4C0519] p-5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs font-bold">
+                      <span className="rounded-full bg-white/15 px-3 py-1 text-white backdrop-blur-xs">
+                        ▶ AI REEL &amp; MOTION PREVIEW
+                      </span>
+                      <span className="rounded-full bg-emerald-500/25 px-2.5 py-1 text-emerald-200">
+                        LIVE STUDIO
+                      </span>
+                    </div>
+
+                    <div className="my-auto grid grid-cols-3 gap-2.5 py-2">
+                      <div className="rounded-xl border border-white/15 bg-gradient-to-tr from-[#7C5CFF] to-[#38BDF8] p-3 text-white shadow-md">
+                        <p className="text-[11px] font-black uppercase">Reels</p>
+                        <p className="mt-1 text-[10px] text-white/85">Auto-cut hooks</p>
+                      </div>
+                      <div className="rounded-xl border border-white/20 bg-gradient-to-tr from-[#EC4899] to-[#F59E0B] p-3 text-white shadow-lg -translate-y-1">
+                        <p className="text-[11px] font-black uppercase">Slots</p>
+                        <p className="mt-1 text-[10px] text-white/90">Smart queue</p>
+                      </div>
+                      <div className="rounded-xl border border-white/15 bg-gradient-to-tr from-[#10B981] to-[#6366F1] p-3 text-white shadow-md">
+                        <p className="text-[11px] font-black uppercase">Publish</p>
+                        <p className="mt-1 text-[10px] text-white/85">Multi-channel</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-neutral-300">
+                      <span>Scroll below for AI showcase &amp; library</span>
+                      <span className="font-bold text-[#C4B5FD]">Postoll Studio</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SCROLL SHOWCASE: AI VIDEOS & STUDIO MODULES */}
+        <section className="mt-10 space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#EC4899]">
+                ✦ Studio Showcase
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">
+                AI Reels, Workflows &amp; Publishing Tools
+              </h2>
+            </div>
+            <Link
+              href="/workflows/create"
+              className="text-xs font-bold text-[#C4B5FD] hover:underline sm:text-sm"
+            >
+              + Launch new workflow →
+            </Link>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {STUDIO_VIDEO_SHOWCASE.map((card) => (
+              <Link
+                key={card.title}
+                href={card.href}
+                className="group overflow-hidden rounded-2xl border transition hover:-translate-y-0.5"
+                style={{
+                  background: "var(--card)",
+                  borderColor: "var(--border)",
+                }}
+              >
+                <div
+                  className={`flex h-32 flex-col justify-between bg-gradient-to-br ${card.gradient} p-4 text-white`}
+                >
+                  <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider">
+                    <span className="rounded-full bg-black/30 px-2.5 py-0.5 backdrop-blur-xs">
+                      {card.tag}
+                    </span>
+                    <span className="rounded-full bg-black/30 px-2 py-0.5">
+                      {card.duration}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-bold">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
+                      ▶
+                    </span>
+                    <span>Interactive Studio Preview</span>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <h3 className="text-sm font-bold">{card.title}</h3>
+                  <p className="mt-2 text-xs font-bold text-[#C4B5FD] group-hover:underline">
+                    {card.cta} →
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* CONTENT LIBRARY SECTION (PRESERVED LOGIC + COLORFUL STATS) */}
+        <section className="mt-12 space-y-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-sm font-medium" style={{ color: "#a78bfa" }}>
+                ✦ Your content
+              </p>
+              <h2 className="mt-1 text-2xl font-bold sm:text-3xl">
+                Content Library
+              </h2>
+              <p
+                className="mt-1.5 max-w-2xl text-sm"
+                style={{ color: "var(--muted)" }}
+              >
+                Manage everything Postoll creates, everything you upload, and everything you plan to publish.
               </p>
             </div>
 
@@ -288,277 +528,253 @@ export default function ContentLibraryDashboard() {
               + Create content
             </button>
           </div>
-        </div>
 
-        {/* SUMMARY */}
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { label: "Total content", value: String(stats.total) },
-            { label: "AI generated", value: String(stats.aiGenerated) },
-            { label: "Queued / Scheduled", value: String(stats.scheduled) },
-            { label: "Published", value: String(stats.published) },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="rounded-2xl border p-5"
-              style={{
-                background: "var(--card)",
-                borderColor: "var(--border)",
-              }}
-            >
-              <p className="text-sm" style={{ color: "var(--muted)" }}>
-                {item.label}
-              </p>
-
-              <p className="mt-2 text-2xl font-semibold">{item.value}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* FILTER AREA */}
-        <div
-          className="rounded-2xl border p-5"
-          style={{
-            background: "var(--card)",
-            borderColor: "var(--border)",
-          }}
-        >
-          <div className="flex flex-col gap-4">
-            <div>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search your content..."
-                className="w-full rounded-xl border bg-transparent px-4 py-3 text-sm outline-none"
-                style={{ borderColor: "var(--border)" }}
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {filters.map((filter) => {
-                const active = typeFilter === filter.id;
-
-                return (
-                  <button
-                    key={filter.id}
-                    type="button"
-                    onClick={() => setTypeFilter(filter.id)}
-                    className="rounded-full border px-4 py-2 text-sm transition"
-                    style={{
-                      borderColor: active ? "#8b5cf6" : "var(--border)",
-                      background: active
-                        ? "rgba(139, 92, 246, 0.10)"
-                        : "transparent",
-                    }}
-                  >
-                    {filter.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {statusFilters.map((filter) => {
-                const active = statusFilter === filter.id;
-
-                return (
-                  <button
-                    key={filter.id}
-                    type="button"
-                    onClick={() => setStatusFilter(filter.id)}
-                    className="rounded-full border px-4 py-2 text-sm transition"
-                    style={{
-                      borderColor: active
-                        ? "var(--foreground)"
-                        : "var(--border)",
-                      background: active
-                        ? "var(--card-hover)"
-                        : "transparent",
-                    }}
-                  >
-                    {filter.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* ERROR */}
-        {error && (
-          <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-
-        {/* CONTENT */}
-        <div className="mt-6 space-y-4">
-          {loading ? (
-            <div
-              className="rounded-2xl border p-12 text-center text-sm"
-              style={{
-                background: "var(--card)",
-                borderColor: "var(--border)",
-                color: "var(--muted)",
-              }}
-            >
-              Loading your content...
-            </div>
-          ) : filteredContent.length === 0 ? (
-            <div
-              className="rounded-2xl border p-12 text-center"
-              style={{
-                background: "var(--card)",
-                borderColor: "var(--border)",
-              }}
-            >
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10 text-xl">
-                ✦
-              </div>
-
-              <h2 className="mt-5 text-lg font-semibold">No content found</h2>
-
-              <p
-                className="mx-auto mt-2 max-w-md text-sm"
-                style={{ color: "var(--muted)" }}
-              >
-                Try changing your filters or create something new with Postoll.
-              </p>
-            </div>
-          ) : (
-            filteredContent.map((item) => (
+          {/* Colorful Summary Cards */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "Total content", value: String(stats.total), accent: "#7C5CFF" },
+              { label: "AI generated", value: String(stats.aiGenerated), accent: "#EC4899" },
+              { label: "Queued / Scheduled", value: String(stats.scheduled), accent: "#38BDF8" },
+              { label: "Published", value: String(stats.published), accent: "#10B981" },
+            ].map((item) => (
               <div
-                key={item.id}
-                className="rounded-2xl border p-5 transition hover:-translate-y-0.5"
+                key={item.label}
+                className="rounded-2xl border p-5"
                 style={{
                   background: "var(--card)",
                   borderColor: "var(--border)",
                 }}
               >
-                <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-                  <div className="flex min-w-0 gap-4">
-                    <div
-                      className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border text-xl"
+                <div className="flex items-center justify-between">
+                  <p className="text-sm" style={{ color: "var(--muted)" }}>
+                    {item.label}
+                  </p>
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: item.accent }}
+                  />
+                </div>
+                <p
+                  className="mt-2 text-2xl font-bold"
+                  style={{ color: item.accent }}
+                >
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Filters */}
+          <div
+            className="rounded-2xl border p-5"
+            style={{
+              background: "var(--card)",
+              borderColor: "var(--border)",
+            }}
+          >
+            <div className="flex flex-col gap-4">
+              <div>
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search your content..."
+                  className="w-full rounded-xl border bg-transparent px-4 py-3 text-sm outline-none"
+                  style={{ borderColor: "var(--border)" }}
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {filters.map((filter) => {
+                  const active = typeFilter === filter.id;
+
+                  return (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setTypeFilter(filter.id)}
+                      className="rounded-full border px-4 py-2 text-sm transition"
                       style={{
-                        borderColor: "var(--border)",
-                        background: "var(--card-hover)",
+                        borderColor: active ? "#8b5cf6" : "var(--border)",
+                        background: active
+                          ? "rgba(139, 92, 246, 0.14)"
+                          : "transparent",
                       }}
                     >
-                      {item.imageUrl ? (
-                        <img
-                          src={item.imageUrl}
-                          alt={item.title}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : item.type === "reel" ? (
-                        "▶"
-                      ) : item.type === "video" ? (
-                        "◈"
-                      ) : (
-                        "✦"
-                      )}
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="font-semibold">{item.title}</h2>
-
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${getStatusClass(
-                            item.status
-                          )}`}
-                        >
-                          {item.status}
-                        </span>
-                      </div>
-
-                      <p
-                        className="mt-1 text-sm"
-                        style={{ color: "var(--muted)" }}
-                      >
-                        {item.description}
-                      </p>
-
-                      <div
-                        className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs"
-                        style={{ color: "var(--muted)" }}
-                      >
-                        <span>{getTypeLabel(item.type)}</span>
-                        <span>{item.source}</span>
-                        <span>{item.platform}</span>
-                        <span>{item.createdAt}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-xl border px-4 py-2.5 text-sm font-medium transition hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{ borderColor: "var(--border)" }}
-                    onClick={() => router.push(`/content/${item.id}`)}
-                  >
-                    Open
-                  </button>
-                </div>
+                      {filter.label}
+                    </button>
+                  );
+                })}
               </div>
-            ))
+
+              <div className="flex flex-wrap gap-2">
+                {statusFilters.map((filter) => {
+                  const active = statusFilter === filter.id;
+
+                  return (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setStatusFilter(filter.id)}
+                      className="rounded-full border px-4 py-2 text-sm transition"
+                      style={{
+                        borderColor: active
+                          ? "var(--foreground)"
+                          : "var(--border)",
+                        background: active
+                          ? "var(--card-hover)"
+                          : "transparent",
+                      }}
+                    >
+                      {filter.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
+              {error}
+            </div>
           )}
-        </div>
 
-        {/* FUTURE CONTENT SOURCES */}
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          <div
-            className="rounded-2xl border p-6"
-            style={{
-              background: "var(--card)",
-              borderColor: "var(--border)",
-            }}
-          >
-            <div className="text-xl">✦</div>
-            <h3 className="mt-4 font-semibold">AI Generated</h3>
-            <p
-              className="mt-2 text-sm leading-6"
-              style={{ color: "var(--muted)" }}
-            >
-              Images, posts and Reels created from your ideas.
-            </p>
-          </div>
+          {/* Content Items */}
+          <div className="space-y-4">
+            {loading ? (
+              <div
+                className="rounded-2xl border p-12 text-center text-sm"
+                style={{
+                  background: "var(--card)",
+                  borderColor: "var(--border)",
+                  color: "var(--muted)",
+                }}
+              >
+                Loading your content...
+              </div>
+            ) : filteredContent.length === 0 ? (
+              <div
+                className="rounded-2xl border p-12 text-center"
+                style={{
+                  background: "var(--card)",
+                  borderColor: "var(--border)",
+                }}
+              >
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-500/10 text-xl">
+                  ✦
+                </div>
 
-          <div
-            className="rounded-2xl border p-6"
-            style={{
-              background: "var(--card)",
-              borderColor: "var(--border)",
-            }}
-          >
-            <div className="text-xl">↑</div>
-            <h3 className="mt-4 font-semibold">Uploaded Content</h3>
-            <p
-              className="mt-2 text-sm leading-6"
-              style={{ color: "var(--muted)" }}
-            >
-              Upload your own videos and images and let Postoll reuse them.
-            </p>
-          </div>
+                <h3 className="mt-5 text-lg font-semibold">No content found</h3>
 
-          <div
-            className="rounded-2xl border p-6"
-            style={{
-              background: "var(--card)",
-              borderColor: "var(--border)",
-            }}
-          >
-            <div className="text-xl">○</div>
-            <h3 className="mt-4 font-semibold">Product Assets</h3>
-            <p
-              className="mt-2 text-sm leading-6"
-              style={{ color: "var(--muted)" }}
-            >
-              Product images and videos that Postoll can use when creating new
-              content.
-            </p>
+                <p
+                  className="mx-auto mt-2 max-w-md text-sm"
+                  style={{ color: "var(--muted)" }}
+                >
+                  Try changing your filters or create something new with Postoll.
+                </p>
+              </div>
+            ) : (
+              filteredContent.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl border p-5 transition hover:-translate-y-0.5"
+                  style={{
+                    background: "var(--card)",
+                    borderColor: "var(--border)",
+                  }}
+                >
+                  <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                    <div className="flex min-w-0 gap-4">
+                      <div
+                        className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border text-xl"
+                        style={{
+                          borderColor: "var(--border)",
+                          background: "var(--card-hover)",
+                        }}
+                      >
+                        {item.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.title}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : item.type === "reel" ? (
+                          "▶"
+                        ) : item.type === "video" ? (
+                          "◈"
+                        ) : (
+                          "✦"
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold">{item.title}</h3>
+
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${getStatusClass(
+                              item.status
+                            )}`}
+                          >
+                            {item.status}
+                          </span>
+                        </div>
+
+                        <p
+                          className="mt-1 text-sm"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          {item.description}
+                        </p>
+
+                        <div
+                          className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          <span>{getTypeLabel(item.type)}</span>
+                          <span>{item.source}</span>
+                          <span>{item.platform}</span>
+                          <span>{item.createdAt}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-xl border px-4 py-2.5 text-sm font-medium transition hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ borderColor: "var(--border)" }}
+                      onClick={() => router.push(`/content/${item.id}`)}
+                    >
+                      Open
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        </div>
+        </section>
+
+        {/* COPYRIGHT & STUDIO FOOTER */}
+        <footer
+          className="mt-14 flex flex-col justify-between gap-3 border-t pt-6 text-xs sm:flex-row sm:items-center"
+          style={{ borderColor: "var(--border)", color: "var(--muted)" }}
+        >
+          <p>© {new Date().getFullYear()} Postoll. AI Social Studio &amp; Scheduler.</p>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/workflows" className="hover:underline">
+              Workflows
+            </Link>
+            <Link href="/calendar" className="hover:underline">
+              Calendar
+            </Link>
+            <Link href="/accounts" className="hover:underline">
+              Accounts
+            </Link>
+            <Link href="/privacy" className="hover:underline">
+              Privacy
+            </Link>
+          </div>
+        </footer>
       </div>
     </AppShell>
   );
