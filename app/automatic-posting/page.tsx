@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import Link from "next/link";
+import AppShell from "../AppShell";
 import { createClient } from "@/lib/supabase/client";
 import { validateSafetyText } from "@/lib/safety-guardrail";
 import type { AspectRatio, ReferenceAsset, VisualStyle } from "@/app/types/ai-director";
@@ -11,6 +12,8 @@ type PlanOption = {
   label: string;
   style: VisualStyle;
   description: string;
+  accentBg: string;
+  accentText: string;
 };
 
 type UploadedPhotoItem = {
@@ -64,6 +67,8 @@ const PLAN_OPTIONS: PlanOption[] = [
     style: "brand",
     description:
       "Polished brand messaging, product showcases, and value-driven short videos.",
+    accentBg: "rgba(124, 92, 255, 0.16)",
+    accentText: "#C4B5FD",
   },
   {
     id: "cartoon",
@@ -71,6 +76,8 @@ const PLAN_OPTIONS: PlanOption[] = [
     style: "cartoon",
     description:
       "Illustrated scenes, recurring characters, and engaging animated storytelling.",
+    accentBg: "rgba(236, 72, 153, 0.16)",
+    accentText: "#F9A8D4",
   },
   {
     id: "custom",
@@ -78,6 +85,8 @@ const PLAN_OPTIONS: PlanOption[] = [
     style: "brand",
     description:
       "Define your own category, creative direction, and automated video rules.",
+    accentBg: "rgba(16, 185, 129, 0.16)",
+    accentText: "#6EE7B7",
   },
 ];
 
@@ -99,7 +108,7 @@ const DAYS = [
 ];
 
 const inputClass =
-  "w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white placeholder:text-neutral-400 focus:border-white/50 focus:outline-none";
+  "w-full rounded-xl border border-white/20 bg-[#141414] px-4 py-3 text-sm text-white placeholder:text-neutral-400 focus:border-[#7C5CFF] focus:outline-none";
 
 function clampDuration(value: number): number {
   if (Number.isNaN(value)) return 30;
@@ -109,7 +118,6 @@ function clampDuration(value: number): number {
 export default function AutomaticPostingPage() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
-  // Account & Credit state
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [isSignedIn, setIsSignedIn] = useState<boolean>(false);
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
@@ -120,7 +128,6 @@ export default function AutomaticPostingPage() {
   const [creditPackAmount, setCreditPackAmount] = useState<number>(10);
   const [buyingCredits, setBuyingCredits] = useState<boolean>(false);
 
-  // Clip editing & regeneration state
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [editingSceneIndex, setEditingSceneIndex] = useState<number | null>(null);
   const [editVisualPrompt, setEditVisualPrompt] = useState<string>("");
@@ -128,7 +135,6 @@ export default function AutomaticPostingPage() {
   const [regeneratingClipKey, setRegeneratingClipKey] = useState<string | null>(null);
   const [stitchingJobId, setStitchingJobId] = useState<string | null>(null);
 
-  // Step 1
   const [selectedPlanId, setSelectedPlanId] = useState<"business" | "cartoon" | "custom">("business");
   const [customCategoryName, setCustomCategoryName] = useState<string>("");
   const [seriesName, setSeriesName] = useState<string>("");
@@ -136,18 +142,15 @@ export default function AutomaticPostingPage() {
   const [coreConcept, setCoreConcept] = useState<string>("");
   const [creativeNotes, setCreativeNotes] = useState<string>("");
 
-  // Step 2
   const [photos, setPhotos] = useState<UploadedPhotoItem[]>([]);
   const [photoUsageRule, setPhotoUsageRule] = useState<string>(
     "Use this same image across all generated videos"
   );
 
-  // Step 3
   const [scriptOutline, setScriptOutline] = useState<string>("");
   const [hookAndCta, setHookAndCta] = useState<string>("");
   const [referenceLinksText, setReferenceLinksText] = useState<string>("");
 
-  // Step 4
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [postTime, setPostTime] = useState<string>("10:00");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
@@ -183,7 +186,10 @@ export default function AutomaticPostingPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) { setIsSignedIn(false); return; }
+      if (!user) {
+        setIsSignedIn(false);
+        return;
+      }
       setIsSignedIn(true);
 
       const [billingRes, accountsRes, jobsRes] = await Promise.all([
@@ -205,7 +211,9 @@ export default function AutomaticPostingPage() {
           .limit(6),
       ]);
 
-      if (billingRes && typeof (billingRes as { credits?: unknown }).credits === "number") { setCreditBalance((billingRes as { credits: number }).credits); }
+      if (billingRes && typeof (billingRes as { credits?: unknown }).credits === "number") {
+        setCreditBalance((billingRes as { credits: number }).credits);
+      }
 
       const accts = Array.isArray(accountsRes.data)
         ? (accountsRes.data as ConnectedAccount[])
@@ -671,846 +679,860 @@ export default function AutomaticPostingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-6 text-white md:p-8">
-      {/* Header + Credits + Back to Home */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1.5">
-          <h1 className="text-3xl font-bold tracking-tight text-white">
-            Automated Video Posting Setup
-          </h1>
-          <p className="text-sm text-neutral-300">
-            Generates content 30 minutes before scheduled slots. Full run: 1 credit · Single clip regen: 1 credit · Auto-refunded on failure.
-          </p>
+    <AppShell>
+      <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 text-white sm:px-6 md:px-8">
+        {/* COLORFUL AUTOPILOT STUDIO HEADER */}
+        <div
+          className="rounded-3xl border p-6 sm:p-8"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(16,185,129,0.16) 0%, var(--card) 52%, rgba(124,92,255,0.2) 100%)",
+            borderColor: "var(--border)",
+          }}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold uppercase tracking-widest text-[#6EE7B7]">
+                ⟳ Postoll Autopilot Engine
+              </p>
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+                Automated Video Posting Setup
+              </h1>
+              <p className="text-sm text-neutral-300">
+                Generates content 30 minutes before scheduled slots. Full run: 1 credit · Single clip regen: 1 credit · Auto-refunded on failure.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-3.5 py-2 text-xs">
+                <span className="text-emerald-200">Credit Balance:</span>
+                <strong className="text-sm font-black text-white">
+                  {loadingAccountData
+                    ? "..."
+                    : !isSignedIn
+                    ? "Sign in required"
+                    : creditBalance ?? 0}
+                </strong>
+                {isSignedIn ? (
+                  <button
+                    type="button"
+                    onClick={() => setBuyCreditsOpen((prev) => !prev)}
+                    className="ml-1 rounded-lg bg-[#7C5CFF] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#6A48F5]"
+                  >
+                    + Buy Credits
+                  </button>
+                ) : (
+                  <Link
+                    href="/login"
+                    className="ml-1 rounded-lg bg-[#7C5CFF] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#6A48F5]"
+                  >
+                    Login
+                  </Link>
+                )}
+              </div>
+
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-black/30 px-4 py-2 text-xs font-bold text-white transition-colors hover:border-white/45 sm:text-sm"
+              >
+                <span>←</span>
+                <span>Back to Home</span>
+              </Link>
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-[#141414] px-3.5 py-2 text-xs">
-            <span className="text-neutral-400">Credit Balance: </span>
-            <strong className="text-sm text-white">
-              {loadingAccountData
-                ? "..."
-                : !isSignedIn
-                ? "Sign in required"
-                : creditBalance ?? 0}
-            </strong>
-            {isSignedIn ? (
+        {buyCreditsOpen && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/20 bg-[#141414] p-4 text-sm">
+            <div className="space-y-0.5">
+              <div className="font-semibold text-white">Purchase / Top Up Credits</div>
+              <p className="text-xs text-neutral-400">
+                Adds credits immediately to the currently signed-in user&apos;s balance and records a purchase ledger entry.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {[10, 25, 50, 100].map((pack) => (
+                <button
+                  key={pack}
+                  type="button"
+                  onClick={() => setCreditPackAmount(pack)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${
+                    creditPackAmount === pack
+                      ? "border-[#7C5CFF] bg-[#7C5CFF] text-white"
+                      : "border-white/20 bg-[#111111] text-neutral-200 hover:border-white/40"
+                  }`}
+                >
+                  +{pack}
+                </button>
+              ))}
               <button
                 type="button"
-                onClick={() => setBuyCreditsOpen((prev) => !prev)}
-                className="ml-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-neutral-200"
+                disabled={buyingCredits}
+                onClick={async () => {
+                  setError(null);
+                  setBuyingCredits(true);
+                  try {
+                    const res = await fetch("/api/billing/me", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        credits: creditPackAmount,
+                        note: `Purchased +${creditPackAmount} credits`,
+                      }),
+                    });
+                    const json = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      throw new Error(json?.error || "Failed to add credits.");
+                    }
+                    if (typeof json?.credits === "number") {
+                      setCreditBalance(json.credits);
+                    }
+                    setBuyCreditsOpen(false);
+                  } catch (err) {
+                    setError(
+                      err instanceof Error ? err.message : "Could not purchase credits."
+                    );
+                  } finally {
+                    setBuyingCredits(false);
+                  }
+                }}
+                className="rounded-xl bg-emerald-400 px-4 py-2 text-xs font-bold text-black hover:bg-emerald-300 disabled:opacity-50"
               >
-                + Buy Credits
+                {buyingCredits ? "Adding..." : `Add ${creditPackAmount} Credits`}
               </button>
-            ) : (
-              <Link
-                href="/login"
-                className="ml-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-neutral-200"
-              >
-                Login
-              </Link>
-            )}
+            </div>
           </div>
+        )}
 
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-[#141414] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:border-white/45"
-          >
-            <span>←</span>
-            <span>Back to Home</span>
-          </Link>
-        </div>
-      </div>
-
-      {buyCreditsOpen && (
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/20 bg-[#141414] p-4 text-sm">
-          <div className="space-y-0.5">
-            <div className="font-semibold text-white">Purchase / Top Up Credits</div>
-            <p className="text-xs text-neutral-400">
-              Adds credits immediately to the currently signed-in user&apos;s balance and records a purchase ledger entry.
+        {/* Pending Approval Notification Banner */}
+        {pendingApprovalJobs.length > 0 && (
+          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <div className="font-semibold">
+              Approval Needed: {pendingApprovalJobs.length} generated video plan(s) waiting for review
+            </div>
+            <p className="mt-1 text-xs text-amber-200/90">
+              Review individual clips below, regenerate any single clip if needed, and click{" "}
+              <strong>Combine Clips &amp; Publish</strong> to post to your selected accounts.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {[10, 25, 50, 100].map((pack) => (
+        )}
+
+        {/* Step Navigation */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { num: 1, title: "1. Plan & Direction" },
+            { num: 2, title: "2. Media & Image Rule" },
+            { num: 3, title: "3. Script & References" },
+            { num: 4, title: "4. Schedule & Specs" },
+          ].map((item) => {
+            const active = step === item.num;
+            const done = step > item.num;
+            return (
               <button
-                key={pack}
+                key={item.num}
                 type="button"
-                onClick={() => setCreditPackAmount(pack)}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                  creditPackAmount === pack
-                    ? "border-white bg-white text-black"
-                    : "border-white/20 bg-[#111111] text-neutral-200 hover:border-white/40"
+                onClick={() => {
+                  if (!createdResult) setStep(item.num as 1 | 2 | 3 | 4);
+                }}
+                className={`rounded-xl border px-3.5 py-3 text-left text-xs font-bold transition-colors ${
+                  active
+                    ? "border-[#7C5CFF] bg-[#7C5CFF] text-white"
+                    : done
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                    : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/30"
                 }`}
               >
-                +{pack}
+                {item.title}
               </button>
-            ))}
-            <button
-              type="button"
-              disabled={buyingCredits}
-              onClick={async () => {
-                setError(null);
-                setBuyingCredits(true);
-                try {
-                  const res = await fetch("/api/billing/me", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      credits: creditPackAmount,
-                      note: `Purchased +${creditPackAmount} credits`,
-                    }),
-                  });
-                  const json = await res.json().catch(() => ({}));
-                  if (!res.ok) {
-                    throw new Error(json?.error || "Failed to add credits.");
-                  }
-                  if (typeof json?.credits === "number") {
-                    setCreditBalance(json.credits);
-                  }
-                  setBuyCreditsOpen(false);
-                } catch (err) {
-                  setError(
-                    err instanceof Error ? err.message : "Could not purchase credits."
-                  );
-                } finally {
-                  setBuyingCredits(false);
-                }
-              }}
-              className="rounded-xl bg-emerald-400 px-4 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:opacity-50"
-            >
-              {buyingCredits ? "Adding..." : `Add ${creditPackAmount} Credits`}
-            </button>
+            );
+          })}
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-500/50 bg-red-500/15 p-4 text-sm text-red-200">
+            {error}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Pending Approval Notification Banner */}
-      {pendingApprovalJobs.length > 0 && (
-        <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
-          <div className="font-semibold">
-            Approval Needed: {pendingApprovalJobs.length} generated video plan(s) waiting for review
-          </div>
-          <p className="mt-1 text-xs text-amber-200/90">
-            Review individual clips below, regenerate any single clip if needed, and click{" "}
-            <strong>Combine Clips &amp; Publish</strong> to post to your selected accounts.
-          </p>
-        </div>
-      )}
-
-      {/* Step Navigation */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          { num: 1, title: "1. Plan & Direction" },
-          { num: 2, title: "2. Media & Image Rule" },
-          { num: 3, title: "3. Script & References" },
-          { num: 4, title: "4. Schedule & Specs" },
-        ].map((item) => {
-          const active = step === item.num;
-          const done = step > item.num;
-          return (
-            <button
-              key={item.num}
-              type="button"
-              onClick={() => {
-                if (!createdResult) setStep(item.num as 1 | 2 | 3 | 4);
-              }}
-              className={`rounded-xl border px-3.5 py-3 text-left text-xs font-semibold transition-colors ${
-                active
-                  ? "border-white bg-white text-black"
-                  : done
-                  ? "border-white/35 bg-[#161616] text-white"
-                  : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/30"
-              }`}
-            >
-              {item.title}
-            </button>
-          );
-        })}
-      </div>
-
-      {error && (
-        <div className="rounded-xl border border-red-500/50 bg-red-500/15 p-4 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-
-      {createdResult ? (
-        <div className="space-y-4 rounded-2xl border border-white/15 bg-[#111111] p-6">
-          <h2 className="text-xl font-semibold text-white">
-            Automated Video Workflow Created
-          </h2>
-          <p className="text-sm text-neutral-300">
-            <strong className="text-white">{createdResult.name}</strong> is active with{" "}
-            <strong className="text-white">{createdResult.slotsCount}</strong> scheduled posting slot(s).
-          </p>
-          {createdResult.runSummary && (
-            <p className="rounded-xl border border-white/15 bg-[#161616] p-3.5 text-sm text-neutral-200">
-              {createdResult.runSummary}
+        {createdResult ? (
+          <div className="space-y-4 rounded-2xl border border-white/15 bg-[#111111] p-6">
+            <h2 className="text-xl font-bold text-white">
+              Automated Video Workflow Created
+            </h2>
+            <p className="text-sm text-neutral-300">
+              <strong className="text-white">{createdResult.name}</strong> is active with{" "}
+              <strong className="text-white">{createdResult.slotsCount}</strong> scheduled posting slot(s).
             </p>
-          )}
-          <div className="flex flex-wrap gap-3 pt-2">
-            <button
-              type="button"
-              disabled={retryingRun}
-              onClick={handleRetryInitialRun}
-              className="rounded-xl border border-white/25 bg-[#161616] px-4 py-2.5 text-sm font-semibold text-white hover:border-white/50 disabled:opacity-50"
-            >
-              {retryingRun ? "Retrying Generation..." : "Retry Initial Generation"}
-            </button>
-            <button
-              type="button"
-              onClick={resetBuilder}
-              className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black hover:bg-neutral-200"
-            >
-              Create Another Workflow
-            </button>
-            <Link
-              href="/"
-              className="rounded-xl border border-white/20 bg-[#161616] px-4 py-2.5 text-sm font-medium text-white hover:border-white/40"
-            >
-              Return to Home
-            </Link>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-6 rounded-2xl border border-white/15 bg-[#111111] p-6">
-          {/* STEP 1 */}
-          {step === 1 && (
-            <div className="space-y-6">
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-white">
-                  Plan Category &amp; Creative Direction
-                </h2>
-                <p className="text-sm text-neutral-300">
-                  Select Business or Cartoon—or enter a custom category—and define your video series details.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {PLAN_OPTIONS.map((option) => {
-                  const isSelected = selectedPlanId === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setSelectedPlanId(option.id)}
-                      className={`rounded-xl border p-4 text-left transition-colors ${
-                        isSelected
-                          ? "border-white bg-white text-black"
-                          : "border-white/15 bg-[#161616] text-white hover:border-white/35"
-                      }`}
-                    >
-                      <div className="text-sm font-semibold">{option.label}</div>
-                      <p
-                        className={`mt-1.5 text-xs leading-relaxed ${
-                          isSelected ? "text-neutral-800" : "text-neutral-300"
-                        }`}
-                      >
-                        {option.description}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {selectedPlanId === "custom" && (
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-neutral-100">
-                    Custom Plan Category
-                  </label>
-                  <input
-                    type="text"
-                    value={customCategoryName}
-                    onChange={(e) => setCustomCategoryName(e.target.value)}
-                    placeholder="Enter custom category name"
-                    className={inputClass}
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-neutral-100">
-                    Series / Workflow Name
-                  </label>
-                  <input
-                    type="text"
-                    value={seriesName}
-                    onChange={(e) => setSeriesName(e.target.value)}
-                    placeholder="e.g., Weekly Product Spotlight"
-                    className={inputClass}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-neutral-100">
-                    Target Audience &amp; Tone
-                  </label>
-                  <input
-                    type="text"
-                    value={audienceAndTone}
-                    onChange={(e) => setAudienceAndTone(e.target.value)}
-                    placeholder="e.g., Small business owners; clear and friendly"
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-100">
-                  Core Topic &amp; Video Objective
-                </label>
-                <input
-                  type="text"
-                  value={coreConcept}
-                  onChange={(e) => setCoreConcept(e.target.value)}
-                  placeholder="e.g., Demonstrate practical workflows in short vertical videos"
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-100">
-                  Additional Creative Requirements (Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={creativeNotes}
-                  onChange={(e) => setCreativeNotes(e.target.value)}
-                  placeholder="Specify visual palette, character traits, or styling guidelines..."
-                  className={inputClass}
-                />
-              </div>
+            {createdResult.runSummary && (
+              <p className="rounded-xl border border-white/15 bg-[#161616] p-3.5 text-sm text-neutral-200">
+                {createdResult.runSummary}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                type="button"
+                disabled={retryingRun}
+                onClick={handleRetryInitialRun}
+                className="rounded-xl border border-white/25 bg-[#161616] px-4 py-2.5 text-sm font-semibold text-white hover:border-white/50 disabled:opacity-50"
+              >
+                {retryingRun ? "Retrying Generation..." : "Retry Initial Generation"}
+              </button>
+              <button
+                type="button"
+                onClick={resetBuilder}
+                className="rounded-xl bg-[#7C5CFF] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#6A48F5]"
+              >
+                Create Another Workflow
+              </button>
+              <Link
+                href="/"
+                className="rounded-xl border border-white/20 bg-[#161616] px-4 py-2.5 text-sm font-medium text-white hover:border-white/40"
+              >
+                Return to Home
+              </Link>
             </div>
-          )}
-
-          {/* STEP 2 */}
-          {step === 2 && (
-            <div className="space-y-6">
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-white">
-                  Reference Photos &amp; Image Usage Rule
-                </h2>
-                <p className="text-sm text-neutral-300">
-                  Upload reference or product photos and specify whether the system should reuse the same image or vary images across videos.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-100">
-                  Upload Reference Images
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handlePhotoChange}
-                  className="block w-full rounded-xl border border-white/20 bg-[#141414] p-3 text-sm text-neutral-200 file:mr-4 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-black"
-                />
-              </div>
-
-              {photos.length > 0 && (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {photos.map((photo) => (
-                    <div
-                      key={photo.id}
-                      className="overflow-hidden rounded-xl border border-white/15 bg-[#161616]"
-                    >
-                      <img
-                        src={photo.previewUrl}
-                        alt={photo.name}
-                        className="h-28 w-full object-cover"
-                      />
-                      <div className="flex items-center justify-between gap-2 p-2.5 text-xs">
-                        <span className="truncate text-neutral-200">{photo.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removePhoto(photo.id)}
-                          className="text-red-300 hover:underline"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+          </div>
+        ) : (
+          <div className="space-y-6 rounded-2xl border border-white/15 bg-[#111111] p-6">
+            {/* STEP 1 */}
+            {step === 1 && (
+              <div className="space-y-6">
+                <div className="space-y-1">
+                  <h2 className="text-xl font-bold text-white">
+                    Plan Category &amp; Creative Direction
+                  </h2>
+                  <p className="text-sm text-neutral-300">
+                    Select Business or Cartoon—or enter a custom category—and define your video series details.
+                  </p>
                 </div>
-              )}
 
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-neutral-100">
-                  Suggested Image Usage Rules
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {PHOTO_RULE_PRESETS.map((preset) => {
-                    const active = photoUsageRule === preset;
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {PLAN_OPTIONS.map((option) => {
+                    const isSelected = selectedPlanId === option.id;
                     return (
                       <button
-                        key={preset}
+                        key={option.id}
                         type="button"
-                        onClick={() => setPhotoUsageRule(preset)}
-                        className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                          active
-                            ? "border-white bg-white text-black"
-                            : "border-white/20 bg-[#161616] text-neutral-200 hover:border-white/40"
+                        onClick={() => setSelectedPlanId(option.id)}
+                        className={`rounded-2xl border p-4 text-left transition-all ${
+                          isSelected
+                            ? "border-[#7C5CFF] bg-[#7C5CFF]/15 text-white"
+                            : "border-white/15 bg-[#161616] text-white hover:border-white/35"
                         }`}
                       >
-                        {preset}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-bold">{option.label}</span>
+                          <span
+                            className="rounded-full px-2.5 py-0.5 text-[10px] font-bold"
+                            style={{
+                              backgroundColor: option.accentBg,
+                              color: option.accentText,
+                            }}
+                          >
+                            {option.style}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-neutral-300">
+                          {option.description}
+                        </p>
                       </button>
                     );
                   })}
                 </div>
 
-                <label className="block pt-1 text-sm font-medium text-neutral-100">
-                  Image Usage Instructions
-                </label>
-                <textarea
-                  rows={3}
-                  value={photoUsageRule}
-                  onChange={(e) => setPhotoUsageRule(e.target.value)}
-                  placeholder="Describe how uploaded photos should be applied across generated videos..."
-                  className={inputClass}
-                />
-              </div>
-            </div>
-          )}
+                {selectedPlanId === "custom" && (
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-neutral-100">
+                      Custom Plan Category
+                    </label>
+                    <input
+                      type="text"
+                      value={customCategoryName}
+                      onChange={(e) => setCustomCategoryName(e.target.value)}
+                      placeholder="Enter custom category name"
+                      className={inputClass}
+                    />
+                  </div>
+                )}
 
-          {/* STEP 3 */}
-          {step === 3 && (
-            <div className="space-y-6">
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-white">
-                  Detailed Script &amp; Reference Video Links
-                </h2>
-                <p className="text-sm text-neutral-300">
-                  Provide a structured script or scene plan for accurate video generation, plus optional reference video URLs.
-                </p>
-              </div>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-neutral-100">
+                      Series / Workflow Name
+                    </label>
+                    <input
+                      type="text"
+                      value={seriesName}
+                      onChange={(e) => setSeriesName(e.target.value)}
+                      placeholder="e.g., Weekly Product Spotlight"
+                      className={inputClass}
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-100">
-                  Detailed Script / Scene-by-Scene Content Plan
-                </label>
-                <textarea
-                  rows={7}
-                  value={scriptOutline}
-                  onChange={(e) => setScriptOutline(e.target.value)}
-                  placeholder="Outline the opening hook, scene progression, narration/voiceover lines, on-screen visuals, and closing takeaway..."
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-100">
-                  Hook &amp; Call to Action (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={hookAndCta}
-                  onChange={(e) => setHookAndCta(e.target.value)}
-                  placeholder="e.g., Open with the core problem statement; close with a prompt to comment or visit the link"
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-100">
-                  Reference Video URLs (Optional — one link per line)
-                </label>
-                <textarea
-                  rows={3}
-                  value={referenceLinksText}
-                  onChange={(e) => setReferenceLinksText(e.target.value)}
-                  placeholder={"https://www.youtube.com/watch?v=example\nhttps://www.instagram.com/reel/example"}
-                  className={inputClass}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* STEP 4 */}
-          {step === 4 && (
-            <div className="space-y-6">
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-white">
-                  Posting Schedule, Target Accounts &amp; Specifications
-                </h2>
-                <p className="text-sm text-neutral-300">
-                  Content generates 30 minutes before your scheduled time. Select target accounts, framing, and duration (15s or 30s).
-                </p>
-              </div>
-
-              {/* Target Social Accounts Picker */}
-              <div className="space-y-2 rounded-xl border border-white/15 bg-[#161616] p-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold text-white">
-                    Target Accounts (Post only to selected accounts)
-                  </label>
-                  <Link
-                    href="/accounts"
-                    className="text-xs font-medium text-neutral-300 underline hover:text-white"
-                  >
-                    Manage Accounts
-                  </Link>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-neutral-100">
+                      Target Audience &amp; Tone
+                    </label>
+                    <input
+                      type="text"
+                      value={audienceAndTone}
+                      onChange={(e) => setAudienceAndTone(e.target.value)}
+                      placeholder="e.g., Small business owners; clear and friendly"
+                      className={inputClass}
+                    />
+                  </div>
                 </div>
 
-                {connectedAccounts.length === 0 ? (
-                  <p className="text-xs text-neutral-400">
-                    No active connected accounts found yet. Connect accounts on the{" "}
-                    <Link href="/accounts" className="text-white underline">
-                      Accounts page
-                    </Link>{" "}
-                    to target specific channels.
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Core Topic &amp; Video Objective
+                  </label>
+                  <input
+                    type="text"
+                    value={coreConcept}
+                    onChange={(e) => setCoreConcept(e.target.value)}
+                    placeholder="e.g., Demonstrate practical workflows in short vertical videos"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Additional Creative Requirements (Optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={creativeNotes}
+                    onChange={(e) => setCreativeNotes(e.target.value)}
+                    placeholder="Specify visual palette, character traits, or styling guidelines..."
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2 */}
+            {step === 2 && (
+              <div className="space-y-6">
+                <div className="space-y-1">
+                  <h2 className="text-xl font-bold text-white">
+                    Reference Photos &amp; Image Usage Rule
+                  </h2>
+                  <p className="text-sm text-neutral-300">
+                    Upload reference or product photos and specify whether the system should reuse the same image or vary images across videos.
                   </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {connectedAccounts.map((acct) => {
-                      const checked = selectedAccountIds.includes(acct.id);
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Upload Reference Images
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handlePhotoChange}
+                    className="block w-full rounded-xl border border-white/20 bg-[#141414] p-3 text-sm text-neutral-200 file:mr-4 file:rounded-lg file:border-0 file:bg-[#7C5CFF] file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white"
+                  />
+                </div>
+
+                {photos.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {photos.map((photo) => (
+                      <div
+                        key={photo.id}
+                        className="overflow-hidden rounded-xl border border-white/15 bg-[#161616]"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo.previewUrl}
+                          alt={photo.name}
+                          className="h-28 w-full object-cover"
+                        />
+                        <div className="flex items-center justify-between gap-2 p-2.5 text-xs">
+                          <span className="truncate text-neutral-200">{photo.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(photo.id)}
+                            className="text-red-300 hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Suggested Image Usage Rules
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {PHOTO_RULE_PRESETS.map((preset) => {
+                      const active = photoUsageRule === preset;
                       return (
                         <button
-                          key={acct.id}
+                          key={preset}
                           type="button"
-                          onClick={() => toggleAccountSelection(acct.id)}
-                          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                            checked
-                              ? "border-white bg-white text-black"
-                              : "border-white/20 bg-[#111111] text-neutral-300 hover:border-white/40"
+                          onClick={() => setPhotoUsageRule(preset)}
+                          className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                            active
+                              ? "border-[#7C5CFF] bg-[#7C5CFF] text-white"
+                              : "border-white/20 bg-[#161616] text-neutral-200 hover:border-white/40"
                           }`}
                         >
-                          {acct.platform}: {acct.display_name || acct.account_handle}
+                          {preset}
                         </button>
                       );
                     })}
                   </div>
-                )}
-              </div>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-100">
-                  Publishing Days
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {DAYS.map((day) => {
-                    const active = selectedDays.includes(day.value);
-                    return (
-                      <button
-                        key={day.value}
-                        type="button"
-                        onClick={() => toggleDay(day.value)}
-                        className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors ${
-                          active
-                            ? "border-white bg-white text-black"
-                            : "border-white/20 bg-[#161616] text-neutral-200 hover:border-white/40"
-                        }`}
-                      >
-                        {day.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-neutral-100">
-                    Scheduled Time
+                  <label className="block pt-1 text-sm font-medium text-neutral-100">
+                    Image Usage Instructions
                   </label>
-                  <input
-                    type="time"
-                    value={postTime}
-                    onChange={(e) => setPostTime(e.target.value)}
+                  <textarea
+                    rows={3}
+                    value={photoUsageRule}
+                    onChange={(e) => setPhotoUsageRule(e.target.value)}
+                    placeholder="Describe how uploaded photos should be applied across generated videos..."
                     className={inputClass}
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-neutral-100">
-                    Aspect Ratio
-                  </label>
-                  <select
-                    value={aspectRatio}
-                    onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
-                    className={inputClass}
-                  >
-                    <option value="9:16">9:16 (Vertical Reels / Shorts)</option>
-                    <option value="16:9">16:9 (Widescreen / YouTube)</option>
-                    <option value="1:1">1:1 (Square)</option>
-                    <option value="4:5">4:5 (Portrait Feed)</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-neutral-100">
-                    Video Duration
-                  </label>
-                  <select
-                    value={durationSeconds}
-                    onChange={(e) =>
-                      setDurationSeconds(clampDuration(Number(e.target.value)))
-                    }
-                    className={inputClass}
-                  >
-                    <option value={15}>15s</option>
-                    <option value={30}>30s (Max)</option>
-                  </select>
-                </div>
               </div>
-
-              {/* Publish Automatically vs Ask Approval Toggle */}
-              <div className="space-y-3 rounded-xl border border-white/15 bg-[#161616] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="text-sm font-semibold text-white">
-                      {autoPublish
-                        ? "Publish video automatically"
-                        : "Ask approval before posting"}
-                    </div>
-                    <p className="text-xs text-neutral-300">
-                      {autoPublish
-                        ? "Clips generate 30 mins ahead, combine, and publish automatically at scheduled slot times."
-                        : "Clips generate 30 mins ahead and wait for your review/clip edits before combining & posting."}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={autoPublish}
-                    onClick={() => setAutoPublish((prev) => !prev)}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
-                      autoPublish
-                        ? "border-white bg-white"
-                        : "border-white/30 bg-[#262626]"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 transform rounded-full transition-transform ${
-                        autoPublish
-                          ? "translate-x-7 bg-black"
-                          : "translate-x-1 bg-white"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setAutoPublish(true)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      autoPublish
-                        ? "border-white bg-white text-black"
-                        : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/35"
-                    }`}
-                  >
-                    Publish video automatically
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAutoPublish(false)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      !autoPublish
-                        ? "border-white bg-white text-black"
-                        : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/35"
-                    }`}
-                  >
-                    Ask approval before posting
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-1">
-                <label className="flex items-center gap-2.5 text-sm text-neutral-200">
-                  <input
-                    type="checkbox"
-                    checked={runFirstNow}
-                    onChange={(e) => setRunFirstNow(e.target.checked)}
-                    className="h-4 w-4 accent-white"
-                  />
-                  <span>Run initial video generation immediately (1 credit)</span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* Footer Controls */}
-          <div className="flex items-center justify-between border-t border-white/15 pt-5">
-            <button
-              type="button"
-              disabled={step === 1 || submitting}
-              onClick={() =>
-                setStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2 | 3 | 4) : 1))
-              }
-              className="rounded-xl border border-white/20 bg-[#161616] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:border-white/40 disabled:opacity-40"
-            >
-              Back
-            </button>
-
-            {step < 4 ? (
-              <button
-                type="button"
-                onClick={() => setStep((prev) => ((prev + 1) as 1 | 2 | 3 | 4))}
-                className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-neutral-200"
-              >
-                Next
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={handleCreateAutomaticWorkflow}
-                className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
-              >
-                {submitting ? statusMessage || "Creating..." : "Create Workflow"}
-              </button>
             )}
-          </div>
-        </div>
-      )}
 
-      {/* Generated Content, Clip-by-Clip Editor, Single-Clip Regeneration & Final Stitch/Publish */}
-      {recentJobs.length > 0 && (
-        <div className="space-y-4 rounded-2xl border border-white/15 bg-[#111111] p-6">
-          <div className="space-y-1">
-            <h2 className="text-xl font-semibold text-white">
-              Generated Content &amp; Clip Studio
-            </h2>
-            <p className="text-xs text-neutral-300">
-              View individual clips separately, edit and regenerate a single clip (1 credit), or combine all clips and publish to your selected accounts.
-            </p>
-          </div>
+            {/* STEP 3 */}
+            {step === 3 && (
+              <div className="space-y-6">
+                <div className="space-y-1">
+                  <h2 className="text-xl font-bold text-white">
+                    Detailed Script &amp; Reference Video Links
+                  </h2>
+                  <p className="text-sm text-neutral-300">
+                    Provide a structured script or scene plan for accurate video generation, plus optional reference video URLs.
+                  </p>
+                </div>
 
-          <div className="space-y-5">
-            {recentJobs.map((job) => {
-              const scenes = Array.isArray(job.storyboard_json?.scenes)
-                ? job.storyboard_json!.scenes!
-                : [];
-              return (
-                <div
-                  key={job.id}
-                  className="space-y-4 rounded-xl border border-white/15 bg-[#161616] p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold text-white">
-                        {job.storyboard_json?.hook || `Run ${job.run_date}`}
-                      </div>
-                      <div className="text-xs text-neutral-400">
-                        Status: <strong className="text-neutral-200">{job.status}</strong> ·
-                        Approval:{" "}
-                        <strong className="text-neutral-200">{job.approval_status}</strong> ·
-                        Credits charged: {job.credits_charged}
-                        {job.credits_refunded ? " (Refunded)" : ""}
-                      </div>
-                    </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Detailed Script / Scene-by-Scene Content Plan
+                  </label>
+                  <textarea
+                    rows={7}
+                    value={scriptOutline}
+                    onChange={(e) => setScriptOutline(e.target.value)}
+                    placeholder="Outline the opening hook, scene progression, narration/voiceover lines, on-screen visuals, and closing takeaway..."
+                    className={inputClass}
+                  />
+                </div>
 
-                    {job.status === "completed" && (
-                      <button
-                        type="button"
-                        disabled={stitchingJobId === job.id}
-                        onClick={() => handleCombineClipsAndPublish(job)}
-                        className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
-                      >
-                        {stitchingJobId === job.id
-                          ? "Combining & Publishing..."
-                          : "Combine Clips & Publish"}
-                      </button>
-                    )}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Hook &amp; Call to Action (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={hookAndCta}
+                    onChange={(e) => setHookAndCta(e.target.value)}
+                    placeholder="e.g., Open with the core problem statement; close with a prompt to comment or visit the link"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Reference Video URLs (Optional — one link per line)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={referenceLinksText}
+                    onChange={(e) => setReferenceLinksText(e.target.value)}
+                    placeholder={"https://www.youtube.com/watch?v=example\nhttps://www.instagram.com/reel/example"}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4 */}
+            {step === 4 && (
+              <div className="space-y-6">
+                <div className="space-y-1">
+                  <h2 className="text-xl font-bold text-white">
+                    Posting Schedule, Target Accounts &amp; Specifications
+                  </h2>
+                  <p className="text-sm text-neutral-300">
+                    Content generates 30 minutes before your scheduled time. Select target accounts, framing, and duration (15s or 30s).
+                  </p>
+                </div>
+
+                <div className="space-y-2 rounded-xl border border-white/15 bg-[#161616] p-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-white">
+                      Target Accounts (Post only to selected accounts)
+                    </label>
+                    <Link
+                      href="/accounts"
+                      className="text-xs font-medium text-[#C4B5FD] underline hover:text-white"
+                    >
+                      Manage Accounts
+                    </Link>
                   </div>
 
-                  {job.storyboard_json?.caption && (
-                    <p className="rounded-lg border border-white/10 bg-[#111111] p-3 text-xs text-neutral-200">
-                      {job.storyboard_json.caption}
+                  {connectedAccounts.length === 0 ? (
+                    <p className="text-xs text-neutral-400">
+                      No active connected accounts found yet. Connect accounts on the{" "}
+                      <Link href="/accounts" className="text-white underline">
+                        Accounts page
+                      </Link>{" "}
+                      to target specific channels.
                     </p>
-                  )}
-
-                  {scenes.length > 0 && (
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      {scenes.map((scene, idx) => {
-                        const isEditing =
-                          editingJobId === job.id && editingSceneIndex === idx;
-                        const clipKey = `${job.id}-${idx}`;
+                  ) : (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {connectedAccounts.map((acct) => {
+                        const checked = selectedAccountIds.includes(acct.id);
                         return (
-                          <div
-                            key={idx}
-                            className="space-y-2 rounded-xl border border-white/15 bg-[#111111] p-3.5 text-xs"
+                          <button
+                            key={acct.id}
+                            type="button"
+                            onClick={() => toggleAccountSelection(acct.id)}
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                              checked
+                                ? "border-[#7C5CFF] bg-[#7C5CFF] text-white"
+                                : "border-white/20 bg-[#111111] text-neutral-300 hover:border-white/40"
+                            }`}
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-white">
-                                Clip {scene.sceneNumber ?? idx + 1} (
-                                {scene.durationSeconds ?? 10}s)
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  isEditing
-                                    ? setEditingJobId(null)
-                                    : startEditingClip(job.id, idx, scene)
-                                }
-                                className="text-neutral-300 underline hover:text-white"
-                              >
-                                {isEditing ? "Cancel" : "Edit / Regenerate Clip"}
-                              </button>
-                            </div>
-
-                            {isEditing ? (
-                              <div className="space-y-2 pt-1">
-                                <textarea
-                                  rows={2}
-                                  value={editVisualPrompt}
-                                  onChange={(e) => setEditVisualPrompt(e.target.value)}
-                                  placeholder="Visual prompt for this clip..."
-                                  className={inputClass}
-                                />
-                                <textarea
-                                  rows={2}
-                                  value={editNarration}
-                                  onChange={(e) => setEditNarration(e.target.value)}
-                                  placeholder="Narration for this clip..."
-                                  className={inputClass}
-                                />
-                                <button
-                                  type="button"
-                                  disabled={regeneratingClipKey === clipKey}
-                                  onClick={() =>
-                                    handleRegenerateSingleClip(
-                                      job.id,
-                                      idx,
-                                      scene.durationSeconds || 10
-                                    )
-                                  }
-                                  className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black hover:bg-neutral-200 disabled:opacity-50"
-                                >
-                                  {regeneratingClipKey === clipKey
-                                    ? "Regenerating Clip..."
-                                    : "Regenerate Only This Clip (1 Credit)"}
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="text-neutral-300">
-                                  <strong className="text-neutral-100">Visual:</strong>{" "}
-                                  {scene.visualPrompt}
-                                </div>
-                                <div className="text-neutral-300">
-                                  <strong className="text-neutral-100">Narration:</strong>{" "}
-                                  {scene.narration}
-                                </div>
-                              </>
-                            )}
-                          </div>
+                            {acct.platform}: {acct.display_name || acct.account_handle}
+                          </button>
                         );
                       })}
                     </div>
                   )}
                 </div>
-              );
-            })}
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-100">
+                    Publishing Days
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS.map((day) => {
+                      const active = selectedDays.includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => toggleDay(day.value)}
+                          className={`rounded-xl border px-3.5 py-2 text-xs font-bold transition-colors ${
+                            active
+                              ? "border-[#7C5CFF] bg-[#7C5CFF] text-white"
+                              : "border-white/20 bg-[#161616] text-neutral-200 hover:border-white/40"
+                          }`}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-neutral-100">
+                      Scheduled Time
+                    </label>
+                    <input
+                      type="time"
+                      value={postTime}
+                      onChange={(e) => setPostTime(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-neutral-100">
+                      Aspect Ratio
+                    </label>
+                    <select
+                      value={aspectRatio}
+                      onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
+                      className={inputClass}
+                    >
+                      <option value="9:16">9:16 (Vertical Reels / Shorts)</option>
+                      <option value="16:9">16:9 (Widescreen / YouTube)</option>
+                      <option value="1:1">1:1 (Square)</option>
+                      <option value="4:5">4:5 (Portrait Feed)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-neutral-100">
+                      Video Duration
+                    </label>
+                    <select
+                      value={durationSeconds}
+                      onChange={(e) =>
+                        setDurationSeconds(clampDuration(Number(e.target.value)))
+                      }
+                      className={inputClass}
+                    >
+                      <option value={15}>15s</option>
+                      <option value={30}>30s (Max)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-white/15 bg-[#161616] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="text-sm font-semibold text-white">
+                        {autoPublish
+                          ? "Publish video automatically"
+                          : "Ask approval before posting"}
+                      </div>
+                      <p className="text-xs text-neutral-300">
+                        {autoPublish
+                          ? "Clips generate 30 mins ahead, combine, and publish automatically at scheduled slot times."
+                          : "Clips generate 30 mins ahead and wait for your review/clip edits before combining & posting."}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoPublish}
+                      onClick={() => setAutoPublish((prev) => !prev)}
+                      className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
+                        autoPublish
+                          ? "border-[#7C5CFF] bg-[#7C5CFF]"
+                          : "border-white/30 bg-[#262626]"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          autoPublish ? "translate-x-7" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setAutoPublish(true)}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                        autoPublish
+                          ? "border-[#7C5CFF] bg-[#7C5CFF] text-white"
+                          : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/35"
+                      }`}
+                    >
+                      Publish video automatically
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAutoPublish(false)}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                        !autoPublish
+                          ? "border-[#7C5CFF] bg-[#7C5CFF] text-white"
+                          : "border-white/15 bg-[#111111] text-neutral-300 hover:border-white/35"
+                      }`}
+                    >
+                      Ask approval before posting
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  <label className="flex items-center gap-2.5 text-sm text-neutral-200">
+                    <input
+                      type="checkbox"
+                      checked={runFirstNow}
+                      onChange={(e) => setRunFirstNow(e.target.checked)}
+                      className="h-4 w-4 accent-[#7C5CFF]"
+                    />
+                    <span>Run initial video generation immediately (1 credit)</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Footer Controls */}
+            <div className="flex items-center justify-between border-t border-white/15 pt-5">
+              <button
+                type="button"
+                disabled={step === 1 || submitting}
+                onClick={() =>
+                  setStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2 | 3 | 4) : 1))
+                }
+                className="rounded-xl border border-white/20 bg-[#161616] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:border-white/40 disabled:opacity-40"
+              >
+                Back
+              </button>
+
+              {step < 4 ? (
+                <button
+                  type="button"
+                  onClick={() => setStep((prev) => ((prev + 1) as 1 | 2 | 3 | 4))}
+                  className="rounded-xl bg-[#7C5CFF] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#6A48F5]"
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleCreateAutomaticWorkflow}
+                  className="rounded-xl bg-[#7C5CFF] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#6A48F5] disabled:opacity-50"
+                >
+                  {submitting ? statusMessage || "Creating..." : "Create Workflow"}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {/* Generated Content, Clip-by-Clip Editor, Single-Clip Regeneration & Final Stitch/Publish */}
+        {recentJobs.length > 0 && (
+          <div className="space-y-4 rounded-2xl border border-white/15 bg-[#111111] p-6">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold text-white">
+                Generated Content &amp; Clip Studio
+              </h2>
+              <p className="text-xs text-neutral-300">
+                View individual clips separately, edit and regenerate a single clip (1 credit), or combine all clips and publish to your selected accounts.
+              </p>
+            </div>
+
+            <div className="space-y-5">
+              {recentJobs.map((job) => {
+                const scenes = Array.isArray(job.storyboard_json?.scenes)
+                  ? job.storyboard_json!.scenes!
+                  : [];
+                return (
+                  <div
+                    key={job.id}
+                    className="space-y-4 rounded-xl border border-white/15 bg-[#161616] p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-semibold text-white">
+                          {job.storyboard_json?.hook || `Run ${job.run_date}`}
+                        </div>
+                        <div className="text-xs text-neutral-400">
+                          Status: <strong className="text-neutral-200">{job.status}</strong> ·
+                          Approval:{" "}
+                          <strong className="text-neutral-200">{job.approval_status}</strong> ·
+                          Credits charged: {job.credits_charged}
+                          {job.credits_refunded ? " (Refunded)" : ""}
+                        </div>
+                      </div>
+
+                      {job.status === "completed" && (
+                        <button
+                          type="button"
+                          disabled={stitchingJobId === job.id}
+                          onClick={() => handleCombineClipsAndPublish(job)}
+                          className="rounded-xl bg-[#7C5CFF] px-4 py-2 text-xs font-bold text-white hover:bg-[#6A48F5] disabled:opacity-50"
+                        >
+                          {stitchingJobId === job.id
+                            ? "Combining & Publishing..."
+                            : "Combine Clips & Publish"}
+                        </button>
+                      )}
+                    </div>
+
+                    {job.storyboard_json?.caption && (
+                      <p className="rounded-lg border border-white/10 bg-[#111111] p-3 text-xs text-neutral-200">
+                        {job.storyboard_json.caption}
+                      </p>
+                    )}
+
+                    {scenes.length > 0 && (
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        {scenes.map((scene, idx) => {
+                          const isEditing =
+                            editingJobId === job.id && editingSceneIndex === idx;
+                          const clipKey = `${job.id}-${idx}`;
+                          return (
+                            <div
+                              key={idx}
+                              className="space-y-2 rounded-xl border border-white/15 bg-[#111111] p-3.5 text-xs"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-white">
+                                  Clip {scene.sceneNumber ?? idx + 1} (
+                                  {scene.durationSeconds ?? 10}s)
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    isEditing
+                                      ? setEditingJobId(null)
+                                      : startEditingClip(job.id, idx, scene)
+                                  }
+                                  className="text-neutral-300 underline hover:text-white"
+                                >
+                                  {isEditing ? "Cancel" : "Edit / Regenerate Clip"}
+                                </button>
+                              </div>
+
+                              {isEditing ? (
+                                <div className="space-y-2 pt-1">
+                                  <textarea
+                                    rows={2}
+                                    value={editVisualPrompt}
+                                    onChange={(e) => setEditVisualPrompt(e.target.value)}
+                                    placeholder="Visual prompt for this clip..."
+                                    className={inputClass}
+                                  />
+                                  <textarea
+                                    rows={2}
+                                    value={editNarration}
+                                    onChange={(e) => setEditNarration(e.target.value)}
+                                    placeholder="Narration for this clip..."
+                                    className={inputClass}
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={regeneratingClipKey === clipKey}
+                                    onClick={() =>
+                                      handleRegenerateSingleClip(
+                                        job.id,
+                                        idx,
+                                        scene.durationSeconds || 10
+                                      )
+                                    }
+                                    className="rounded-lg bg-[#7C5CFF] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#6A48F5] disabled:opacity-50"
+                                  >
+                                    {regeneratingClipKey === clipKey
+                                      ? "Regenerating Clip..."
+                                      : "Regenerate Only This Clip (1 Credit)"}
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-neutral-300">
+                                    <strong className="text-neutral-100">Visual:</strong>{" "}
+                                    {scene.visualPrompt}
+                                  </div>
+                                  <div className="text-neutral-300">
+                                    <strong className="text-neutral-100">Narration:</strong>{" "}
+                                    {scene.narration}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </AppShell>
   );
 }
-
-
-
-
