@@ -3,12 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { DEFAULT_HERO_CONTENT, type HeroCmsContent, type StatCmsItem } from "@/lib/cms-defaults";
+import {
+  DEFAULT_HERO_CONTENT,
+  type HeroCmsContent,
+  type StatCmsItem,
+} from "@/lib/cms-defaults";
 
 type AudienceKey = "creators" | "brands" | "agencies" | "marketers";
 
 const HERO_SAMPLE_VIDEO =
-  "https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-network-connections-27611-large.mp4";
+  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
 const HERO_SAMPLE_POSTER =
   "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1400&q=80";
 
@@ -19,7 +23,7 @@ const SHOWCASE_CARDS = [
     title: "Product & Brand Spotlights",
     desc: "Turn ideas or reference visuals into polished commercial clips with rich lighting and motion.",
     mediaType: "video" as const,
-    src: "https://assets.mixkit.co/videos/preview/mixkit-ink-swirling-in-water-in-slow-motion-218-large.mp4",
+    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
     poster:
       "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1000&q=80",
     fallback: "from-[#7C5CFF] via-[#9333EA] to-[#EC4899]",
@@ -31,7 +35,7 @@ const SHOWCASE_CARDS = [
     title: "Multi-Scene Vertical Storytelling",
     desc: "Craft 15s and 30s reels with cohesive scenes, camera rhythm, and captions ready for mobile feeds.",
     mediaType: "video" as const,
-    src: "https://assets.mixkit.co/videos/preview/mixkit-waves-in-the-water-1164-large.mp4",
+    src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoy.mp4",
     poster:
       "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=1000&q=80",
     fallback: "from-[#0284C7] via-[#4F46E5] to-[#9333EA]",
@@ -154,7 +158,7 @@ function MediaBox({
         muted
         loop
         playsInline
-        preload="metadata"
+        preload="auto"
         onError={() => setFailed(true)}
         className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 ${className}`}
       />
@@ -182,8 +186,17 @@ export default function LandingPage({
   const supabase = createClient();
   const [audience, setAudience] = useState<AudienceKey>("creators");
   const [heroMedia, setHeroMedia] = useState({
-    videoUrl: hero?.heroVideoUrl || DEFAULT_HERO_CONTENT.heroVideoUrl || HERO_SAMPLE_VIDEO,
-    posterUrl: hero?.heroPosterUrl || DEFAULT_HERO_CONTENT.heroPosterUrl || HERO_SAMPLE_POSTER,
+    videoUrl:
+      hero?.heroVideoUrl && !hero.heroVideoUrl.includes("mixkit.co")
+        ? hero.heroVideoUrl
+        : DEFAULT_HERO_CONTENT.heroVideoUrl &&
+          !DEFAULT_HERO_CONTENT.heroVideoUrl.includes("mixkit.co")
+        ? DEFAULT_HERO_CONTENT.heroVideoUrl
+        : HERO_SAMPLE_VIDEO,
+    posterUrl:
+      hero?.heroPosterUrl ||
+      DEFAULT_HERO_CONTENT.heroPosterUrl ||
+      HERO_SAMPLE_POSTER,
   });
 
   useEffect(() => {
@@ -198,10 +211,12 @@ export default function LandingPage({
 
         if (active && data?.content && typeof data.content === "object") {
           const c = data.content as Partial<HeroCmsContent>;
-          setHeroMedia((prev) => ({
-            videoUrl: c.heroVideoUrl || prev.videoUrl || HERO_SAMPLE_VIDEO,
-            posterUrl: c.heroPosterUrl || prev.posterUrl || HERO_SAMPLE_POSTER,
-          }));
+          if (c.heroVideoUrl && !c.heroVideoUrl.includes("mixkit.co")) {
+            setHeroMedia((prev) => ({
+              videoUrl: c.heroVideoUrl || prev.videoUrl,
+              posterUrl: c.heroPosterUrl || prev.posterUrl,
+            }));
+          }
         }
       } catch {
         // Use default sample media
@@ -220,11 +235,16 @@ export default function LandingPage({
       {/* TOP NAVIGATION */}
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#08080C]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-10">
-          <Link href="/" className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="flex items-center gap-3"
+            style={{ color: "#FFFFFF" }}
+          >
             <span
               className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black text-white shadow-md"
               style={{
                 background: "linear-gradient(135deg, #7C5CFF 0%, #EC4899 100%)",
+                color: "#FFFFFF",
               }}
             >
               P
@@ -252,13 +272,15 @@ export default function LandingPage({
           <div className="flex items-center gap-2.5">
             <Link
               href="/login"
-              className="rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-white/15"
+              className="rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-extrabold transition hover:bg-white/20"
+              style={{ color: "#FFFFFF" }}
             >
               Sign in
             </Link>
             <Link
               href="/login?mode=signup"
-              className="rounded-xl bg-[#7C5CFF] px-4 py-2.5 text-sm font-extrabold text-white shadow-lg transition hover:bg-[#6A48F5]"
+              className="rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-lg transition hover:opacity-95"
+              style={{ background: "#7C5CFF", color: "#FFFFFF" }}
             >
               Get started
             </Link>
@@ -299,14 +321,16 @@ export default function LandingPage({
             <div className="flex flex-wrap items-center gap-3.5 pt-1">
               <Link
                 href="/login?mode=signup"
-                className="inline-flex items-center gap-2 rounded-2xl bg-[#7C5CFF] px-6 py-3.5 text-sm font-black text-white shadow-xl transition hover:bg-[#6A48F5] sm:text-base"
+                className="inline-flex items-center gap-2 rounded-2xl px-6 py-3.5 text-sm font-black shadow-xl transition hover:opacity-95 sm:text-base"
+                style={{ background: "#7C5CFF", color: "#FFFFFF" }}
               >
                 <span>Start creating free</span>
                 <span>→</span>
               </Link>
               <a
                 href="#showcase"
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-6 py-3.5 text-sm font-black text-neutral-950 shadow-lg transition hover:bg-neutral-200 sm:text-base"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/25 px-6 py-3.5 text-sm font-black shadow-lg transition hover:opacity-90 sm:text-base"
+                style={{ background: "#FFFFFF", color: "#09090B" }}
               >
                 <span>Explore AI showcase</span>
               </a>
@@ -354,7 +378,8 @@ export default function LandingPage({
             </div>
             <Link
               href="/login?mode=signup"
-              className="rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-extrabold text-white transition hover:bg-white/15"
+              className="rounded-xl border border-white/25 bg-white/10 px-4 py-2 text-sm font-extrabold transition hover:bg-white/20"
+              style={{ color: "#FFFFFF" }}
             >
               Try Create AI →
             </Link>
@@ -410,7 +435,10 @@ export default function LandingPage({
               </p>
               <h2
                 className="font-black tracking-tight text-white"
-                style={{ fontSize: "clamp(1.85rem, 3.5vw, 2.9rem)", lineHeight: 1.05 }}
+                style={{
+                  fontSize: "clamp(1.85rem, 3.5vw, 2.9rem)",
+                  lineHeight: 1.05,
+                }}
               >
                 RUN AUTOMATED WORKFLOWS OR PUBLISH YOUR OWN MEDIA
               </h2>
@@ -444,7 +472,8 @@ export default function LandingPage({
               <div className="pt-2">
                 <Link
                   href="/login?mode=signup"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-neutral-950 transition hover:bg-neutral-200"
+                  className="inline-flex items-center gap-2 rounded-2xl px-6 py-3.5 text-sm font-black shadow-lg transition hover:opacity-90"
+                  style={{ background: "#FFFFFF", color: "#09090B" }}
                 >
                   <span>Launch your workflow</span>
                   <span>→</span>
@@ -593,4 +622,3 @@ export default function LandingPage({
     </div>
   );
 }
-
