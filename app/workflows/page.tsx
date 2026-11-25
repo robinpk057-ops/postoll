@@ -297,7 +297,7 @@ export default function WorkflowsPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10 md:px-10">
+      <div className="mx-auto w-full w-full px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         {/* COLORFUL WORKFLOWS STUDIO HEADER */}
         <div
           className="mb-8 rounded-3xl border p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8 flex flex-col gap-5"

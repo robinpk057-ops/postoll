@@ -153,35 +153,35 @@ export default function Header({
   }
 
   return (
-    <header className="sticky top-0 z-40 flex min-h-[68px] items-center justify-between gap-3 border-b border-[var(--border)] bg-[rgba(9,9,11,0.9)] px-4 backdrop-blur-xl sm:px-6">
+    <header className="sticky top-0 z-40 flex min-h-[76px] items-center justify-between gap-3 border-b border-[var(--border)] bg-[rgba(9,9,11,0.92)] px-4 backdrop-blur-xl sm:px-6 lg:px-8">
       <div className="flex min-w-0 items-center gap-3">
         {onOpenMobileMenu && (
           <button
             type="button"
             onClick={onOpenMobileMenu}
             aria-label="Open navigation menu"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#7C5CFF]/40 bg-[#7C5CFF]/15 text-base font-bold text-[#C4B5FD] transition hover:bg-[#7C5CFF]/25 md:hidden"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#7C5CFF]/40 bg-[#7C5CFF]/15 text-lg font-bold text-[#C4B5FD] transition hover:bg-[#7C5CFF]/25 md:hidden"
           >
             ☰
           </button>
         )}
 
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold tracking-tight text-white sm:text-base">
+          <p className="truncate text-base font-extrabold tracking-tight text-white sm:text-xl">
             {getGreeting()}
             {profile?.fullName ? `, ${profile.fullName.split(" ")[0]}` : ""}
           </p>
-          <p className="hidden text-xs text-[var(--muted-foreground)] sm:block">
+          <p className="hidden text-xs font-medium text-[var(--muted-foreground)] sm:block">
             AI Creative Studio · Workflows, Reels &amp; Publishing
           </p>
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+      <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
         {profile && (
           <Link
             href="/settings"
-            className="hidden items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-3.5 py-1.5 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/25 md:inline-flex"
+            className="hidden items-center gap-2 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-sm font-extrabold text-emerald-300 transition hover:bg-emerald-500/25 md:inline-flex"
           >
             <span>✦</span>
             <span>{profile.credits} Credits</span>
@@ -190,7 +190,7 @@ export default function Header({
 
         <Link
           href="/create"
-          className="inline-flex items-center gap-1.5 rounded-full bg-[#7C5CFF] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#6A48F5]"
+          className="inline-flex items-center gap-1.5 rounded-full bg-[#7C5CFF] px-5 py-2.5 text-sm font-extrabold text-white shadow-md transition hover:bg-[#6A48F5]"
         >
           <span>+ Create</span>
         </Link>
@@ -198,7 +198,7 @@ export default function Header({
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-base transition hover:border-[var(--border-hover)] hover:bg-[var(--surface-hover)]"
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-lg transition hover:border-[var(--border-hover)] hover:bg-[var(--surface-hover)]"
           aria-label="Toggle theme"
           title="Toggle theme"
         >
@@ -209,12 +209,12 @@ export default function Header({
           <button
             type="button"
             onClick={() => setProfileOpen((open) => !open)}
-            className="flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 transition hover:border-[var(--border-hover)] hover:bg-[var(--surface-hover)]"
+            className="flex items-center gap-2.5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 transition hover:border-[var(--border-hover)] hover:bg-[var(--surface-hover)]"
             aria-label="Open profile menu"
             aria-expanded={profileOpen}
           >
             <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-xs font-black text-white shadow-sm"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-sm font-black text-white shadow-sm"
               style={{
                 background: "linear-gradient(135deg, #7C5CFF 0%, #EC4899 100%)",
               }}
@@ -223,10 +223,10 @@ export default function Header({
             </div>
 
             <div className="hidden text-left lg:block">
-              <div className="max-w-[140px] truncate text-xs font-bold text-white">
+              <div className="max-w-[155px] truncate text-sm font-bold text-white">
                 {profile?.fullName || "User"}
               </div>
-              <div className="max-w-[140px] truncate text-[11px] text-[var(--muted-foreground)]">
+              <div className="max-w-[155px] truncate text-xs text-[var(--muted-foreground)]">
                 {profile?.email || ""}
               </div>
             </div>
@@ -242,7 +242,7 @@ export default function Header({
           </button>
 
           {profileOpen && (
-            <div className="absolute right-0 top-13 z-50 w-[290px] overflow-hidden rounded-2xl border border-[var(--border)] bg-[#111113] shadow-2xl shadow-black/50">
+            <div className="absolute right-0 top-14 z-50 w-[290px] overflow-hidden rounded-2xl border border-[var(--border)] bg-[#111113] shadow-2xl shadow-black/50">
               <div className="border-b border-[var(--border)] p-4">
                 <div className="flex items-center gap-3">
                   <div

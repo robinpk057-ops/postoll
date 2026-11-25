@@ -13,14 +13,14 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   {
-    name: "Home",
+    name: "Home Studio",
     href: "/",
     icon: "⌂",
     activeBg: "rgba(124, 92, 255, 0.22)",
     iconColor: "#C4B5FD",
   },
   {
-    name: "Create",
+    name: "Create AI",
     href: "/create",
     icon: "✦",
     activeBg: "rgba(236, 72, 153, 0.22)",
@@ -34,7 +34,7 @@ const navItems: NavItem[] = [
     iconColor: "#7DD3FC",
   },
   {
-    name: "Auto Post",
+    name: "Auto Posting",
     href: "/automatic-posting",
     icon: "⟳",
     activeBg: "rgba(16, 185, 129, 0.22)",
@@ -66,24 +66,40 @@ export default function Sidebar({
   const pathname = usePathname();
 
   const railContent = (
-    <div className="flex h-full flex-col items-center justify-between py-4 px-2">
-      <div className="flex w-full flex-col items-center gap-5">
-        <Link
-          href="/"
-          onClick={onClose}
-          title="Postoll Studio"
-          className="flex h-11 w-11 items-center justify-center rounded-2xl text-lg font-black text-white shadow-lg transition hover:scale-105"
-          style={{
-            background: "linear-gradient(135deg, #7C5CFF 0%, #EC4899 100%)",
-          }}
-        >
-          P
-        </Link>
+    <div className="flex h-full flex-col justify-between p-4">
+      <div>
+        <div className="mb-6 flex items-center justify-between px-1">
+          <Link
+            href="/"
+            onClick={onClose}
+            className="flex items-center gap-3"
+          >
+            <span
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black text-white shadow-md"
+              style={{
+                background: "linear-gradient(135deg, #7C5CFF 0%, #EC4899 100%)",
+              }}
+            >
+              P
+            </span>
+            <span className="text-xl font-black tracking-tight text-white">
+              Postoll
+            </span>
+          </Link>
 
-        <nav
-          className="flex w-full flex-col items-center gap-2"
-          aria-label="Workspace navigation"
-        >
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close navigation menu"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 text-sm font-bold text-white md:hidden"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        <nav className="space-y-1.5" aria-label="Workspace navigation">
           {navItems.map((item) => {
             const isActive =
               item.href === "/"
@@ -96,24 +112,25 @@ export default function Sidebar({
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className="flex w-full flex-col items-center justify-center gap-1 rounded-2xl py-2.5 px-1 text-center transition"
+                className="flex items-center gap-3.5 rounded-2xl px-3.5 py-3 text-[15px] font-bold transition"
                 style={{
                   background: isActive ? item.activeBg : "transparent",
-                  color: isActive ? "#FFFFFF" : "var(--muted)",
+                  color: isActive ? "#FFFFFF" : "var(--foreground)",
                   border: isActive
-                    ? "1px solid rgba(255,255,255,0.16)"
+                    ? "1px solid rgba(124, 92, 255, 0.45)"
                     : "1px solid transparent",
                 }}
               >
                 <span
-                  className="text-lg font-bold leading-none"
-                  style={{ color: isActive ? "#FFFFFF" : item.iconColor }}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg font-bold"
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    color: item.iconColor,
+                  }}
                 >
                   {item.icon}
                 </span>
-                <span className="text-[11px] font-bold tracking-tight leading-tight">
-                  {item.name}
-                </span>
+                <span className="truncate">{item.name}</span>
               </Link>
             );
           })}
@@ -123,21 +140,21 @@ export default function Sidebar({
       <Link
         href="/settings"
         onClick={onClose}
-        title="Settings"
-        className="mt-6 flex w-full flex-col items-center justify-center gap-1 rounded-2xl py-2.5 text-center transition hover:bg-white/5"
-        style={{ color: "var(--muted)" }}
+        className="mt-6 flex items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-[15px] font-bold transition hover:bg-white/[0.07]"
+        style={{ color: "var(--foreground)" }}
       >
-        <span className="text-base leading-none">⚙</span>
-        <span className="text-[11px] font-semibold">Settings</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-base">
+          ⚙
+        </span>
+        <span className="truncate">Settings</span>
       </Link>
     </div>
   );
 
   return (
     <>
-      {/* Desktop & Tablet Compact Vertical Icon Rail (matching Leonardo rail width) */}
       <aside
-        className="hidden w-[84px] shrink-0 border-r md:block"
+        className="hidden w-56 shrink-0 border-r md:block"
         style={{
           background: "#0B0B0F",
           borderColor: "var(--border)",
@@ -147,7 +164,6 @@ export default function Sidebar({
         {railContent}
       </aside>
 
-      {/* Mobile Drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden">
           <button
@@ -157,62 +173,14 @@ export default function Sidebar({
             className="fixed inset-0 bg-black/70 backdrop-blur-xs"
           />
           <aside
-            className="relative z-10 h-full w-64 max-w-[80vw] overflow-y-auto border-r p-4 shadow-2xl"
+            className="relative z-10 h-full w-64 max-w-[82vw] overflow-y-auto border-r shadow-2xl"
             style={{
               background: "#0B0B0F",
               borderColor: "var(--border)",
               color: "var(--foreground)",
             }}
           >
-            <div className="mb-6 flex items-center justify-between">
-              <span className="text-lg font-black tracking-tight text-white">
-                Postoll
-              </span>
-              {onClose && (
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="Close navigation menu"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 text-xs font-bold text-white"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            <nav className="space-y-1.5" aria-label="Mobile navigation">
-              {navItems.map((item) => {
-                const isActive =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname === item.href ||
-                      pathname.startsWith(`${item.href}/`);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={onClose}
-                    className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-bold transition"
-                    style={{
-                      background: isActive ? item.activeBg : "transparent",
-                      color: isActive ? "#FFFFFF" : "var(--foreground)",
-                    }}
-                  >
-                    <span style={{ color: item.iconColor }}>{item.icon}</span>
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-              <Link
-                href="/settings"
-                onClick={onClose}
-                className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-bold"
-                style={{ color: "var(--foreground)" }}
-              >
-                <span>⚙</span>
-                <span>Settings</span>
-              </Link>
-            </nav>
+            {railContent}
           </aside>
         </div>
       )}

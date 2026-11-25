@@ -33,7 +33,7 @@ export type StudioShowcaseCard = {
 const DEFAULT_HERO_SAMPLE_VIDEO =
   "https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-network-connections-27611-large.mp4";
 const DEFAULT_HERO_SAMPLE_POSTER =
-  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1400&q=80";
 
 const TOP_STUDIO_STRIP: StudioShowcaseCard[] = [
   {
@@ -44,9 +44,9 @@ const TOP_STUDIO_STRIP: StudioShowcaseCard[] = [
     badge: "REELS",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=900&q=80",
     fallbackGradient: "from-[#7C5CFF] via-[#A855F7] to-[#EC4899]",
-    sizeClass: "h-48",
+    sizeClass: "h-52",
     href: "/create",
     cta: "Create Reel →",
   },
@@ -58,9 +58,9 @@ const TOP_STUDIO_STRIP: StudioShowcaseCard[] = [
     badge: "WORKFLOWS",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?auto=format&fit=crop&w=900&q=80",
     fallbackGradient: "from-[#10B981] via-[#059669] to-[#0EA5E9]",
-    sizeClass: "h-48",
+    sizeClass: "h-52",
     href: "/workflows",
     cta: "Open Workflows →",
   },
@@ -72,9 +72,9 @@ const TOP_STUDIO_STRIP: StudioShowcaseCard[] = [
     badge: "CALENDAR",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?auto=format&fit=crop&w=900&q=80",
     fallbackGradient: "from-[#F59E0B] via-[#F97316] to-[#EC4899]",
-    sizeClass: "h-48",
+    sizeClass: "h-52",
     href: "/calendar",
     cta: "View Calendar →",
   },
@@ -86,9 +86,9 @@ const TOP_STUDIO_STRIP: StudioShowcaseCard[] = [
     badge: "ACCOUNTS",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1618172193763-c511deb635ca?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1618172193763-c511deb635ca?auto=format&fit=crop&w=900&q=80",
     fallbackGradient: "from-[#38BDF8] via-[#6366F1] to-[#8B5CF6]",
-    sizeClass: "h-48",
+    sizeClass: "h-52",
     href: "/accounts",
     cta: "Connect Channels →",
   },
@@ -100,9 +100,9 @@ const TOP_STUDIO_STRIP: StudioShowcaseCard[] = [
     badge: "POSTS",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1635776062127-d379bfcba9f8?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1635776062127-d379bfcba9f8?auto=format&fit=crop&w=900&q=80",
     fallbackGradient: "from-[#EC4899] via-[#F43F5E] to-[#FB923C]",
-    sizeClass: "h-48",
+    sizeClass: "h-52",
     href: "/create",
     cta: "Design Post →",
   },
@@ -119,9 +119,9 @@ const DEFAULT_MULTI_SIZE_GALLERY: StudioShowcaseCard[] = [
     mediaUrl:
       "https://assets.mixkit.co/videos/preview/mixkit-ink-swirling-in-water-in-slow-motion-218-large.mp4",
     posterUrl:
-      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?auto=format&fit=crop&w=1000&q=80",
     fallbackGradient: "from-[#6D28D9] via-[#9333EA] to-[#DB2777]",
-    sizeClass: "h-[360px] sm:h-[420px]",
+    sizeClass: "h-[380px] sm:h-[440px]",
     href: "/create",
     cta: "Create Similar Reel",
   },
@@ -133,7 +133,7 @@ const DEFAULT_MULTI_SIZE_GALLERY: StudioShowcaseCard[] = [
     badge: "BRAND POST",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1558655146-d09347e92766?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1558655146-d09347e92766?auto=format&fit=crop&w=1000&q=80",
     fallbackGradient: "from-[#0284C7] via-[#2563EB] to-[#7C3AED]",
     sizeClass: "h-[280px] sm:h-[320px]",
     href: "/workflows",
@@ -147,9 +147,9 @@ const DEFAULT_MULTI_SIZE_GALLERY: StudioShowcaseCard[] = [
     badge: "SOCIAL POST",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1000&q=80",
     fallbackGradient: "from-[#D97706] via-[#EA580C] to-[#E11D48]",
-    sizeClass: "h-[320px] sm:h-[370px]",
+    sizeClass: "h-[330px] sm:h-[380px]",
     href: "/create",
     cta: "Generate Post",
   },
@@ -161,9 +161,9 @@ const DEFAULT_MULTI_SIZE_GALLERY: StudioShowcaseCard[] = [
     badge: "AUTOPILOT",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=1000&q=80",
     fallbackGradient: "from-[#059669] via-[#0D9488] to-[#0284C7]",
-    sizeClass: "h-[270px] sm:h-[300px]",
+    sizeClass: "h-[270px] sm:h-[310px]",
     href: "/automatic-posting",
     cta: "Setup Autopilot",
   },
@@ -177,9 +177,9 @@ const DEFAULT_MULTI_SIZE_GALLERY: StudioShowcaseCard[] = [
     mediaUrl:
       "https://assets.mixkit.co/videos/preview/mixkit-waves-in-the-water-1164-large.mp4",
     posterUrl:
-      "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=1000&q=80",
     fallbackGradient: "from-[#4F46E5] via-[#7C3AED] to-[#EC4899]",
-    sizeClass: "h-[360px] sm:h-[420px]",
+    sizeClass: "h-[380px] sm:h-[440px]",
     href: "/create",
     cta: "Launch Video Studio",
   },
@@ -191,11 +191,55 @@ const DEFAULT_MULTI_SIZE_GALLERY: StudioShowcaseCard[] = [
     badge: "CALENDAR",
     mediaType: "image",
     mediaUrl:
-      "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=1000&q=80",
     fallbackGradient: "from-[#BE185D] via-[#9333EA] to-[#4338CA]",
-    sizeClass: "h-[290px] sm:h-[330px]",
+    sizeClass: "h-[300px] sm:h-[340px]",
     href: "/calendar",
     cta: "View Calendar",
+  },
+  {
+    id: "gal-7",
+    title: "Cyberpunk Neon Visual Reel",
+    subtitle: "Vivid color grading & fast short-form storytelling",
+    category: "reels",
+    badge: "AI REEL",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1618005198919-d3d4b5a92ead?auto=format&fit=crop&w=1000&q=80",
+    fallbackGradient: "from-[#7C3AED] via-[#C026D3] to-[#F43F5E]",
+    sizeClass: "h-[310px] sm:h-[360px]",
+    href: "/create",
+    cta: "Create AI Reel",
+  },
+  {
+    id: "gal-8",
+    title: "Abstract Fluid Motion Study",
+    subtitle: "Looping generative motion for social backgrounds",
+    category: "motion",
+    badge: "LOOP VIDEO",
+    mediaType: "video",
+    mediaUrl:
+      "https://assets.mixkit.co/videos/preview/mixkit-flying-through-a-pink-and-purple-tunnel-5357-large.mp4",
+    posterUrl:
+      "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80",
+    fallbackGradient: "from-[#9333EA] via-[#EC4899] to-[#F59E0B]",
+    sizeClass: "h-[360px] sm:h-[420px]",
+    href: "/create",
+    cta: "Generate Motion",
+  },
+  {
+    id: "gal-9",
+    title: "Editorial Lifestyle Feed Post",
+    subtitle: "Clean composition with tailored captions & tags",
+    category: "posts",
+    badge: "FEED POST",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1000&q=80",
+    fallbackGradient: "from-[#0EA5E9] via-[#6366F1] to-[#A855F7]",
+    sizeClass: "h-[280px] sm:h-[320px]",
+    href: "/create",
+    cta: "Create Post",
   },
 ];
 
@@ -340,8 +384,7 @@ export default function ContentLibraryDashboard() {
 
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
-        {/* HERO BANNER WITH PLAYING AI VIDEO BACKDROP & STUDIO BUTTONS */}
+      <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
         <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-[#0A0A0F] p-6 sm:p-8 lg:p-11">
           <video
             src={heroMedia.heroVideoUrl}
@@ -361,7 +404,7 @@ export default function ContentLibraryDashboard() {
             }}
           />
 
-          <div className="relative z-10 max-w-3xl space-y-5">
+          <div className="relative z-10 max-w-4xl space-y-5">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#7C5CFF]/45 bg-[#7C5CFF]/20 px-3.5 py-1 text-xs font-extrabold uppercase tracking-widest text-[#C4B5FD] backdrop-blur-xs">
               <span>✦</span>
               <span>Postoll AI Creative Studio</span>
@@ -370,7 +413,7 @@ export default function ContentLibraryDashboard() {
             <h1
               className="font-black tracking-tight text-white"
               style={{
-                fontSize: "clamp(2.1rem, 4.5vw, 3.75rem)",
+                fontSize: "clamp(2.2rem, 4.6vw, 3.85rem)",
                 lineHeight: 1.0,
                 letterSpacing: "-0.03em",
               }}
@@ -416,7 +459,6 @@ export default function ContentLibraryDashboard() {
           </div>
         </section>
 
-        {/* TOP HORIZONTAL STUDIO CARDS WITH REAL IMAGES */}
         <section className="mt-7">
           <div className="grid gap-3.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             {TOP_STUDIO_STRIP.map((card) => (
@@ -446,7 +488,6 @@ export default function ContentLibraryDashboard() {
           </div>
         </section>
 
-        {/* FILTER PILLS BAR */}
         <section className="mt-7 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {CATEGORY_PILLS.map((pill) => {
@@ -456,7 +497,7 @@ export default function ContentLibraryDashboard() {
                   key={pill.id}
                   type="button"
                   onClick={() => setSelectedCategory(pill.id)}
-                  className={`rounded-xl border px-3.5 py-2 text-xs font-extrabold transition sm:text-sm ${
+                  className={`rounded-xl border px-4 py-2 text-xs font-extrabold transition sm:text-sm ${
                     active
                       ? "border-[#7C5CFF] bg-[#7C5CFF] text-white"
                       : "border-white/12 bg-[#121218] text-neutral-300 hover:border-white/30 hover:text-white"
@@ -476,9 +517,8 @@ export default function ContentLibraryDashboard() {
           </Link>
         </section>
 
-        {/* MULTI-SIZE VISUAL GALLERY (REAL SAMPLE IMAGES + PLAYING VIDEOS) */}
         <section className="mt-6">
-          <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredGallery.map((item) => (
               <Link
                 key={item.id}
@@ -521,7 +561,6 @@ export default function ContentLibraryDashboard() {
           </div>
         </section>
 
-        {/* COPYRIGHT FOOTER */}
         <footer
           className="mt-12 flex flex-col justify-between gap-3 border-t pt-6 text-xs font-medium sm:flex-row sm:items-center"
           style={{ borderColor: "var(--border)", color: "var(--muted)" }}

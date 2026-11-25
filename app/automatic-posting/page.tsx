@@ -680,7 +680,7 @@ export default function AutomaticPostingPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 text-white sm:px-6 md:px-8">
+      <div className="mx-auto w-full w-full space-y-8 px-4 py-8 text-white sm:px-6 lg:px-8">
         {/* COLORFUL AUTOPILOT STUDIO HEADER */}
         <div
           className="rounded-3xl border p-6 sm:p-8"

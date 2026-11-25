@@ -592,7 +592,7 @@ export default function SettingsPage() {
   return (
     <AppShell>
       <main className="min-h-screen">
-        <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-10 md:px-10">
+        <div className="mx-auto w-full w-full px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
           {/* COLORFUL STUDIO SETTINGS HEADER */}
           <div
             className="mb-8 rounded-3xl border p-6 sm:p-8"
