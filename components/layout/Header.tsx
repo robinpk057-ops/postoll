@@ -153,38 +153,35 @@ export default function Header({
   }
 
   return (
-    <header className="sticky top-0 z-40 flex min-h-[72px] items-center justify-between gap-3 border-b border-[var(--border)] bg-[rgba(9,9,11,0.88)] px-4 backdrop-blur-xl sm:px-6 md:px-8">
-      {/* Left: Mobile Drawer Button + Greeting */}
+    <header className="sticky top-0 z-40 flex min-h-[68px] items-center justify-between gap-3 border-b border-[var(--border)] bg-[rgba(9,9,11,0.9)] px-4 backdrop-blur-xl sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         {onOpenMobileMenu && (
           <button
             type="button"
             onClick={onOpenMobileMenu}
             aria-label="Open navigation menu"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#7C5CFF]/40 bg-[#7C5CFF]/15 text-base font-bold text-[#C4B5FD] transition hover:bg-[#7C5CFF]/25 lg:hidden"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#7C5CFF]/40 bg-[#7C5CFF]/15 text-base font-bold text-[#C4B5FD] transition hover:bg-[#7C5CFF]/25 md:hidden"
           >
             ☰
           </button>
         )}
 
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-white sm:text-base">
+          <p className="truncate text-sm font-bold tracking-tight text-white sm:text-base">
             {getGreeting()}
             {profile?.fullName ? `, ${profile.fullName.split(" ")[0]}` : ""}
           </p>
           <p className="hidden text-xs text-[var(--muted-foreground)] sm:block">
-            Create, schedule, and grow across your channels.
+            AI Creative Studio · Workflows, Reels &amp; Publishing
           </p>
         </div>
       </div>
 
-      {/* Right: Credits Pill + Create CTA + Theme + Profile */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
         {profile && (
           <Link
             href="/settings"
-            className="hidden items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/20 md:inline-flex"
-            title="Available studio credits"
+            className="hidden items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-3.5 py-1.5 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/25 md:inline-flex"
           >
             <span>✦</span>
             <span>{profile.credits} Credits</span>
@@ -193,7 +190,7 @@ export default function Header({
 
         <Link
           href="/create"
-          className="hidden items-center gap-1.5 rounded-full bg-[#7C5CFF] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#6A48F5] sm:inline-flex"
+          className="inline-flex items-center gap-1.5 rounded-full bg-[#7C5CFF] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#6A48F5]"
         >
           <span>+ Create</span>
         </Link>
@@ -212,7 +209,7 @@ export default function Header({
           <button
             type="button"
             onClick={() => setProfileOpen((open) => !open)}
-            className="flex items-center gap-2.5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 transition hover:border-[var(--border-hover)] hover:bg-[var(--surface-hover)]"
+            className="flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 transition hover:border-[var(--border-hover)] hover:bg-[var(--surface-hover)]"
             aria-label="Open profile menu"
             aria-expanded={profileOpen}
           >
@@ -225,7 +222,7 @@ export default function Header({
               {profile ? getInitials(profile.fullName) : "U"}
             </div>
 
-            <div className="hidden text-left md:block">
+            <div className="hidden text-left lg:block">
               <div className="max-w-[140px] truncate text-xs font-bold text-white">
                 {profile?.fullName || "User"}
               </div>
@@ -236,7 +233,7 @@ export default function Header({
 
             <span
               className={[
-                "hidden pr-1 text-xs text-[var(--muted-foreground)] transition-transform md:block",
+                "hidden pr-1 text-xs text-[var(--muted-foreground)] transition-transform lg:block",
                 profileOpen ? "rotate-180" : "",
               ].join(" ")}
             >
