@@ -95,7 +95,6 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Change password state
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -133,7 +132,9 @@ export default function SettingsPage() {
 
     const check = validateStrongPassword(newPassword);
     if (!check.valid) {
-      setPasswordError(check.error || "New password does not meet security requirements.");
+      setPasswordError(
+        check.error || "New password does not meet security requirements."
+      );
       return;
     }
 
@@ -235,18 +236,13 @@ export default function SettingsPage() {
       }
 
       if (!user) {
-        throw new Error(
-          "Please log in to manage scheduling settings."
-        );
+        throw new Error("Please log in to manage scheduling settings.");
       }
 
       setUserId(user.id);
       setUserEmail(user.email || null);
 
-      const {
-        data: settings,
-        error: settingsError,
-      } = await supabase
+      const { data: settings, error: settingsError } = await supabase
         .from("schedule_settings")
         .select("*")
         .eq("user_id", user.id)
@@ -274,10 +270,7 @@ export default function SettingsPage() {
         }
       }
 
-      const {
-        data: slotData,
-        error: slotsError,
-      } = await supabase
+      const { data: slotData, error: slotsError } = await supabase
         .from("schedule_slots")
         .select("*")
         .eq("user_id", user.id)
@@ -315,10 +308,7 @@ export default function SettingsPage() {
       throw new Error("You must be logged in.");
     }
 
-    const {
-      data: existing,
-      error: existingError,
-    } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("schedule_settings")
       .select("id")
       .eq("user_id", userId)
@@ -409,9 +399,7 @@ export default function SettingsPage() {
       console.error("Posting days update error:", err);
 
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update posting days."
+        err instanceof Error ? err.message : "Unable to update posting days."
       );
     } finally {
       setSaving(false);
@@ -434,9 +422,7 @@ export default function SettingsPage() {
       console.error("Timezone update error:", err);
 
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update timezone."
+        err instanceof Error ? err.message : "Unable to update timezone."
       );
     } finally {
       setSaving(false);
@@ -471,10 +457,7 @@ export default function SettingsPage() {
         defaultTime = `${String(nextHour).padStart(2, "0")}:${minute}`;
       }
 
-      const {
-        data,
-        error: insertError,
-      } = await supabase
+      const { data, error: insertError } = await supabase
         .from("schedule_slots")
         .insert({
           user_id: userId,
@@ -506,9 +489,7 @@ export default function SettingsPage() {
       console.error("Add schedule slot error:", err);
 
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to add posting time."
+        err instanceof Error ? err.message : "Unable to add posting time."
       );
     } finally {
       setAddingDay(null);
@@ -546,9 +527,7 @@ export default function SettingsPage() {
       console.error("Update schedule slot error:", err);
 
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update posting time."
+        err instanceof Error ? err.message : "Unable to update posting time."
       );
     }
   }
@@ -581,9 +560,7 @@ export default function SettingsPage() {
       console.error("Delete schedule slot error:", err);
 
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to remove posting time."
+        err instanceof Error ? err.message : "Unable to remove posting time."
       );
     }
   }
@@ -598,7 +575,7 @@ export default function SettingsPage() {
     return (
       <AppShell>
         <main className="min-h-screen">
-          <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
+          <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 md:px-10">
             <div className="h-10 w-48 animate-pulse rounded-xl bg-white/10" />
             <div className="mt-3 h-5 w-96 max-w-full animate-pulse rounded bg-white/10" />
             <div className="mt-10 space-y-6">
@@ -615,41 +592,59 @@ export default function SettingsPage() {
   return (
     <AppShell>
       <main className="min-h-screen">
-        <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
-          {/* HEADER */}
-          <div className="mb-10">
-            <h1 className="text-3xl font-semibold tracking-tight">
+        <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-10 md:px-10">
+          {/* COLORFUL STUDIO SETTINGS HEADER */}
+          <div
+            className="mb-8 rounded-3xl border p-6 sm:p-8"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(124,92,255,0.18) 0%, var(--card) 52%, rgba(56,189,248,0.14) 100%)",
+              borderColor: "var(--border)",
+            }}
+          >
+            <p className="text-xs font-bold uppercase tracking-widest text-[#C4B5FD]">
+              ⚙ Postoll Studio Preferences
+            </p>
+            <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
               Settings
             </h1>
-
-            <p
-              className="mt-2 text-sm"
-              style={{
-                color: "var(--muted)",
-              }}
-            >
-              Manage your Postoll account, password, and automatic publishing preferences.
+            <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+              Manage your Postoll account, password, schedule slots, and
+              automatic publishing preferences.
             </p>
+
+            <div className="mt-4 flex flex-wrap gap-2.5 text-xs font-bold">
+              <span
+                className={`rounded-full border px-3.5 py-1 ${
+                  automaticScheduling
+                    ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-300"
+                    : "border-white/15 bg-white/5 text-neutral-300"
+                }`}
+              >
+                Autopilot: {automaticScheduling ? "Enabled" : "Paused"}
+              </span>
+              <span className="rounded-full border border-[#7C5CFF]/35 bg-[#7C5CFF]/15 px-3.5 py-1 text-[#C4B5FD]">
+                {timezone}
+              </span>
+              <span className="rounded-full border border-sky-400/35 bg-sky-500/15 px-3.5 py-1 text-sky-300">
+                {slots.length} {slots.length === 1 ? "Slot" : "Slots"}
+              </span>
+            </div>
           </div>
 
-          {/* SUCCESS */}
           {success && (
-            <div className="mb-6 rounded-xl border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+            <div className="mb-6 rounded-xl border border-green-500/25 bg-green-500/10 px-4 py-3 text-sm text-green-300">
               {success}
             </div>
           )}
 
-          {/* ERROR */}
           {error && (
-            <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <div className="mb-6 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
             </div>
           )}
 
-          {/* ================================================= */}
           {/* ACCOUNT & PASSWORD */}
-          {/* ================================================= */}
-
           <section
             className="mb-6 rounded-2xl border p-6"
             style={{
@@ -658,15 +653,8 @@ export default function SettingsPage() {
             }}
           >
             <div className="mb-4">
-              <h2 className="text-lg font-semibold">
-                Update password
-              </h2>
-              <p
-                className="mt-1 text-sm"
-                style={{
-                  color: "var(--muted)",
-                }}
-              >
+              <h2 className="text-lg font-bold">Update password</h2>
+              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
                 Change the password for your account
                 {userEmail ? ` (${userEmail})` : ""}.
               </p>
@@ -754,7 +742,9 @@ export default function SettingsPage() {
                 </li>
                 <li
                   className={`flex items-center gap-2 ${
-                    pwChecks.hasAlphabet ? "text-emerald-400" : "text-neutral-400"
+                    pwChecks.hasAlphabet
+                      ? "text-emerald-400"
+                      : "text-neutral-400"
                   }`}
                 >
                   <span>{pwChecks.hasAlphabet ? "✓" : "○"}</span>
@@ -770,11 +760,15 @@ export default function SettingsPage() {
                 </li>
                 <li
                   className={`flex items-center gap-2 ${
-                    pwChecks.hasSpecial ? "text-emerald-400" : "text-neutral-400"
+                    pwChecks.hasSpecial
+                      ? "text-emerald-400"
+                      : "text-neutral-400"
                   }`}
                 >
                   <span>{pwChecks.hasSpecial ? "✓" : "○"}</span>
-                  <span>Contains 1 or more special characters (!@#$%^&amp;*)</span>
+                  <span>
+                    Contains 1 or more special characters (!@#$%^&amp;*)
+                  </span>
                 </li>
               </ul>
 
@@ -782,11 +776,7 @@ export default function SettingsPage() {
                 <button
                   type="submit"
                   disabled={updatingPassword}
-                  className="rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
-                  style={{
-                    background: "var(--foreground)",
-                    color: "var(--background)",
-                  }}
+                  className="rounded-xl bg-[#7C5CFF] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#6A48F5] disabled:opacity-50"
                 >
                   {updatingPassword ? "Updating password..." : "Update password"}
                 </button>
@@ -794,10 +784,7 @@ export default function SettingsPage() {
             </form>
           </section>
 
-          {/* ================================================= */}
           {/* AUTOMATIC SCHEDULING */}
-          {/* ================================================= */}
-
           <section
             className="rounded-2xl border p-6"
             style={{
@@ -808,27 +795,20 @@ export default function SettingsPage() {
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
               <div className="flex items-start gap-4">
                 <div
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl"
-                  style={{
-                    background: "rgba(124,58,237,0.14)",
-                  }}
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-xl text-[#C4B5FD]"
+                  style={{ background: "rgba(124, 92, 255, 0.16)" }}
                 >
                   ⚡
                 </div>
 
                 <div>
-                  <h2 className="text-lg font-semibold">
-                    Automatic scheduling
-                  </h2>
-
+                  <h2 className="text-lg font-bold">Automatic scheduling</h2>
                   <p
                     className="mt-1 max-w-2xl text-sm leading-6"
-                    style={{
-                      color: "var(--muted)",
-                    }}
+                    style={{ color: "var(--muted)" }}
                   >
-                    Let Postoll automatically choose the next available
-                    posting slot for your approved content.
+                    Let Postoll automatically choose the next available posting
+                    slot for your approved content.
                   </p>
                 </div>
               </div>
@@ -842,7 +822,7 @@ export default function SettingsPage() {
               >
                 <span
                   className={`relative h-8 w-14 rounded-full transition ${
-                    automaticScheduling ? "bg-violet-600" : "bg-white/10"
+                    automaticScheduling ? "bg-[#7C5CFF]" : "bg-white/15"
                   }`}
                 >
                   <span
@@ -852,17 +832,14 @@ export default function SettingsPage() {
                   />
                 </span>
 
-                <span className="text-sm font-medium">
+                <span className="text-sm font-bold">
                   {automaticScheduling ? "On" : "Off"}
                 </span>
               </button>
             </div>
           </section>
 
-          {/* ================================================= */}
           {/* TIMEZONE */}
-          {/* ================================================= */}
-
           <section
             className="mt-6 rounded-2xl border p-6"
             style={{
@@ -872,16 +849,8 @@ export default function SettingsPage() {
           >
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <h2 className="text-lg font-semibold">
-                  Timezone
-                </h2>
-
-                <p
-                  className="mt-1 text-sm"
-                  style={{
-                    color: "var(--muted)",
-                  }}
-                >
+                <h2 className="text-lg font-bold">Timezone</h2>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
                   Postoll will use this timezone when calculating automatic
                   publishing times.
                 </p>
@@ -907,10 +876,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ================================================= */}
           {/* POSTING DAYS */}
-          {/* ================================================= */}
-
           <section
             className="mt-6 rounded-2xl border p-6"
             style={{
@@ -919,16 +885,8 @@ export default function SettingsPage() {
             }}
           >
             <div>
-              <h2 className="text-lg font-semibold">
-                Posting days
-              </h2>
-
-              <p
-                className="mt-1 text-sm"
-                style={{
-                  color: "var(--muted)",
-                }}
-              >
+              <h2 className="text-lg font-bold">Posting days</h2>
+              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
                 Choose the days when Postoll can automatically schedule your
                 content.
               </p>
@@ -944,13 +902,13 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => toggleDay(day.value)}
                     disabled={saving}
-                    className="rounded-xl border px-4 py-4 text-sm font-medium transition"
+                    className="rounded-xl border px-4 py-4 text-sm font-bold transition"
                     style={{
-                      borderColor: selected ? "#8b5cf6" : "var(--border)",
+                      borderColor: selected ? "#7C5CFF" : "var(--border)",
                       background: selected
-                        ? "rgba(124,58,237,0.12)"
+                        ? "rgba(124, 92, 255, 0.16)"
                         : "transparent",
-                      color: selected ? "#c4b5fd" : "var(--foreground)",
+                      color: selected ? "#C4B5FD" : "var(--foreground)",
                     }}
                   >
                     {day.short}
@@ -960,10 +918,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ================================================= */}
           {/* POSTING TIMES */}
-          {/* ================================================= */}
-
           <section
             className="mt-6 rounded-2xl border p-6"
             style={{
@@ -973,15 +928,10 @@ export default function SettingsPage() {
           >
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
-                <h2 className="text-lg font-semibold">
-                  Posting times
-                </h2>
-
+                <h2 className="text-lg font-bold">Posting times</h2>
                 <p
                   className="mt-1 text-sm leading-6"
-                  style={{
-                    color: "var(--muted)",
-                  }}
+                  style={{ color: "var(--muted)" }}
                 >
                   Add one or more automatic scheduling slots for each day. You
                   can have different times for posts and reels.
@@ -989,10 +939,10 @@ export default function SettingsPage() {
               </div>
 
               <div
-                className="rounded-lg px-3 py-2 text-xs"
+                className="rounded-full px-3.5 py-1.5 text-xs font-bold"
                 style={{
-                  background: "rgba(255,255,255,0.04)",
-                  color: "var(--muted)",
+                  background: "rgba(124, 92, 255, 0.14)",
+                  color: "#C4B5FD",
                 }}
               >
                 {slots.length} {slots.length === 1 ? "slot" : "slots"}
@@ -1010,35 +960,32 @@ export default function SettingsPage() {
                     className="rounded-xl border p-4"
                     style={{
                       borderColor: selected
-                        ? "rgba(139,92,246,0.35)"
+                        ? "rgba(124, 92, 255, 0.4)"
                         : "var(--border)",
                       background: selected
-                        ? "rgba(124,58,237,0.03)"
+                        ? "rgba(124, 92, 255, 0.04)"
                         : "transparent",
                     }}
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                       <div className="flex items-center gap-3">
                         <div
-                          className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold"
+                          className="flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold"
                           style={{
                             background: selected
-                              ? "rgba(124,58,237,0.14)"
-                              : "rgba(255,255,255,0.04)",
-                            color: selected ? "#c4b5fd" : "var(--muted)",
+                              ? "rgba(124, 92, 255, 0.18)"
+                              : "rgba(255,255,255,0.05)",
+                            color: selected ? "#C4B5FD" : "var(--muted)",
                           }}
                         >
                           {day.short}
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium">{day.label}</p>
-
+                          <p className="text-sm font-bold">{day.label}</p>
                           <p
                             className="mt-0.5 text-xs"
-                            style={{
-                              color: "var(--muted)",
-                            }}
+                            style={{ color: "var(--muted)" }}
                           >
                             {daySlots.length === 0
                               ? "No posting times"
@@ -1055,10 +1002,8 @@ export default function SettingsPage() {
                         type="button"
                         onClick={() => addSlot(day.value)}
                         disabled={addingDay === day.value}
-                        className="rounded-lg border px-3 py-2 text-xs font-medium transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
-                        style={{
-                          borderColor: "var(--border)",
-                        }}
+                        className="rounded-xl border px-3.5 py-2 text-xs font-bold transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{ borderColor: "var(--border)" }}
                       >
                         {addingDay === day.value ? "Adding..." : "+ Add time"}
                       </button>
@@ -1115,19 +1060,15 @@ export default function SettingsPage() {
 
                             <div className="flex-1">
                               <span
-                                className="text-sm"
-                                style={{
-                                  color: "var(--foreground)",
-                                }}
+                                className="text-sm font-medium"
+                                style={{ color: "var(--foreground)" }}
                               >
                                 {formatTime(slot.time)}
                               </span>
 
                               <span
                                 className="ml-2 text-xs"
-                                style={{
-                                  color: "var(--muted)",
-                                }}
+                                style={{ color: "var(--muted)" }}
                               >
                                 {slot.content_type === "all"
                                   ? "All content"
@@ -1140,10 +1081,8 @@ export default function SettingsPage() {
                             <button
                               type="button"
                               onClick={() => deleteSlot(slot.id)}
-                              className="rounded-lg border px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/10"
-                              style={{
-                                borderColor: "rgba(239,68,68,0.15)",
-                              }}
+                              className="rounded-lg border px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-500/10"
+                              style={{ borderColor: "rgba(239,68,68,0.2)" }}
                             >
                               Remove
                             </button>
@@ -1169,10 +1108,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ================================================= */}
           {/* HOW IT WORKS */}
-          {/* ================================================= */}
-
           <section
             className="mt-6 rounded-2xl border p-6"
             style={{
@@ -1180,26 +1116,20 @@ export default function SettingsPage() {
               borderColor: "var(--border)",
             }}
           >
-            <h2 className="text-lg font-semibold">
-              How automatic scheduling works
-            </h2>
+            <h2 className="text-lg font-bold">How automatic scheduling works</h2>
 
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div
                 className="rounded-xl border p-4"
-                style={{
-                  borderColor: "var(--border)",
-                }}
+                style={{ borderColor: "var(--border)" }}
               >
-                <div className="text-lg">1️⃣</div>
-
-                <p className="mt-3 text-sm font-medium">Create content</p>
-
+                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#7C5CFF]/20 text-xs font-black text-[#C4B5FD]">
+                  1
+                </div>
+                <p className="mt-3 text-sm font-bold">Create content</p>
                 <p
                   className="mt-1 text-xs leading-5"
-                  style={{
-                    color: "var(--muted)",
-                  }}
+                  style={{ color: "var(--muted)" }}
                 >
                   Create posts and reels in Postoll and approve them.
                 </p>
@@ -1207,19 +1137,15 @@ export default function SettingsPage() {
 
               <div
                 className="rounded-xl border p-4"
-                style={{
-                  borderColor: "var(--border)",
-                }}
+                style={{ borderColor: "var(--border)" }}
               >
-                <div className="text-lg">2️⃣</div>
-
-                <p className="mt-3 text-sm font-medium">Postoll finds a slot</p>
-
+                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#EC4899]/20 text-xs font-black text-[#F9A8D4]">
+                  2
+                </div>
+                <p className="mt-3 text-sm font-bold">Postoll finds a slot</p>
                 <p
                   className="mt-1 text-xs leading-5"
-                  style={{
-                    color: "var(--muted)",
-                  }}
+                  style={{ color: "var(--muted)" }}
                 >
                   Postoll looks at your selected days and available times.
                 </p>
@@ -1227,21 +1153,15 @@ export default function SettingsPage() {
 
               <div
                 className="rounded-xl border p-4"
-                style={{
-                  borderColor: "var(--border)",
-                }}
+                style={{ borderColor: "var(--border)" }}
               >
-                <div className="text-lg">3️⃣</div>
-
-                <p className="mt-3 text-sm font-medium">
-                  Content gets scheduled
-                </p>
-
+                <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-xs font-black text-emerald-300">
+                  3
+                </div>
+                <p className="mt-3 text-sm font-bold">Content gets scheduled</p>
                 <p
                   className="mt-1 text-xs leading-5"
-                  style={{
-                    color: "var(--muted)",
-                  }}
+                  style={{ color: "var(--muted)" }}
                 >
                   The selected slot will become the content&apos;s scheduled
                   publishing time.
@@ -1250,10 +1170,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ================================================= */}
           {/* API KEYS (n8n / webhook ingest) */}
-          {/* ================================================= */}
-
           <section
             className="mt-10 rounded-2xl border p-6"
             style={{
@@ -1261,7 +1178,7 @@ export default function SettingsPage() {
               borderColor: "var(--border)",
             }}
           >
-            <h2 className="text-lg font-semibold">Ingest API keys</h2>
+            <h2 className="text-lg font-bold">Ingest API keys</h2>
             <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
               For n8n, Zapier, or any tool that sends videos into Postoll.
               Header:{" "}
@@ -1298,7 +1215,7 @@ export default function SettingsPage() {
                 value={apiKeyName}
                 onChange={(e) => setApiKeyName(e.target.value)}
                 placeholder="Key name"
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="rounded-xl border px-3.5 py-2 text-sm"
                 style={{
                   background: "var(--background)",
                   borderColor: "var(--border)",
@@ -1308,11 +1225,7 @@ export default function SettingsPage() {
                 type="button"
                 disabled={apiKeyCreating}
                 onClick={createApiKey}
-                className="rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50"
-                style={{
-                  background: "var(--foreground)",
-                  color: "var(--background)",
-                }}
+                className="rounded-xl bg-[#7C5CFF] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#6A48F5] disabled:opacity-50"
               >
                 {apiKeyCreating ? "Creating…" : "Create API key"}
               </button>
@@ -1340,7 +1253,9 @@ export default function SettingsPage() {
                     <p className="text-xs" style={{ color: "var(--muted)" }}>
                       {k.key_prefix}… · {new Date(k.created_at).toLocaleString()}
                       {k.last_used_at
-                        ? ` · last used ${new Date(k.last_used_at).toLocaleString()}`
+                        ? ` · last used ${new Date(
+                            k.last_used_at
+                          ).toLocaleString()}`
                         : ""}
                     </p>
                   </div>
@@ -1367,15 +1282,10 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ================================================= */}
           {/* BOTTOM STATUS */}
-          {/* ================================================= */}
-
           <div
             className="mt-8 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between"
-            style={{
-              borderColor: "var(--border)",
-            }}
+            style={{ borderColor: "var(--border)" }}
           >
             <div>
               <p className="text-sm font-medium">
@@ -1383,16 +1293,10 @@ export default function SettingsPage() {
                 {automaticScheduling ? "enabled" : "disabled"}
               </p>
 
-              <p
-                className="mt-1 text-xs"
-                style={{
-                  color: "var(--muted)",
-                }}
-              >
+              <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
                 {selectedDays.length} posting{" "}
                 {selectedDays.length === 1 ? "day" : "days"} selected ·{" "}
-                {slots.length} recurring{" "}
-                {slots.length === 1 ? "slot" : "slots"}
+                {slots.length} recurring {slots.length === 1 ? "slot" : "slots"}
               </p>
             </div>
 
@@ -1401,9 +1305,7 @@ export default function SettingsPage() {
               onClick={loadSettings}
               disabled={loading}
               className="rounded-xl border px-4 py-2.5 text-sm font-medium transition hover:bg-white/[0.05] disabled:opacity-50"
-              style={{
-                borderColor: "var(--border)",
-              }}
+              style={{ borderColor: "var(--border)" }}
             >
               ↻ Refresh
             </button>
