@@ -14,9 +14,6 @@ export default function UploadContentPage() {
 
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
-  const [seoEnabled, setSeoEnabled] = useState(true);
-  const [seoKeywords, setSeoKeywords] = useState("");
-  const [seoLoading, setSeoLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
 
@@ -36,59 +33,6 @@ export default function UploadContentPage() {
   function removeFile() {
     setUploadError("");
     updateWorkflow({ uploadFiles: [] });
-  }
-
-  async function handleGenerateSeo() {
-    const baseText = [
-      workflow.name?.trim(),
-      workflow.uploadDescription.trim(),
-      seoKeywords.trim() ? `Target SEO keywords: ${seoKeywords.trim()}` : "",
-    ]
-      .filter(Boolean)
-      .join(". ");
-
-    if (baseText.length < 6) {
-      setAiError("Add a workflow name, description, or SEO keywords first.");
-      return;
-    }
-
-    setAiError("");
-    setSeoLoading(true);
-    try {
-      const res = await fetch("/api/ai/caption", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description: `${baseText}. Optimize for social search and discovery SEO with clear keywords and relevant hashtags.`,
-          contentType: "post",
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || "SEO generation failed");
-      }
-
-      const tags = Array.isArray(data.hashtags)
-        ? data.hashtags.map((t: string) => (t.startsWith("#") ? t : `#${t}`))
-        : [];
-      const keywordTags = seoKeywords
-        .split(",")
-        .map((k) => k.trim().replace(/^#+/, "").replace(/\s+/g, ""))
-        .filter(Boolean)
-        .map((k) => `#${k}`);
-
-      const mergedTags = Array.from(new Set([...tags, ...keywordTags])).join(" ");
-      const nextCaption = [data.caption, mergedTags].filter(Boolean).join("\n\n");
-
-      updateWorkflow({
-        source: "user_uploaded",
-        uploadDescription: nextCaption,
-      });
-    } catch (e) {
-      setAiError(e instanceof Error ? e.message : "SEO generation failed");
-    } finally {
-      setSeoLoading(false);
-    }
   }
 
   async function continueNext() {
@@ -157,8 +101,8 @@ export default function UploadContentPage() {
             Upload Your Content — We Post It For You
           </h1>
           <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
-            Name your workflow, upload a single video or image, optimize SEO if
-            needed, and Postoll schedules and posts it for you.
+            Name your workflow, upload a single video or image, and Postoll
+            schedules and posts it for you automatically.
           </p>
         </div>
 
@@ -366,76 +310,10 @@ export default function UploadContentPage() {
               >
                 {aiLoading ? "Generating…" : "✨ Generate caption & hashtags"}
               </button>
+              {aiError && (
+                <span className="text-xs text-red-400">{aiError}</span>
+              )}
             </div>
-          </div>
-
-          {/* SEO OPTION */}
-          <div
-            className="rounded-2xl border p-5"
-            style={{
-              borderColor: seoEnabled ? "#8b5cf6" : "var(--border)",
-              background: "var(--background)",
-            }}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold">
-                  SEO Optimization (Optional)
-                </h3>
-                <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
-                  Add search keywords and generate SEO-friendly copy &amp; tags
-                  for discoverability.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSeoEnabled((prev) => !prev)}
-                className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
-                style={{
-                  borderColor: seoEnabled ? "#8b5cf6" : "var(--border)",
-                  background: seoEnabled ? "rgba(139,92,246,.18)" : "transparent",
-                }}
-              >
-                {seoEnabled ? "SEO Enabled" : "Enable SEO"}
-              </button>
-            </div>
-
-            {seoEnabled && (
-              <div className="mt-4 space-y-3">
-                <input
-                  type="text"
-                  value={seoKeywords}
-                  onChange={(e) => setSeoKeywords(e.target.value)}
-                  placeholder="Target SEO keywords (e.g., luxury watch, morning routine, AI video tips)"
-                  className="w-full rounded-xl border p-3 text-sm outline-none focus:border-purple-500"
-                  style={{
-                    background: "var(--card)",
-                    borderColor: "var(--border)",
-                  }}
-                />
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    disabled={seoLoading}
-                    onClick={handleGenerateSeo}
-                    className="rounded-xl border px-4 py-2 text-xs font-semibold transition hover:border-purple-500 disabled:opacity-40"
-                    style={{
-                      borderColor: "#8b5cf6",
-                      background: "rgba(139,92,246,.14)",
-                    }}
-                  >
-                    {seoLoading
-                      ? "Optimizing SEO…"
-                      : "🔍 Apply SEO Keywords & Caption"}
-                  </button>
-                  {aiError && (
-                    <span className="text-xs text-red-400">{aiError}</span>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           {uploadError && (
