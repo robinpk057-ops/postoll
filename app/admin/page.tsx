@@ -8,7 +8,7 @@ import {
   type BannerCmsContent,
   type HeroCmsContent,
   type StatCmsItem,
-} from "@/lib/cms";
+} from "@/lib/cms-defaults";
 
 type SectionRow = {
   section_key: string;
@@ -426,3 +426,4 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+
