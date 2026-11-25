@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 type JsonObject = Record<string, unknown>;
 
@@ -129,7 +129,7 @@ type GenerateReelRequest = {
 
   scene?: SimplifiedScene;
 
-  reelDuration?: "15" | "30";
+  reelDuration?: "15" | "30";`n  aspectRatio?: "1:1" | "9:16" | "16:9" | "4:5";`n  hasReferenceImage?: boolean;
 };
 
 function getOpenRouterApiKey(): string {
@@ -241,7 +241,7 @@ function buildScenePrompt(
   const sceneNumber = Number(scene.scene ?? 1);
 
   return `
-POSTOLL — PROFESSIONAL AI VIDEO PRODUCTION PROMPT
+POSTOLL â€” PROFESSIONAL AI VIDEO PRODUCTION PROMPT
 
 Generate ONE cinematic video generation unit belonging to a larger
 ${reelDuration}-second vertical social-media film.
@@ -281,7 +281,7 @@ FORMAT
 
 Vertical social-media video.
 
-Aspect ratio: 9:16.
+Aspect ratio: ${aspectRatio || "9:16"}.
 
 Target generation duration: approximately 8 seconds.
 
@@ -679,7 +679,7 @@ async function createVideoJob(
         model,
         prompt,
         duration: 8,
-        aspect_ratio: "9:16",
+        aspect_ratio: aspectRatio || "9:16",
       }),
     }
   );
