@@ -15,27 +15,38 @@ type GalleryCategory =
   | "brand"
   | "motion";
 
-type StudioCard = {
+export type StudioShowcaseCard = {
   id: string;
   title: string;
   subtitle: string;
   category: Exclude<GalleryCategory, "all">;
   badge: string;
-  gradient: string;
+  mediaType: "image" | "video";
+  mediaUrl: string;
+  posterUrl?: string;
+  fallbackGradient: string;
   sizeClass: string;
   href: string;
   cta: string;
 };
 
-const TOP_STUDIO_STRIP: StudioCard[] = [
+const DEFAULT_HERO_SAMPLE_VIDEO =
+  "https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-network-connections-27611-large.mp4";
+const DEFAULT_HERO_SAMPLE_POSTER =
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
+
+const TOP_STUDIO_STRIP: StudioShowcaseCard[] = [
   {
     id: "top-1",
     title: "AI Reel Director",
     subtitle: "15s & 30s vertical reels",
     category: "reels",
     badge: "REELS",
-    gradient: "from-[#7C5CFF] via-[#A855F7] to-[#EC4899]",
-    sizeClass: "h-44",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=800&q=80",
+    fallbackGradient: "from-[#7C5CFF] via-[#A855F7] to-[#EC4899]",
+    sizeClass: "h-48",
     href: "/create",
     cta: "Create Reel →",
   },
@@ -45,8 +56,11 @@ const TOP_STUDIO_STRIP: StudioCard[] = [
     subtitle: "Scheduled daily series",
     category: "workflows",
     badge: "WORKFLOWS",
-    gradient: "from-[#10B981] via-[#059669] to-[#0EA5E9]",
-    sizeClass: "h-44",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?auto=format&fit=crop&w=800&q=80",
+    fallbackGradient: "from-[#10B981] via-[#059669] to-[#0EA5E9]",
+    sizeClass: "h-48",
     href: "/workflows",
     cta: "Open Workflows →",
   },
@@ -56,8 +70,11 @@ const TOP_STUDIO_STRIP: StudioCard[] = [
     subtitle: "30-day multi-slot queue",
     category: "motion",
     badge: "CALENDAR",
-    gradient: "from-[#F59E0B] via-[#F97316] to-[#EC4899]",
-    sizeClass: "h-44",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?auto=format&fit=crop&w=800&q=80",
+    fallbackGradient: "from-[#F59E0B] via-[#F97316] to-[#EC4899]",
+    sizeClass: "h-48",
     href: "/calendar",
     cta: "View Calendar →",
   },
@@ -67,8 +84,11 @@ const TOP_STUDIO_STRIP: StudioCard[] = [
     subtitle: "IG, FB, YT, LinkedIn & TikTok",
     category: "brand",
     badge: "ACCOUNTS",
-    gradient: "from-[#38BDF8] via-[#6366F1] to-[#8B5CF6]",
-    sizeClass: "h-44",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1618172193763-c511deb635ca?auto=format&fit=crop&w=800&q=80",
+    fallbackGradient: "from-[#38BDF8] via-[#6366F1] to-[#8B5CF6]",
+    sizeClass: "h-48",
     href: "/accounts",
     cta: "Connect Channels →",
   },
@@ -78,79 +98,104 @@ const TOP_STUDIO_STRIP: StudioCard[] = [
     subtitle: "Captions, hooks & hashtags",
     category: "posts",
     badge: "POSTS",
-    gradient: "from-[#EC4899] via-[#F43F5E] to-[#FB923C]",
-    sizeClass: "h-44",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1635776062127-d379bfcba9f8?auto=format&fit=crop&w=800&q=80",
+    fallbackGradient: "from-[#EC4899] via-[#F43F5E] to-[#FB923C]",
+    sizeClass: "h-48",
     href: "/create",
     cta: "Design Post →",
   },
 ];
 
-const MULTI_SIZE_GALLERY: StudioCard[] = [
+const DEFAULT_MULTI_SIZE_GALLERY: StudioShowcaseCard[] = [
   {
     id: "gal-1",
     title: "Neon Studio Motion Reel",
     subtitle: "High-energy vertical reel with scene hooks & captions",
     category: "reels",
-    badge: "9:16 REEL",
-    gradient: "from-[#6D28D9] via-[#9333EA] to-[#DB2777]",
-    sizeClass: "h-80 sm:h-96",
+    badge: "9:16 VIDEO",
+    mediaType: "video",
+    mediaUrl:
+      "https://assets.mixkit.co/videos/preview/mixkit-ink-swirling-in-water-in-slow-motion-218-large.mp4",
+    posterUrl:
+      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?auto=format&fit=crop&w=900&q=80",
+    fallbackGradient: "from-[#6D28D9] via-[#9333EA] to-[#DB2777]",
+    sizeClass: "h-[360px] sm:h-[420px]",
     href: "/create",
-    cta: "Open in Create",
+    cta: "Create Similar Reel",
   },
   {
     id: "gal-2",
     title: "Brand Launch Campaign",
-    subtitle: "Cohesive multi-channel creative direction",
+    subtitle: "Cohesive multi-channel creative direction & copy",
     category: "brand",
-    badge: "BRAND KIT",
-    gradient: "from-[#0284C7] via-[#2563EB] to-[#7C3AED]",
-    sizeClass: "h-64 sm:h-72",
+    badge: "BRAND POST",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1558655146-d09347e92766?auto=format&fit=crop&w=900&q=80",
+    fallbackGradient: "from-[#0284C7] via-[#2563EB] to-[#7C3AED]",
+    sizeClass: "h-[280px] sm:h-[320px]",
     href: "/workflows",
-    cta: "View Workflow",
+    cta: "Open Workflows",
   },
   {
     id: "gal-3",
     title: "Golden Hour Product Spot",
-    subtitle: "Warm lighting & scroll-stopping social visual",
+    subtitle: "Warm editorial lighting & scroll-stopping caption",
     category: "posts",
     badge: "SOCIAL POST",
-    gradient: "from-[#D97706] via-[#EA580C] to-[#E11D48]",
-    sizeClass: "h-72 sm:h-80",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80",
+    fallbackGradient: "from-[#D97706] via-[#EA580C] to-[#E11D48]",
+    sizeClass: "h-[320px] sm:h-[370px]",
     href: "/create",
     cta: "Generate Post",
   },
   {
     id: "gal-4",
-    title: "Automated Slot Queue",
-    subtitle: "Recurring daily slots & instant rescheduling",
+    title: "Automated Daily Slot Queue",
+    subtitle: "Recurring daily slots & next-day rescheduling",
     category: "workflows",
     badge: "AUTOPILOT",
-    gradient: "from-[#059669] via-[#0D9488] to-[#0284C7]",
-    sizeClass: "h-60 sm:h-64",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=900&q=80",
+    fallbackGradient: "from-[#059669] via-[#0D9488] to-[#0284C7]",
+    sizeClass: "h-[270px] sm:h-[300px]",
     href: "/automatic-posting",
     cta: "Setup Autopilot",
   },
   {
     id: "gal-5",
-    title: "3D & Kinetic Motion Loop",
-    subtitle: "Smooth transitions for short-form feeds",
+    title: "Kinetic Light & Motion Loop",
+    subtitle: "Smooth transitions built for Reels & YouTube Shorts",
     category: "motion",
-    badge: "MOTION",
-    gradient: "from-[#4F46E5] via-[#7C3AED] to-[#EC4899]",
-    sizeClass: "h-80 sm:h-96",
+    badge: "AI MOTION",
+    mediaType: "video",
+    mediaUrl:
+      "https://assets.mixkit.co/videos/preview/mixkit-waves-in-the-water-1164-large.mp4",
+    posterUrl:
+      "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=900&q=80",
+    fallbackGradient: "from-[#4F46E5] via-[#7C3AED] to-[#EC4899]",
+    sizeClass: "h-[360px] sm:h-[420px]",
     href: "/create",
-    cta: "Launch Studio",
+    cta: "Launch Video Studio",
   },
   {
     id: "gal-6",
-    title: "Weekly Content Calendar",
-    subtitle: "Plan posts & reels across connected profiles",
+    title: "Multi-Account Social Calendar",
+    subtitle: "Schedule posts & reels across connected profiles",
     category: "brand",
-    badge: "SCHEDULE",
-    gradient: "from-[#BE185D] via-[#9333EA] to-[#4338CA]",
-    sizeClass: "h-64 sm:h-72",
+    badge: "CALENDAR",
+    mediaType: "image",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=900&q=80",
+    fallbackGradient: "from-[#BE185D] via-[#9333EA] to-[#4338CA]",
+    sizeClass: "h-[290px] sm:h-[330px]",
     href: "/calendar",
-    cta: "Open Calendar",
+    cta: "View Calendar",
   },
 ];
 
@@ -163,18 +208,62 @@ const CATEGORY_PILLS: { id: GalleryCategory; label: string }[] = [
   { id: "motion", label: "Motion" },
 ];
 
+function GalleryMedia({ card }: { card: StudioShowcaseCard }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed || !card.mediaUrl) {
+    return (
+      <div
+        className={`absolute inset-0 bg-gradient-to-br ${card.fallbackGradient}`}
+      />
+    );
+  }
+
+  if (card.mediaType === "video") {
+    return (
+      <video
+        src={card.mediaUrl}
+        poster={card.posterUrl}
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        onError={() => setFailed(true)}
+        className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+      />
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={card.mediaUrl}
+      alt={card.title}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+    />
+  );
+}
+
 export default function ContentLibraryDashboard() {
   const router = useRouter();
   const supabase = createClient();
 
   const [selectedCategory, setSelectedCategory] =
     useState<GalleryCategory>("all");
+  const [galleryItems, setGalleryItems] = useState<StudioShowcaseCard[]>(
+    DEFAULT_MULTI_SIZE_GALLERY
+  );
   const [heroMedia, setHeroMedia] = useState<{
     heroVideoUrl: string;
     heroPosterUrl: string;
   }>({
-    heroVideoUrl: DEFAULT_HERO_CONTENT.heroVideoUrl,
-    heroPosterUrl: DEFAULT_HERO_CONTENT.heroPosterUrl,
+    heroVideoUrl:
+      DEFAULT_HERO_CONTENT.heroVideoUrl || DEFAULT_HERO_SAMPLE_VIDEO,
+    heroPosterUrl:
+      DEFAULT_HERO_CONTENT.heroPosterUrl || DEFAULT_HERO_SAMPLE_POSTER,
   });
 
   useEffect(() => {
@@ -204,19 +293,38 @@ export default function ContentLibraryDashboard() {
       try {
         const { data } = await supabase
           .from("site_content")
-          .select("content")
-          .eq("section_key", "home.hero")
-          .maybeSingle();
+          .select("section_key, content")
+          .in("section_key", ["home.hero", "home.gallery"]);
 
-        if (active && data?.content && typeof data.content === "object") {
-          const c = data.content as Partial<HeroCmsContent>;
-          setHeroMedia({
-            heroVideoUrl: c.heroVideoUrl || "",
-            heroPosterUrl: c.heroPosterUrl || "",
-          });
+        if (!active || !Array.isArray(data)) return;
+
+        for (const row of data) {
+          if (
+            row.section_key === "home.hero" &&
+            row.content &&
+            typeof row.content === "object"
+          ) {
+            const c = row.content as Partial<HeroCmsContent>;
+            setHeroMedia({
+              heroVideoUrl: c.heroVideoUrl || DEFAULT_HERO_SAMPLE_VIDEO,
+              heroPosterUrl: c.heroPosterUrl || DEFAULT_HERO_SAMPLE_POSTER,
+            });
+          }
+
+          if (
+            row.section_key === "home.gallery" &&
+            row.content &&
+            typeof row.content === "object"
+          ) {
+            const items = (row.content as { items?: StudioShowcaseCard[] })
+              .items;
+            if (Array.isArray(items) && items.length > 0) {
+              setGalleryItems(items);
+            }
+          }
         }
       } catch {
-        // Ignore optional CMS media fetch errors
+        // Fallback to built-in sample showcase media
       }
     })();
 
@@ -226,156 +334,109 @@ export default function ContentLibraryDashboard() {
   }, [router, supabase]);
 
   const filteredGallery = useMemo(() => {
-    if (selectedCategory === "all") return MULTI_SIZE_GALLERY;
-    return MULTI_SIZE_GALLERY.filter(
-      (item) => item.category === selectedCategory
-    );
-  }, [selectedCategory]);
+    if (selectedCategory === "all") return galleryItems;
+    return galleryItems.filter((item) => item.category === selectedCategory);
+  }, [galleryItems, selectedCategory]);
 
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
-        {/* HERO BANNER WITH QUICK BUTTONS + PLAYING AI VIDEO BEHIND/STAGE */}
-        <section
-          className="relative overflow-hidden rounded-3xl border p-6 sm:p-8 lg:p-10"
-          style={{
-            background:
-              "linear-gradient(125deg, rgba(124,92,255,0.24) 0%, rgba(12,12,18,0.96) 55%, rgba(236,72,153,0.2) 100%)",
-            borderColor: "var(--border)",
-          }}
-        >
-          <div className="grid items-center gap-8 lg:grid-cols-12">
-            <div className="space-y-5 lg:col-span-7">
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#7C5CFF]/40 bg-[#7C5CFF]/15 px-3.5 py-1 text-xs font-extrabold uppercase tracking-widest text-[#C4B5FD]">
-                <span>✦</span>
-                <span>Postoll AI Creative Studio</span>
-              </div>
+        {/* HERO BANNER WITH PLAYING AI VIDEO BACKDROP & STUDIO BUTTONS */}
+        <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-[#0A0A0F] p-6 sm:p-8 lg:p-11">
+          <video
+            src={heroMedia.heroVideoUrl}
+            poster={heroMedia.heroPosterUrl}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            className="absolute inset-0 h-full w-full object-cover opacity-45"
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(110deg, rgba(9,9,13,0.92) 0%, rgba(18,14,38,0.78) 55%, rgba(9,9,13,0.68) 100%)",
+            }}
+          />
 
-              <h1
-                className="font-black tracking-tight text-white"
-                style={{
-                  fontSize: "clamp(2rem, 4.2vw, 3.5rem)",
-                  lineHeight: 1.02,
-                  letterSpacing: "-0.03em",
-                }}
-              >
-                YOURS TO CREATE &amp; PUBLISH
-              </h1>
-
-              <p className="max-w-2xl text-sm font-medium leading-relaxed text-neutral-300 sm:text-base">
-                Generate reels and social posts, run automated workflows, and
-                manage your publishing schedule from one studio.
-              </p>
-
-              <div className="flex flex-wrap gap-2.5 pt-1">
-                <Link
-                  href="/workflows"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-[#7C5CFF] px-5 py-3 text-sm font-extrabold text-white shadow-lg transition hover:bg-[#6A48F5]"
-                >
-                  <span>◈</span>
-                  <span>Workflows</span>
-                </Link>
-                <Link
-                  href="/calendar"
-                  className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/40 bg-amber-500/15 px-5 py-3 text-sm font-extrabold text-amber-200 transition hover:bg-amber-500/25"
-                >
-                  <span>◫</span>
-                  <span>Calendar</span>
-                </Link>
-                <Link
-                  href="/accounts"
-                  className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/15 px-5 py-3 text-sm font-extrabold text-emerald-200 transition hover:bg-emerald-500/25"
-                >
-                  <span>◎</span>
-                  <span>Accounts</span>
-                </Link>
-                <Link
-                  href="/create"
-                  className="inline-flex items-center gap-2 rounded-2xl border border-pink-400/40 bg-pink-500/15 px-5 py-3 text-sm font-extrabold text-pink-200 transition hover:bg-pink-500/25"
-                >
-                  <span>✦</span>
-                  <span>Create Studio</span>
-                </Link>
-              </div>
+          <div className="relative z-10 max-w-3xl space-y-5">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#7C5CFF]/45 bg-[#7C5CFF]/20 px-3.5 py-1 text-xs font-extrabold uppercase tracking-widest text-[#C4B5FD] backdrop-blur-xs">
+              <span>✦</span>
+              <span>Postoll AI Creative Studio</span>
             </div>
 
-            {/* Playing AI Video / Motion Stage */}
-            <div className="lg:col-span-5">
-              <div className="overflow-hidden rounded-2xl border border-white/15 bg-[#09090D] shadow-2xl">
-                {heroMedia.heroVideoUrl ? (
-                  <video
-                    src={heroMedia.heroVideoUrl}
-                    poster={heroMedia.heroPosterUrl || undefined}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    preload="metadata"
-                    className="aspect-video w-full object-cover"
-                  />
-                ) : (
-                  <div className="relative aspect-video w-full overflow-hidden bg-gradient-to-br from-[#3B0764] via-[#0F172A] to-[#831843] p-5 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider">
-                      <span className="rounded-full bg-white/15 px-3 py-1 text-white">
-                        ▶ PLAYING AI STUDIO REEL
-                      </span>
-                      <span className="rounded-full bg-emerald-500/25 px-2.5 py-1 text-emerald-200">
-                        LIVE
-                      </span>
-                    </div>
+            <h1
+              className="font-black tracking-tight text-white"
+              style={{
+                fontSize: "clamp(2.1rem, 4.5vw, 3.75rem)",
+                lineHeight: 1.0,
+                letterSpacing: "-0.03em",
+              }}
+            >
+              YOURS TO CREATE &amp; PUBLISH
+            </h1>
 
-                    <div className="my-auto grid grid-cols-3 gap-2.5">
-                      <div className="rounded-xl border border-white/15 bg-gradient-to-br from-[#7C5CFF] to-[#38BDF8] p-3 text-white">
-                        <p className="text-xs font-black">AI Reels</p>
-                        <p className="mt-0.5 text-[11px] text-white/85">
-                          15s &amp; 30s
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-white/20 bg-gradient-to-br from-[#EC4899] to-[#F59E0B] p-3 text-white -translate-y-1">
-                        <p className="text-xs font-black">Workflows</p>
-                        <p className="mt-0.5 text-[11px] text-white/90">
-                          Auto queue
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-white/15 bg-gradient-to-br from-[#10B981] to-[#6366F1] p-3 text-white">
-                        <p className="text-xs font-black">Publish</p>
-                        <p className="mt-0.5 text-[11px] text-white/85">
-                          All channels
-                        </p>
-                      </div>
-                    </div>
+            <p className="max-w-2xl text-sm font-medium leading-relaxed text-neutral-200 sm:text-base">
+              Launch AI workflows, manage your 30-day publishing calendar, and
+              connect your social channels from one studio.
+            </p>
 
-                    <div className="flex items-center justify-between text-xs font-bold text-neutral-200">
-                      <span>Scroll down for studio gallery</span>
-                      <span className="text-[#C4B5FD]">Postoll</span>
-                    </div>
-                  </div>
-                )}
-              </div>
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              <Link
+                href="/workflows"
+                className="inline-flex items-center gap-2 rounded-2xl bg-[#7C5CFF] px-5 py-3 text-sm font-extrabold text-white shadow-lg transition hover:bg-[#6A48F5]"
+              >
+                <span>◈</span>
+                <span>Workflows</span>
+              </Link>
+              <Link
+                href="/calendar"
+                className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/45 bg-amber-500/20 px-5 py-3 text-sm font-extrabold text-amber-100 backdrop-blur-xs transition hover:bg-amber-500/30"
+              >
+                <span>◫</span>
+                <span>Calendar</span>
+              </Link>
+              <Link
+                href="/accounts"
+                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/45 bg-emerald-500/20 px-5 py-3 text-sm font-extrabold text-emerald-100 backdrop-blur-xs transition hover:bg-emerald-500/30"
+              >
+                <span>◎</span>
+                <span>Accounts</span>
+              </Link>
+              <Link
+                href="/create"
+                className="inline-flex items-center gap-2 rounded-2xl border border-pink-400/45 bg-pink-500/20 px-5 py-3 text-sm font-extrabold text-pink-100 backdrop-blur-xs transition hover:bg-pink-500/30"
+              >
+                <span>✦</span>
+                <span>Create Studio</span>
+              </Link>
             </div>
           </div>
         </section>
 
-        {/* TOP HORIZONTAL STUDIO CARDS (LIKE LEONARDO TOP ROW) */}
-        <section className="mt-8">
+        {/* TOP HORIZONTAL STUDIO CARDS WITH REAL IMAGES */}
+        <section className="mt-7">
           <div className="grid gap-3.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             {TOP_STUDIO_STRIP.map((card) => (
               <Link
                 key={card.id}
                 href={card.href}
-                className="group relative overflow-hidden rounded-2xl border border-white/10 transition hover:-translate-y-0.5"
+                className={`group relative overflow-hidden rounded-2xl border border-white/12 ${card.sizeClass}`}
               >
-                <div
-                  className={`flex ${card.sizeClass} flex-col justify-between bg-gradient-to-br ${card.gradient} p-4 text-white`}
-                >
-                  <span className="w-fit rounded-md bg-black/35 px-2 py-0.5 text-[10px] font-black tracking-wider">
+                <GalleryMedia card={card} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-black/15" />
+
+                <div className="relative z-10 flex h-full flex-col justify-between p-4 text-white">
+                  <span className="w-fit rounded-md bg-black/45 px-2.5 py-0.5 text-[10px] font-black tracking-wider backdrop-blur-xs">
                     {card.badge}
                   </span>
                   <div>
                     <h2 className="text-base font-black tracking-tight">
                       {card.title}
                     </h2>
-                    <p className="mt-0.5 text-xs font-medium text-white/85">
+                    <p className="mt-0.5 text-xs font-medium text-neutral-200">
                       {card.subtitle}
                     </p>
                   </div>
@@ -415,24 +476,25 @@ export default function ContentLibraryDashboard() {
           </Link>
         </section>
 
-        {/* MULTI-SIZE VISUAL GALLERY BELOW (REPLACING CONTENT LIBRARY) */}
+        {/* MULTI-SIZE VISUAL GALLERY (REAL SAMPLE IMAGES + PLAYING VIDEOS) */}
         <section className="mt-6">
           <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredGallery.map((item) => (
               <Link
                 key={item.id}
                 href={item.href}
-                className="group relative overflow-hidden rounded-3xl border border-white/10 transition hover:-translate-y-0.5"
+                className={`group relative overflow-hidden rounded-3xl border border-white/12 ${item.sizeClass}`}
               >
-                <div
-                  className={`flex ${item.sizeClass} flex-col justify-between bg-gradient-to-br ${item.gradient} p-6 text-white`}
-                >
+                <GalleryMedia card={item} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/15" />
+
+                <div className="relative z-10 flex h-full flex-col justify-between p-6 text-white">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-full bg-black/35 px-3 py-1 text-[11px] font-black uppercase tracking-wider">
+                    <span className="rounded-full bg-black/50 px-3 py-1 text-[11px] font-black uppercase tracking-wider backdrop-blur-xs">
                       {item.badge}
                     </span>
-                    <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-bold">
-                      ▶ Studio
+                    <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-bold backdrop-blur-xs">
+                      {item.mediaType === "video" ? "▶ Video" : "✦ Studio"}
                     </span>
                   </div>
 
@@ -446,10 +508,10 @@ export default function ContentLibraryDashboard() {
                     >
                       {item.title}
                     </h3>
-                    <p className="mt-1.5 text-sm font-medium text-white/90">
+                    <p className="mt-1.5 text-sm font-medium text-neutral-200">
                       {item.subtitle}
                     </p>
-                    <span className="mt-4 inline-flex items-center gap-1 rounded-xl bg-black/35 px-3.5 py-1.5 text-xs font-extrabold text-white transition group-hover:bg-black/55">
+                    <span className="mt-4 inline-flex items-center gap-1 rounded-xl bg-white/15 px-3.5 py-1.5 text-xs font-extrabold text-white backdrop-blur-xs transition group-hover:bg-[#7C5CFF]">
                       {item.cta} →
                     </span>
                   </div>
