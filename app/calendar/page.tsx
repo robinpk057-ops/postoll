@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -118,7 +118,7 @@ function MediaThumbnail({
   if (!previewSrc) {
     return (
       <div
-        className={`${sizeClass} flex shrink-0 items-center justify-center rounded bg-zinc-800 text-[10px] text-zinc-400`}
+        className={`${sizeClass} flex shrink-0 items-center justify-center rounded-xl bg-zinc-800 text-[10px] text-zinc-400`}
       >
         Media
       </div>
@@ -132,7 +132,7 @@ function MediaThumbnail({
         preload="metadata"
         muted
         playsInline
-        className={`${sizeClass} shrink-0 rounded bg-zinc-900 object-cover`}
+        className={`${sizeClass} shrink-0 rounded-xl bg-zinc-900 object-cover`}
       />
     );
   }
@@ -142,7 +142,7 @@ function MediaThumbnail({
     <img
       src={previewSrc}
       alt=""
-      className={`${sizeClass} shrink-0 rounded bg-zinc-900 object-cover`}
+      className={`${sizeClass} shrink-0 rounded-xl bg-zinc-900 object-cover`}
     />
   );
 }
@@ -152,7 +152,7 @@ function StatusBadge({ status }: { status: string }) {
   const isFailed = isFailedStatus(status);
 
   let style = {
-    bg: "rgba(124, 58, 237, 0.16)",
+    bg: "rgba(124, 92, 255, 0.16)",
     border: "rgba(167, 139, 250, 0.35)",
     text: "#c4b5fd",
   };
@@ -173,7 +173,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize"
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold capitalize"
       style={{
         backgroundColor: style.bg,
         borderColor: style.border,
@@ -245,7 +245,6 @@ export default function CalendarPage() {
   const [notice, setNotice] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Per-date collapsed state toggled only by "+" / "-" button
   const [collapsedByDate, setCollapsedByDate] = useState<
     Record<string, boolean>
   >({});
@@ -260,7 +259,6 @@ export default function CalendarPage() {
   );
   const [visibleDayCount, setVisibleDayCount] = useState<number>(10);
 
-  // When editing an existing post via Reschedule, store its id to update in place
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingAccountLabel, setEditingAccountLabel] = useState<string | null>(
     null
@@ -518,6 +516,18 @@ export default function CalendarPage() {
     [dayGroups, visibleDayCount]
   );
 
+  const queueCounts = useMemo(() => {
+    let posted = 0;
+    let scheduled = 0;
+    let failed = 0;
+    for (const p of posts) {
+      if (isPostedStatus(p.status)) posted += 1;
+      else if (isScheduledStatus(p.status)) scheduled += 1;
+      else if (isFailedStatus(p.status)) failed += 1;
+    }
+    return { posted, scheduled, failed, total: posts.length };
+  }, [posts]);
+
   function toggleDayAccordion(dateKey: string) {
     setExpandedDayKeys((prev) => ({
       ...prev,
@@ -593,7 +603,6 @@ export default function CalendarPage() {
         defaultUrl = await uploadMediaFile(user.id, modalDate, file, "default");
       }
 
-      // In-place update when rescheduling an existing post (keeps same account, no new duplicate row)
       if (editingPostId) {
         const res = await fetch("/api/calendar/posts", {
           method: "PATCH",
@@ -713,19 +722,48 @@ export default function CalendarPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-6xl px-6 py-12 md:px-10">
-        <p className="text-sm font-medium" style={{ color: "#a78bfa" }}>
-          ✦ Medium plan
-        </p>
-        <h1 className="mt-2 text-4xl font-bold">Calendar</h1>
-        <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
-          Rolling 30-day schedule · multiple contents allowed per account ·
-          one-time per post · 24-hour ({timezone})
-        </p>
+      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10 md:px-10">
+        {/* COLORFUL CALENDAR STUDIO HEADER */}
+        <div
+          className="rounded-3xl border p-6 sm:p-8"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(251,191,36,0.14) 0%, var(--card) 52%, rgba(124,92,255,0.18) 100%)",
+            borderColor: "var(--border)",
+          }}
+        >
+          <p className="text-xs font-bold uppercase tracking-widest text-[#FDE68A]">
+            ◫ Postoll Publishing Queue
+          </p>
+          <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
+            Calendar
+          </h1>
+          <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+            Rolling 30-day schedule · multiple contents allowed per account ·
+            one-time per post · 24-hour ({timezone})
+          </p>
+
+          <div className="mt-4 flex flex-wrap gap-2.5 text-xs font-bold">
+            <span className="rounded-full border border-[#7C5CFF]/35 bg-[#7C5CFF]/15 px-3.5 py-1 text-[#C4B5FD]">
+              {queueCounts.total} Total Queue Items
+            </span>
+            <span className="rounded-full border border-sky-400/35 bg-sky-500/15 px-3.5 py-1 text-sky-300">
+              {queueCounts.scheduled} Scheduled
+            </span>
+            <span className="rounded-full border border-emerald-500/35 bg-emerald-500/15 px-3.5 py-1 text-emerald-300">
+              {queueCounts.posted} Posted
+            </span>
+            {queueCounts.failed > 0 && (
+              <span className="rounded-full border border-rose-500/35 bg-rose-500/15 px-3.5 py-1 text-rose-300">
+                {queueCounts.failed} Failed
+              </span>
+            )}
+          </div>
+        </div>
 
         {notice && (
           <div
-            className="mt-4 rounded-xl border px-4 py-3 text-sm"
+            className="mt-5 rounded-2xl border px-4 py-3 text-sm"
             style={{
               backgroundColor: "rgba(16, 185, 129, 0.12)",
               borderColor: "rgba(52, 211, 153, 0.35)",
@@ -737,19 +775,18 @@ export default function CalendarPage() {
         )}
 
         {error && !modalDate && (
-          <p className="mt-4 text-sm text-red-400">{error}</p>
+          <p className="mt-5 text-sm text-red-400">{error}</p>
         )}
 
         {accounts.length === 0 && !loading && (
           <div
-            className="mt-6 rounded-xl border p-4"
-            style={{ background: "#141419", borderColor: "#2e2e38" }}
+            className="mt-6 rounded-2xl border p-5"
+            style={{ background: "var(--card)", borderColor: "var(--border)" }}
           >
-            <p className="text-sm">No eligible social accounts connected.</p>
+            <p className="text-sm font-medium">No eligible social accounts connected.</p>
             <Link
               href="/accounts"
-              className="mt-2 inline-block text-sm font-medium"
-              style={{ color: "#a78bfa" }}
+              className="mt-2 inline-block text-sm font-bold text-[#C4B5FD] hover:underline"
             >
               Connect an account →
             </Link>
@@ -762,9 +799,10 @@ export default function CalendarPage() {
           </p>
         ) : (
           <>
-            <div className="mt-10 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="mt-8 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {days.map((d) => {
                 const key = toDateKey(d);
+                const isToday = key === todayKey;
                 const dayPosts = postsForDay(key);
                 const isCollapsed = Boolean(collapsedByDate[key]);
                 const label = d.toLocaleDateString(undefined, {
@@ -776,15 +814,24 @@ export default function CalendarPage() {
                 return (
                   <div
                     key={key}
-                    className="flex flex-col rounded-2xl border p-4"
+                    className="flex flex-col rounded-2xl border p-4 transition hover:-translate-y-0.5"
                     style={{
                       background: "var(--card)",
-                      borderColor: "var(--border)",
+                      borderColor: isToday
+                        ? "rgba(124,92,255,0.65)"
+                        : "var(--border)",
                     }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-lg font-semibold">{label}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-lg font-bold">{label}</p>
+                          {isToday && (
+                            <span className="rounded-full bg-[#7C5CFF]/20 px-2 py-0.5 text-[10px] font-bold text-[#C4B5FD]">
+                              Today
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[11px] text-zinc-400">
                           {dayPosts.length}{" "}
                           {dayPosts.length === 1 ? "item" : "items"}
@@ -806,11 +853,7 @@ export default function CalendarPage() {
                         <button
                           type="button"
                           onClick={() => openModalForDate(key)}
-                          className="rounded-lg px-2 py-1 text-xs font-medium"
-                          style={{
-                            background: "var(--foreground)",
-                            color: "var(--background)",
-                          }}
+                          className="rounded-lg bg-[#7C5CFF] px-2.5 py-1 text-xs font-bold text-white transition hover:bg-[#6A48F5]"
                         >
                           + Add
                         </button>
@@ -832,7 +875,7 @@ export default function CalendarPage() {
                           return (
                             <div
                               key={p.id}
-                              className="rounded-lg border p-2.5"
+                              className="rounded-xl border p-2.5"
                               style={{
                                 borderColor: "var(--border)",
                                 backgroundColor: "rgba(255,255,255,0.02)",
@@ -845,7 +888,7 @@ export default function CalendarPage() {
                                   sizeClass="h-11 w-11"
                                 />
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-medium">
+                                  <p className="truncate text-sm font-semibold">
                                     {(p.scheduled_time || "").slice(0, 5)}
                                     {p.platform ? ` · ${p.platform}` : ""}
                                   </p>
@@ -867,7 +910,7 @@ export default function CalendarPage() {
                                   <button
                                     type="button"
                                     onClick={() => openRescheduleModal(p)}
-                                    className="rounded px-2 py-0.5 text-[11px] font-medium text-violet-300 hover:bg-violet-950/60"
+                                    className="rounded px-2 py-0.5 text-[11px] font-semibold text-violet-300 hover:bg-violet-950/60"
                                   >
                                     Reschedule
                                   </button>
@@ -875,7 +918,7 @@ export default function CalendarPage() {
                                     type="button"
                                     disabled={deletingId === p.id}
                                     onClick={() => handleDeletePost(p)}
-                                    className="rounded px-2 py-0.5 text-[11px] font-medium text-red-300 hover:bg-red-950/60 disabled:opacity-40"
+                                    className="rounded px-2 py-0.5 text-[11px] font-semibold text-red-300 hover:bg-red-950/60 disabled:opacity-40"
                                   >
                                     {deletingId === p.id
                                       ? "Deleting…"
@@ -895,10 +938,10 @@ export default function CalendarPage() {
 
             {/* Collapsible & Day-Grouped Scheduled / Posted History */}
             <section
-              className="mt-12 rounded-2xl border p-5"
+              className="mt-12 rounded-2xl border p-5 sm:p-6"
               style={{
-                backgroundColor: "#14141b",
-                borderColor: "#2a2a36",
+                backgroundColor: "var(--card)",
+                borderColor: "var(--border)",
               }}
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -916,7 +959,7 @@ export default function CalendarPage() {
                 <button
                   type="button"
                   onClick={() => setHistoryOpen((prev) => !prev)}
-                  className="rounded-lg border px-3 py-1.5 text-xs font-medium transition"
+                  className="rounded-xl border px-3.5 py-1.5 text-xs font-semibold transition"
                   style={{
                     backgroundColor: "#1d1d26",
                     borderColor: "#343442",
@@ -948,9 +991,9 @@ export default function CalendarPage() {
                               setHistoryFilter(key);
                               setVisibleDayCount(10);
                             }}
-                            className="rounded-lg border px-3 py-1.5 text-xs font-medium transition"
+                            className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
                             style={{
-                              backgroundColor: active ? "#7c3aed" : "#1b1b24",
+                              backgroundColor: active ? "#7C5CFF" : "#1b1b24",
                               borderColor: active ? "#8b5cf6" : "#2f2f3d",
                               color: active ? "#ffffff" : "#d4d4d8",
                             }}
@@ -1012,7 +1055,7 @@ export default function CalendarPage() {
                             className="rounded-xl border"
                             style={{
                               backgroundColor: "#0e0e13",
-                              borderColor: isExpanded ? "#363647" : "#262632",
+                              borderColor: isExpanded ? "#7C5CFF" : "#262632",
                             }}
                           >
                             <button
@@ -1212,7 +1255,6 @@ export default function CalendarPage() {
               </p>
             )}
 
-            {/* Time & Default Media */}
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium">Time (24h)</label>
@@ -1305,7 +1347,6 @@ export default function CalendarPage() {
               </div>
             </div>
 
-            {/* Account Selection (hidden when rescheduling an existing post in place) */}
             {!editingPostId && (
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
@@ -1381,7 +1422,6 @@ export default function CalendarPage() {
               </div>
             )}
 
-            {/* Per-Account Media Option */}
             {!editingPostId && chosenAccounts.length > 0 && (
               <div className="rounded-xl border border-zinc-800 bg-[#0d0d12] p-3.5">
                 <label className="flex cursor-pointer items-center justify-between gap-2 text-xs font-medium text-zinc-200">
@@ -1449,7 +1489,6 @@ export default function CalendarPage() {
               </div>
             )}
 
-            {/* Caption & Per-Account Descriptions */}
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <label className="text-sm font-medium">
@@ -1537,11 +1576,7 @@ export default function CalendarPage() {
                 type="button"
                 disabled={!canSubmit}
                 onClick={submitPost}
-                className="rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40"
-                style={{
-                  background: "var(--foreground)",
-                  color: "var(--background)",
-                }}
+                className="rounded-xl bg-[#7C5CFF] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#6A48F5] disabled:opacity-40"
               >
                 {saving
                   ? "Saving…"
