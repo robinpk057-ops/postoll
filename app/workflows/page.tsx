@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppShell from "../AppShell";
 import { createClient } from "@/lib/supabase/client";
@@ -290,25 +290,48 @@ export default function WorkflowsPage() {
     loadWorkflows();
   }, []);
 
+  const activeCount = useMemo(
+    () => workflows.filter((w) => w.active).length,
+    [workflows]
+  );
+
   return (
     <AppShell>
-      <div className="mx-auto max-w-6xl px-6 py-10 md:px-10">
-        <div className="mb-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10 md:px-10">
+        {/* COLORFUL WORKFLOWS STUDIO HEADER */}
+        <div
+          className="mb-8 rounded-3xl border p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8 flex flex-col gap-5"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(56,189,248,0.16) 0%, var(--card) 52%, rgba(124,92,255,0.18) 100%)",
+            borderColor: "var(--border)",
+          }}
+        >
           <div>
-            <h1 className="text-4xl font-bold">Workflows</h1>
-            <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
+            <p className="text-xs font-bold uppercase tracking-widest text-[#7DD3FC]">
+              ◈ Postoll AI Pipelines
+            </p>
+            <h1 className="mt-1.5 text-3xl font-black tracking-tight sm:text-4xl">
+              Workflows
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm" style={{ color: "var(--muted)" }}>
               Create automated content systems for your brands. Click a card to
               inspect posts or reschedule for tomorrow onwards.
             </p>
+
+            <div className="mt-4 flex flex-wrap gap-2.5 text-xs font-bold">
+              <span className="rounded-full border border-[#7C5CFF]/35 bg-[#7C5CFF]/15 px-3.5 py-1 text-[#C4B5FD]">
+                {workflows.length} Total Workflows
+              </span>
+              <span className="rounded-full border border-emerald-500/35 bg-emerald-500/15 px-3.5 py-1 text-emerald-300">
+                {activeCount} Active
+              </span>
+            </div>
           </div>
 
           <Link
             href="/workflows/create"
-            className="rounded-xl px-5 py-3 text-sm font-semibold transition hover:opacity-90"
-            style={{
-              background: "var(--foreground)",
-              color: "var(--background)",
-            }}
+            className="shrink-0 rounded-2xl bg-[#7C5CFF] px-5 py-3 text-center text-sm font-bold text-white shadow-lg transition hover:bg-[#6A48F5]"
           >
             + Create Workflow
           </Link>
@@ -321,7 +344,7 @@ export default function WorkflowsPage() {
         )}
 
         {loading && (
-          <div className="grid gap-5 md:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((item) => (
               <div
                 key={item}
@@ -336,28 +359,35 @@ export default function WorkflowsPage() {
         )}
 
         {!loading && workflows.length > 0 && (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {workflows.map((workflow) => {
               const isExpanded = expandedId === workflow.id;
               const items = itemsByWorkflow[workflow.id] || [];
               const slots = slotsByWorkflow[workflow.id] || [];
+              const isAiMode = workflow.mode === "ai_generated";
 
               return (
                 <div
                   key={workflow.id}
                   onClick={() => toggleWorkflowCard(workflow.id)}
                   className={`cursor-pointer rounded-2xl border p-6 transition hover:-translate-y-0.5 ${
-                    isExpanded ? "md:col-span-2 lg:col-span-3" : ""
+                    isExpanded ? "sm:col-span-2 lg:col-span-3" : ""
                   }`}
                   style={{
                     background: "var(--card)",
-                    borderColor: "var(--border)",
+                    borderColor: workflow.active
+                      ? "rgba(124,92,255,0.35)"
+                      : "var(--border)",
                   }}
                 >
                   <div className="flex gap-4">
                     <div
-                      className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border"
-                      style={{ borderColor: "var(--border)" }}
+                      className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl border"
+                      style={{
+                        borderColor: "var(--border)",
+                        background:
+                          "linear-gradient(135deg, rgba(124,92,255,0.2), rgba(236,72,153,0.15))",
+                      }}
                     >
                       {workflow.thumbnail_url ? (
                         isVideoUrl(workflow.thumbnail_url) ? (
@@ -380,24 +410,24 @@ export default function WorkflowsPage() {
                           />
                         )
                       ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] opacity-50">
-                          No media
+                        <div className="flex h-full items-center justify-center text-lg font-bold text-[#C4B5FD]">
+                          ✦
                         </div>
                       )}
                     </div>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <h2 className="truncate text-xl font-semibold">
+                        <h2 className="truncate text-lg font-bold sm:text-xl">
                           {workflow.name}
                         </h2>
                         <span
-                          className="shrink-0 rounded-full px-3 py-1 text-xs"
+                          className="shrink-0 rounded-full px-3 py-1 text-xs font-bold"
                           style={{
                             background: workflow.active
-                              ? "rgba(34,197,94,.15)"
+                              ? "rgba(34,197,94,.16)"
                               : "rgba(156,163,175,.15)",
-                            color: workflow.active ? "#22c55e" : "#9ca3af",
+                            color: workflow.active ? "#4ade80" : "#9ca3af",
                           }}
                         >
                           {workflow.active ? "Active" : "Paused"}
@@ -414,10 +444,15 @@ export default function WorkflowsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-5 flex items-center justify-between text-sm">
-                    <span>
-                      Mode:
-                      <span className="ml-2 font-medium">{workflow.mode}</span>
+                  <div className="mt-5 flex items-center justify-between gap-2 text-sm">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-bold ${
+                        isAiMode
+                          ? "bg-[#7C5CFF]/15 text-[#C4B5FD]"
+                          : "bg-sky-500/15 text-sky-300"
+                      }`}
+                    >
+                      Mode: {workflow.mode}
                     </span>
 
                     <div
@@ -427,7 +462,7 @@ export default function WorkflowsPage() {
                       <button
                         type="button"
                         onClick={() => setConfirmId(workflow.id)}
-                        className="rounded-lg border px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
+                        className="rounded-xl border px-3.5 py-1.5 text-xs font-bold text-rose-400 transition hover:bg-rose-500/10"
                         style={{ borderColor: "var(--border)" }}
                       >
                         Delete
@@ -443,7 +478,7 @@ export default function WorkflowsPage() {
                     >
                       {/* Reschedule Controls (From Tomorrow Onwards) */}
                       <div>
-                        <h3 className="text-sm font-semibold">
+                        <h3 className="text-sm font-bold">
                           Reschedule ({slots.length}{" "}
                           {slots.length === 1 ? "time" : "times"} per day ·
                           Effective From Tomorrow Onwards)
@@ -520,11 +555,7 @@ export default function WorkflowsPage() {
                                           slot.id
                                         )
                                       }
-                                      className="rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-                                      style={{
-                                        background: "var(--foreground)",
-                                        color: "var(--background)",
-                                      }}
+                                      className="rounded-lg bg-[#7C5CFF] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
                                     >
                                       {savingSlotId === slot.id
                                         ? "Saving…"
@@ -546,7 +577,7 @@ export default function WorkflowsPage() {
 
                       {/* Individual Content Boxes */}
                       <div>
-                        <h3 className="text-sm font-semibold">
+                        <h3 className="text-sm font-bold">
                           Workflow Content History ({items.length})
                         </h3>
 
