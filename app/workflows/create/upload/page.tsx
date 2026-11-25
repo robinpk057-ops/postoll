@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import AppShell from "../../../AppShell";
@@ -10,29 +10,85 @@ export default function UploadContentPage() {
   const router = useRouter();
   const supabase = createClient();
 
+  const { workflow, updateWorkflow } = useWorkflow();
+
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [seoEnabled, setSeoEnabled] = useState(true);
+  const [seoKeywords, setSeoKeywords] = useState("");
+  const [seoLoading, setSeoLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
-
-  const { workflow, updateWorkflow } = useWorkflow();
 
   const selectedFile = workflow.uploadFiles?.[0] ?? null;
 
   const canContinue =
     Boolean(selectedFile) &&
+    Boolean((workflow.name || "").trim()) &&
     workflow.uploadDescription.trim().length > 0;
 
   function handleSingleFile(file: File | undefined) {
     if (!file) return;
     setUploadError("");
-    // Keep only a single file for this workflow (replaces any prior selection)
     updateWorkflow({ uploadFiles: [file] });
   }
 
   function removeFile() {
     setUploadError("");
     updateWorkflow({ uploadFiles: [] });
+  }
+
+  async function handleGenerateSeo() {
+    const baseText = [
+      workflow.name?.trim(),
+      workflow.uploadDescription.trim(),
+      seoKeywords.trim() ? `Target SEO keywords: ${seoKeywords.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join(". ");
+
+    if (baseText.length < 6) {
+      setAiError("Add a workflow name, description, or SEO keywords first.");
+      return;
+    }
+
+    setAiError("");
+    setSeoLoading(true);
+    try {
+      const res = await fetch("/api/ai/caption", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: `${baseText}. Optimize for social search and discovery SEO with clear keywords and relevant hashtags.`,
+          contentType: "post",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "SEO generation failed");
+      }
+
+      const tags = Array.isArray(data.hashtags)
+        ? data.hashtags.map((t: string) => (t.startsWith("#") ? t : `#${t}`))
+        : [];
+      const keywordTags = seoKeywords
+        .split(",")
+        .map((k) => k.trim().replace(/^#+/, "").replace(/\s+/g, ""))
+        .filter(Boolean)
+        .map((k) => `#${k}`);
+
+      const mergedTags = Array.from(new Set([...tags, ...keywordTags])).join(" ");
+      const nextCaption = [data.caption, mergedTags].filter(Boolean).join("\n\n");
+
+      updateWorkflow({
+        source: "user_uploaded",
+        uploadDescription: nextCaption,
+      });
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "SEO generation failed");
+    } finally {
+      setSeoLoading(false);
+    }
   }
 
   async function continueNext() {
@@ -46,7 +102,6 @@ export default function UploadContentPage() {
 
       let finalUrl: string;
 
-      // If it's already a string URL from a previous upload, keep it
       if (typeof selectedFile === "string") {
         finalUrl = selectedFile;
       } else {
@@ -74,9 +129,9 @@ export default function UploadContentPage() {
         finalUrl = publicUrl;
       }
 
-      // Save the single uploaded public URL in uploadFiles
       updateWorkflow({
         source: "user_uploaded",
+        name: (workflow.name || "").trim(),
         uploadFiles: [finalUrl] as any,
       });
 
@@ -94,65 +149,17 @@ export default function UploadContentPage() {
       <div className="mx-auto max-w-5xl px-6 py-12 md:px-10">
         {/* HEADER */}
         <div className="mb-10">
-          <p
-            className="text-sm font-medium"
-            style={{
-              color: "#a78bfa",
-            }}
-          >
+          <p className="text-sm font-medium" style={{ color: "#a78bfa" }}>
             ✦ Workflow Builder
           </p>
 
-          <h1 className="mt-2 text-4xl font-bold">Upload Your Content</h1>
-          <p
-            className="mt-2 text-sm"
-            style={{
-              color: "var(--muted)",
-            }}
-          >
-            Upload a single video or image that Postoll should publish for this workflow.
+          <h1 className="mt-2 text-4xl font-bold">
+            Upload Your Content — We Post It For You
+          </h1>
+          <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+            Name your workflow, upload a single video or image, optimize SEO if
+            needed, and Postoll schedules and posts it for you.
           </p>
-        </div>
-
-        {/* STEP */}
-        <div className="mb-10 flex items-center gap-3">
-          <div
-            className="rounded-full border px-4 py-2 text-sm"
-            style={{
-              borderColor: "var(--border)",
-              color: "var(--muted)",
-            }}
-          >
-            1
-          </div>
-
-          <span
-            className="text-sm"
-            style={{
-              color: "var(--muted)",
-            }}
-          >
-            Source
-          </span>
-
-          <div
-            className="h-px flex-1"
-            style={{
-              background: "var(--border)",
-            }}
-          />
-
-          <div
-            className="rounded-full px-4 py-2 text-sm font-medium"
-            style={{
-              background: "#8b5cf6",
-              color: "#fff",
-            }}
-          >
-            2
-          </div>
-
-          <span className="text-sm">Upload Content</span>
         </div>
 
         {/* MAIN CARD */}
@@ -163,17 +170,36 @@ export default function UploadContentPage() {
             borderColor: "var(--border)",
           }}
         >
+          {/* WORKFLOW NAME */}
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Workflow Name</label>
+              <span className="text-xs" style={{ color: "#8b5cf6" }}>
+                Required
+              </span>
+            </div>
+
+            <input
+              value={workflow.name || ""}
+              onChange={(e) => updateWorkflow({ name: e.target.value })}
+              placeholder="Example: Weekly Product Reels"
+              className="mt-3 w-full rounded-xl border p-4 outline-none transition focus:border-purple-500"
+              style={{
+                background: "var(--background)",
+                borderColor: (workflow.name || "").trim()
+                  ? "#8b5cf6"
+                  : "var(--border)",
+              }}
+            />
+          </div>
+
           {/* UPLOAD */}
           <div>
             <h2 className="text-xl font-semibold">Upload Content</h2>
 
-            <p
-              className="mt-2 text-sm"
-              style={{
-                color: "var(--muted)",
-              }}
-            >
-              Upload one video or image file for this workflow. Selecting another file replaces the current one.
+            <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+              Upload one video or image file for this workflow. Selecting another
+              file replaces the current one.
             </p>
 
             <label
@@ -193,12 +219,7 @@ export default function UploadContentPage() {
                   : "Click to upload a single file"}
               </p>
 
-              <p
-                className="mt-1 text-xs"
-                style={{
-                  color: "var(--muted)",
-                }}
-              >
+              <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
                 MP4, MOV, JPG, PNG — 1 file per workflow
               </p>
 
@@ -209,7 +230,6 @@ export default function UploadContentPage() {
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   handleSingleFile(file);
-                  // Reset input value so selecting the same file again still triggers onChange
                   e.target.value = "";
                 }}
               />
@@ -264,7 +284,7 @@ export default function UploadContentPage() {
             )}
           </div>
 
-          {/* DESCRIPTION */}
+          {/* DESCRIPTION & CAPTION */}
           <div>
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
@@ -305,10 +325,7 @@ export default function UploadContentPage() {
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                disabled={
-                  aiLoading ||
-                  workflow.uploadDescription.trim().length < 10
-                }
+                disabled={aiLoading || workflow.uploadDescription.trim().length < 10}
                 onClick={async () => {
                   setAiError("");
                   setAiLoading(true);
@@ -347,14 +364,78 @@ export default function UploadContentPage() {
                   color: "#fff",
                 }}
               >
-                {aiLoading
-                  ? "Generating…"
-                  : "✨ Generate caption & hashtags"}
+                {aiLoading ? "Generating…" : "✨ Generate caption & hashtags"}
               </button>
-              {aiError && (
-                <span className="text-xs text-red-400">{aiError}</span>
-              )}
             </div>
+          </div>
+
+          {/* SEO OPTION */}
+          <div
+            className="rounded-2xl border p-5"
+            style={{
+              borderColor: seoEnabled ? "#8b5cf6" : "var(--border)",
+              background: "var(--background)",
+            }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold">
+                  SEO Optimization (Optional)
+                </h3>
+                <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
+                  Add search keywords and generate SEO-friendly copy &amp; tags
+                  for discoverability.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSeoEnabled((prev) => !prev)}
+                className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{
+                  borderColor: seoEnabled ? "#8b5cf6" : "var(--border)",
+                  background: seoEnabled ? "rgba(139,92,246,.18)" : "transparent",
+                }}
+              >
+                {seoEnabled ? "SEO Enabled" : "Enable SEO"}
+              </button>
+            </div>
+
+            {seoEnabled && (
+              <div className="mt-4 space-y-3">
+                <input
+                  type="text"
+                  value={seoKeywords}
+                  onChange={(e) => setSeoKeywords(e.target.value)}
+                  placeholder="Target SEO keywords (e.g., luxury watch, morning routine, AI video tips)"
+                  className="w-full rounded-xl border p-3 text-sm outline-none focus:border-purple-500"
+                  style={{
+                    background: "var(--card)",
+                    borderColor: "var(--border)",
+                  }}
+                />
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={seoLoading}
+                    onClick={handleGenerateSeo}
+                    className="rounded-xl border px-4 py-2 text-xs font-semibold transition hover:border-purple-500 disabled:opacity-40"
+                    style={{
+                      borderColor: "#8b5cf6",
+                      background: "rgba(139,92,246,.14)",
+                    }}
+                  >
+                    {seoLoading
+                      ? "Optimizing SEO…"
+                      : "🔍 Apply SEO Keywords & Caption"}
+                  </button>
+                  {aiError && (
+                    <span className="text-xs text-red-400">{aiError}</span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {uploadError && (
@@ -372,26 +453,26 @@ export default function UploadContentPage() {
           >
             <button
               type="button"
-              onClick={() => router.back()}
+              onClick={() => router.push("/workflows")}
               className="rounded-xl border px-6 py-3 text-sm font-medium"
               style={{
                 borderColor: "var(--border)",
               }}
             >
-              ← Back
+              ← Back to Workflows
             </button>
 
             <button
               type="button"
               disabled={!canContinue || uploading}
               onClick={continueNext}
-              className="rounded-xl px-6 py-3 text-sm font-medium disabled:opacity-40"
+              className="rounded-xl px-6 py-3 text-sm font-semibold disabled:opacity-40"
               style={{
                 background: "#8b5cf6",
                 color: "#fff",
               }}
             >
-              {uploading ? "Uploading…" : "Continue →"}
+              {uploading ? "Uploading…" : "Continue to Schedule →"}
             </button>
           </div>
         </div>
