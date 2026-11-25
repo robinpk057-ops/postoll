@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -7,9 +7,14 @@ import { createClient } from "@/lib/supabase/client";
 type UserProfile = {
   email: string;
   fullName: string;
+  isAdmin: boolean;
 };
 
-export default function Header() {
+export default function Header({
+  onOpenMobileMenu,
+}: {
+  onOpenMobileMenu?: () => void;
+}) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -30,12 +35,14 @@ export default function Header() {
       setDarkMode(true);
     }
 
+    let active = true;
+
     async function loadUser() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) {
+      if (!user || !active) {
         return;
       }
 
@@ -44,13 +51,32 @@ export default function Header() {
         user.email?.split("@")[0] ||
         "User";
 
-      setProfile({
-        email: user.email || "",
-        fullName,
-      });
+      let isAdmin = false;
+      try {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("id", user.id)
+          .maybeSingle();
+        isAdmin = Boolean(prof?.is_admin);
+      } catch {
+        isAdmin = false;
+      }
+
+      if (active) {
+        setProfile({
+          email: user.email || "",
+          fullName,
+          isAdmin,
+        });
+      }
     }
 
     loadUser();
+
+    return () => {
+      active = false;
+    };
   }, [supabase]);
 
   useEffect(() => {
@@ -105,22 +131,28 @@ export default function Header() {
       return words[0].slice(0, 2).toUpperCase();
     }
 
-    return (
-      words[0][0] + words[words.length - 1][0]
-    ).toUpperCase();
+    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
   }
 
   return (
-    <header className="sticky top-0 z-40 flex h-[68px] items-center justify-between border-b border-[var(--border)] bg-[rgba(9,9,11,0.85)] px-5 backdrop-blur-xl md:px-8">
+    <header className="sticky top-0 z-40 flex h-[68px] items-center justify-between border-b border-[var(--border)] bg-[rgba(9,9,11,0.85)] px-4 backdrop-blur-xl sm:px-6 md:px-8">
       {/* Left */}
       <div className="flex items-center gap-3">
+        {onOpenMobileMenu && (
+          <button
+            type="button"
+            onClick={onOpenMobileMenu}
+            aria-label="Open navigation menu"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-sm text-white transition hover:border-[var(--border-hover)] lg:hidden"
+          >
+            ☰
+          </button>
+        )}
+
         <div className="hidden h-8 w-px bg-[var(--border)] md:block" />
 
         <div>
-          <p className="text-sm font-medium text-white">
-            {getGreeting()}
-          </p>
-
+          <p className="text-sm font-medium text-white">{getGreeting()}</p>
           <p className="hidden text-xs text-[var(--muted-foreground)] sm:block">
             Create something great today.
           </p>
@@ -129,7 +161,6 @@ export default function Header() {
 
       {/* Right */}
       <div className="flex items-center gap-2">
-        {/* Theme */}
         <button
           type="button"
           onClick={toggleTheme}
@@ -140,7 +171,6 @@ export default function Header() {
           {darkMode ? "☀" : "☾"}
         </button>
 
-        {/* Profile */}
         <div ref={profileRef} className="relative">
           <button
             type="button"
@@ -154,28 +184,27 @@ export default function Header() {
             </div>
 
             <div className="hidden text-left sm:block">
-              <div className="max-w-[120px] truncate text-xs font-medium text-white">
+              <div className="max-w-[140px] truncate text-xs font-medium text-white">
                 {profile?.fullName || "User"}
               </div>
 
-              <div className="max-w-[120px] truncate text-[11px] text-[var(--muted-foreground)]">
+              <div className="max-w-[140px] truncate text-[11px] text-[var(--muted-foreground)]">
                 {profile?.email || ""}
               </div>
             </div>
 
             <span
               className={[
-                "hidden text-[var(--muted-foreground)] transition-transform sm:block",
+                "hidden text-xs text-[var(--muted-foreground)] transition-transform sm:block",
                 profileOpen ? "rotate-180" : "",
               ].join(" ")}
             >
-              ˅
+              ⌄
             </span>
           </button>
 
           {profileOpen && (
             <div className="absolute right-0 top-12 z-50 w-[280px] overflow-hidden rounded-2xl border border-[var(--border)] bg-[#111113] shadow-2xl shadow-black/40">
-              {/* Profile header */}
               <div className="border-b border-[var(--border)] p-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-sm font-bold text-black">
@@ -194,8 +223,28 @@ export default function Header() {
                 </div>
               </div>
 
-              {/* Menu */}
               <div className="p-2">
+                {profile?.isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      router.push("/admin");
+                    }}
+                    className="mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#C4B5FD] transition hover:bg-[#7C5CFF]/15 hover:text-white"
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#7C5CFF]/20">
+                      ⚡
+                    </span>
+                    <span>
+                      <span className="block font-medium">Admin Control</span>
+                      <span className="block text-[11px] text-[var(--muted-foreground)]">
+                        CMS, users, costs &amp; logs
+                      </span>
+                    </span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
@@ -209,10 +258,7 @@ export default function Header() {
                   </span>
 
                   <span>
-                    <span className="block font-medium">
-                      Settings
-                    </span>
-
+                    <span className="block font-medium">Settings</span>
                     <span className="block text-[11px] text-[var(--muted-foreground)]">
                       Manage your Postoll account
                     </span>
@@ -225,14 +271,11 @@ export default function Header() {
                   className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--muted)] transition hover:bg-red-500/10 hover:text-red-400"
                 >
                   <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-hover)]">
-                    ↪
+                    ↩
                   </span>
 
                   <span>
-                    <span className="block font-medium">
-                      Log out
-                    </span>
-
+                    <span className="block font-medium">Log out</span>
                     <span className="block text-[11px] text-[var(--muted-foreground)]">
                       Sign out of Postoll
                     </span>
