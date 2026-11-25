@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { DEFAULT_HERO_CONTENT, type HeroCmsContent } from "@/lib/cms-defaults";
+import { DEFAULT_HERO_CONTENT, type HeroCmsContent, type StatCmsItem } from "@/lib/cms-defaults";
 
 type AudienceKey = "creators" | "brands" | "agencies" | "marketers";
 
@@ -173,12 +173,17 @@ function MediaBox({
   );
 }
 
-export default function LandingPage() {
+export default function LandingPage({
+  hero,
+}: {
+  hero?: HeroCmsContent;
+  stats?: StatCmsItem[];
+}) {
   const supabase = createClient();
   const [audience, setAudience] = useState<AudienceKey>("creators");
   const [heroMedia, setHeroMedia] = useState({
-    videoUrl: DEFAULT_HERO_CONTENT.heroVideoUrl || HERO_SAMPLE_VIDEO,
-    posterUrl: DEFAULT_HERO_CONTENT.heroPosterUrl || HERO_SAMPLE_POSTER,
+    videoUrl: hero?.heroVideoUrl || DEFAULT_HERO_CONTENT.heroVideoUrl || HERO_SAMPLE_VIDEO,
+    posterUrl: hero?.heroPosterUrl || DEFAULT_HERO_CONTENT.heroPosterUrl || HERO_SAMPLE_POSTER,
   });
 
   useEffect(() => {
@@ -193,10 +198,10 @@ export default function LandingPage() {
 
         if (active && data?.content && typeof data.content === "object") {
           const c = data.content as Partial<HeroCmsContent>;
-          setHeroMedia({
-            videoUrl: c.heroVideoUrl || HERO_SAMPLE_VIDEO,
-            posterUrl: c.heroPosterUrl || HERO_SAMPLE_POSTER,
-          });
+          setHeroMedia((prev) => ({
+            videoUrl: c.heroVideoUrl || prev.videoUrl || HERO_SAMPLE_VIDEO,
+            posterUrl: c.heroPosterUrl || prev.posterUrl || HERO_SAMPLE_POSTER,
+          }));
         }
       } catch {
         // Use default sample media
@@ -588,3 +593,4 @@ export default function LandingPage() {
     </div>
   );
 }
+
