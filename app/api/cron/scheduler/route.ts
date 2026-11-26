@@ -313,6 +313,7 @@ async function handleScheduler(request: Request) {
     }
   );
 
+  await recoverStuckPublishingContent(supabaseAdmin);
   const now = new Date();
 
   const results: Array<{
@@ -1146,6 +1147,67 @@ async function handleScheduler(request: Request) {
   }
 }
 
+function isAuthReconnectError(message: string): boolean {
+  const m = (message || "").toLowerCase();
+  return (
+    m.includes("invalid_grant") ||
+    m.includes("token refresh failed") ||
+    m.includes("reconnect") ||
+    m.includes("no refresh_token") ||
+    m.includes("oauth") ||
+    m.includes("unauthorized") ||
+    m.includes("401") ||
+    m.includes("190") ||
+    m.includes("revoked") ||
+    m.includes("expired")
+  );
+}
+
+async function flagAccountReconnectNeeded(
+  supabaseAdmin: SupabaseClient,
+  userId: string,
+  platform: string,
+  accountId: string | null,
+  reason: string
+) {
+  if (!isAuthReconnectError(reason)) return;
+
+  try {
+    if (accountId) {
+      await supabaseAdmin
+        .from("accounts")
+        .update({ connected: false })
+        .eq("id", accountId)
+        .eq("user_id", userId);
+
+      await supabaseAdmin
+        .from("accounts")
+        .update({ connected: false })
+        .eq("user_id", userId)
+        .eq("account_id", accountId);
+    } else if (platform) {
+      await supabaseAdmin
+        .from("accounts")
+        .update({ connected: false })
+        .eq("user_id", userId)
+        .ilike("platform", platform);
+    }
+  } catch (err) {
+    console.error("Failed to flag account reconnect state:", err);
+  }
+}
+
+async function recoverStuckPublishingContent(
+  supabaseAdmin: SupabaseClient
+) {
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  await supabaseAdmin
+    .from("content")
+    .update({ status: "queued" })
+    .eq("status", "publishing")
+    .lt("updated_at", fiveMinutesAgo);
+}
+
 function platformErrorIsPostError(err: unknown): err is PublishPostError {
   return err instanceof PublishPostError;
 }
@@ -1165,3 +1227,4 @@ async function insertRun(
     );
   }
 }
+
