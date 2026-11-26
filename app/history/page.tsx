@@ -238,7 +238,9 @@ export default function PublishHistoryPage() {
       return {
         ...item,
         workflowName: wf?.name || "Untitled Workflow",
-        category: isUserUploaded ? ("user_uploaded" as const) : ("ai_generated" as const),
+        category: isUserUploaded
+          ? ("user_uploaded" as const)
+          : ("ai_generated" as const),
         scheduledDaysLabel:
           uniqueDays.length > 0
             ? uniqueDays.join(", ")
@@ -276,19 +278,25 @@ export default function PublishHistoryPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10 md:px-10">
-        {/* HEADER */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="w-full px-4 py-6 sm:px-6 md:px-8">
+        {/* HEADER CARD */}
+        <div
+          className="flex flex-col gap-4 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"
+          style={{
+            background: "var(--card)",
+            borderColor: "var(--border)",
+          }}
+        >
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-widest text-[#C4B5FD]">
-              Publishing &amp; Delivery Log
-            </p>
-            <h1 className="mt-1.5 text-3xl font-black tracking-tight text-white sm:text-4xl">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
               Publish History
             </h1>
-            <p className="mt-2 text-sm font-medium text-zinc-400">
-              Track posted content, scheduled days, posting times, and live
-              delivery status for every connected account.
+            <p
+              className="mt-1 text-sm"
+              style={{ color: "var(--muted)" }}
+            >
+              View posted content, scheduled days, times, and connected account
+              status across your workflows.
             </p>
           </div>
 
@@ -296,25 +304,34 @@ export default function PublishHistoryPage() {
             type="button"
             onClick={loadHistory}
             disabled={loading}
-            className="self-start rounded-2xl border border-white/15 bg-white/[0.05] px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white transition hover:bg-white/[0.1] disabled:opacity-50 sm:self-auto"
+            className="self-start rounded-xl border px-4 py-2 text-xs font-semibold transition hover:bg-white/5 disabled:opacity-50 sm:self-auto"
+            style={{ borderColor: "var(--border)" }}
           >
-            {loading ? "Refreshing..." : "⟳ Refresh Live Data"}
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
 
         {/* TABS */}
-        <div className="mt-8 flex flex-wrap gap-3 border-b border-white/10 pb-4">
+        <div className="mt-5 flex flex-wrap gap-2.5">
           <button
             type="button"
             onClick={() => setActiveTab("user_uploaded")}
-            className={`flex items-center gap-2.5 rounded-2xl px-5 py-3 text-sm font-extrabold tracking-tight transition ${
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition ${
               activeTab === "user_uploaded"
-                ? "bg-gradient-to-r from-[#7C5CFF] to-[#EC4899] text-white shadow-lg shadow-[#7C5CFF]/25"
-                : "border border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.07] hover:text-white"
+                ? "bg-[#7C5CFF] text-white"
+                : "border hover:bg-white/5"
             }`}
+            style={
+              activeTab === "user_uploaded"
+                ? undefined
+                : {
+                    background: "var(--card)",
+                    borderColor: "var(--border)",
+                  }
+            }
           >
             <span>User Added &amp; Posted</span>
-            <span className="rounded-full bg-black/30 px-2.5 py-0.5 text-xs font-black">
+            <span className="rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-semibold">
               {userUploadedItems.length}
             </span>
           </button>
@@ -322,14 +339,22 @@ export default function PublishHistoryPage() {
           <button
             type="button"
             onClick={() => setActiveTab("ai_generated")}
-            className={`flex items-center gap-2.5 rounded-2xl px-5 py-3 text-sm font-extrabold tracking-tight transition ${
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition ${
               activeTab === "ai_generated"
-                ? "bg-gradient-to-r from-[#7C5CFF] to-[#EC4899] text-white shadow-lg shadow-[#7C5CFF]/25"
-                : "border border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.07] hover:text-white"
+                ? "bg-[#7C5CFF] text-white"
+                : "border hover:bg-white/5"
             }`}
+            style={
+              activeTab === "ai_generated"
+                ? undefined
+                : {
+                    background: "var(--card)",
+                    borderColor: "var(--border)",
+                  }
+            }
           >
             <span>AI Created &amp; Posted</span>
-            <span className="rounded-full bg-black/30 px-2.5 py-0.5 text-xs font-black">
+            <span className="rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-semibold">
               {aiGeneratedItems.length}
             </span>
           </button>
@@ -337,35 +362,48 @@ export default function PublishHistoryPage() {
 
         {/* ERROR */}
         {error && (
-          <div className="mt-6 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-200">
+          <div className="mt-5 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-200">
             {error}
           </div>
         )}
 
         {/* CONTENT LIST */}
         {loading ? (
-          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((n) => (
               <div
                 key={n}
-                className="h-72 animate-pulse rounded-3xl border border-white/10 bg-white/[0.03]"
+                className="h-64 animate-pulse rounded-2xl border"
+                style={{
+                  background: "var(--card)",
+                  borderColor: "var(--border)",
+                }}
               />
             ))}
           </div>
         ) : visibleItems.length === 0 ? (
-          <div className="mt-8 rounded-3xl border border-white/10 bg-white/[0.02] p-10 text-center">
-            <p className="text-lg font-extrabold text-white">
+          <div
+            className="mt-5 rounded-2xl border p-8 text-center"
+            style={{
+              background: "var(--card)",
+              borderColor: "var(--border)",
+            }}
+          >
+            <p className="text-sm font-semibold">
               {activeTab === "user_uploaded"
-                ? "No User-Uploaded Content History Yet"
-                : "No AI-Created Content History Yet"}
+                ? "No user-uploaded content history yet."
+                : "No AI-created content history yet."}
             </p>
-            <p className="mt-1.5 text-sm font-medium text-zinc-400">
-              Once a workflow runs or schedules content, its connected accounts,
-              days, times, and status appear here automatically.
+            <p
+              className="mt-1 text-xs"
+              style={{ color: "var(--muted)" }}
+            >
+              Scheduled and posted items will appear here with their connected
+              accounts, days, times, and status.
             </p>
           </div>
         ) : (
-          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {visibleItems.map((item) => {
               const isPublished =
                 (item.status || "").toLowerCase() === "published";
@@ -373,117 +411,137 @@ export default function PublishHistoryPage() {
               return (
                 <article
                   key={item.id}
-                  className="flex flex-col justify-between rounded-3xl border border-white/10 bg-[#111118] p-5 shadow-xl transition hover:border-[#7C5CFF]/50"
+                  className="flex flex-col justify-between rounded-2xl border p-4"
+                  style={{
+                    background: "var(--card)",
+                    borderColor: "var(--border)",
+                  }}
                 >
                   <div>
-                    {/* MEDIA PREVIEW */}
-                    {item.image_url && (
-                      <div className="mb-4 overflow-hidden rounded-2xl border border-white/10 bg-black">
-                        {isVideoUrl(item.image_url) ? (
-                          <video
-                            src={item.image_url}
-                            controls
-                            preload="metadata"
-                            className="h-40 w-full object-cover"
-                          />
-                        ) : (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={item.image_url}
-                            alt={item.displayTitle}
-                            className="h-40 w-full object-cover"
-                          />
-                        )}
-                      </div>
-                    )}
-
-                    {/* WORKFLOW & OVERALL STATUS */}
+                    {/* TOP ROW: WORKFLOW & STATUS */}
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs font-extrabold uppercase tracking-wider text-[#C4B5FD]">
+                      <span
+                        className="truncate text-xs font-semibold"
+                        style={{ color: "var(--muted)" }}
+                      >
                         {item.workflowName}
                       </span>
 
                       <span
-                        className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wide ${
+                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                           isPublished
-                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                            : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : "bg-amber-500/15 text-amber-300"
                         }`}
                       >
                         {isPublished ? "Published" : item.status || "Queued"}
                       </span>
                     </div>
 
-                    {/* CONTENT TITLE */}
-                    <h2 className="mt-2.5 line-clamp-2 text-base font-extrabold leading-snug text-white">
+                    {/* TITLE */}
+                    <h2 className="mt-2 line-clamp-1 text-sm font-bold">
                       {item.displayTitle}
                     </h2>
 
-                    {/* DAY & TIME DETAILS */}
-                    <div className="mt-4 grid grid-cols-2 gap-2.5 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                          Scheduled Day
-                        </p>
-                        <p className="mt-0.5 text-xs font-extrabold text-white">
+                    {/* DAY, TIME & TIMESTAMP */}
+                    <div
+                      className="mt-3 rounded-xl border p-3 text-xs"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span style={{ color: "var(--muted)" }}>Day</span>
+                        <span className="font-semibold">
                           {item.scheduledDaysLabel}
-                        </p>
+                        </span>
                       </div>
-
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                          Slot Time
-                        </p>
-                        <p className="mt-0.5 text-xs font-extrabold text-white">
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <span style={{ color: "var(--muted)" }}>Time</span>
+                        <span className="font-semibold">
                           {item.scheduledTimesLabel}
-                        </p>
+                        </span>
                       </div>
-
-                      <div className="col-span-2 border-t border-white/10 pt-2">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                          {isPublished ? "Posted On" : "Scheduled Timestamp"}
-                        </p>
-                        <p className="mt-0.5 text-xs font-extrabold text-zinc-200">
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <span style={{ color: "var(--muted)" }}>
+                          {isPublished ? "Posted" : "Scheduled"}
+                        </span>
+                        <span className="font-semibold">
                           {item.timestampLabel}
-                        </p>
+                        </span>
                       </div>
                     </div>
+
+                    {/* MEDIA PREVIEW */}
+                    {item.image_url && (
+                      <div
+                        className="mt-3 overflow-hidden rounded-xl border"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        {isVideoUrl(item.image_url) ? (
+                          <video
+                            src={item.image_url}
+                            controls
+                            preload="metadata"
+                            className="h-32 w-full bg-black object-cover"
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.image_url}
+                            alt={item.displayTitle}
+                            className="h-32 w-full object-cover"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  {/* CONNECTED ACCOUNTS & PER-ACCOUNT STATUS */}
-                  <div className="mt-4 border-t border-white/10 pt-3.5">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">
+                  {/* CONNECTED ACCOUNTS & STATUS */}
+                  <div
+                    className="mt-3.5 border-t pt-3"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <p
+                      className="text-[11px] font-semibold"
+                      style={{ color: "var(--muted)" }}
+                    >
                       Connected Accounts
                     </p>
 
                     {item.accountStatuses.length === 0 ? (
-                      <p className="mt-1.5 text-xs font-semibold text-zinc-500">
-                        No target account linked
+                      <p
+                        className="mt-1.5 text-xs"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        No target account linked.
                       </p>
                     ) : (
-                      <div className="mt-2 space-y-2">
+                      <div className="mt-2 space-y-1.5">
                         {item.accountStatuses.map((acc) => (
                           <div
                             key={acc.key}
-                            className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/40 px-3 py-2"
+                            className="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs"
+                            style={{ borderColor: "var(--border)" }}
                           >
                             <div className="min-w-0">
-                              <p className="truncate text-xs font-extrabold text-white">
+                              <span className="font-semibold">
                                 {acc.accountName}
-                              </p>
-                              <p className="text-[11px] font-bold text-zinc-400">
-                                {acc.platform}
-                                {!acc.connected && " · Reconnect Needed"}
-                              </p>
+                              </span>
+                              <span
+                                className="ml-1.5 text-[11px]"
+                                style={{ color: "var(--muted)" }}
+                              >
+                                ({acc.platform})
+                                {!acc.connected && " · Reconnect"}
+                              </span>
                             </div>
 
                             <span
-                              className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-black ${
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                                 acc.statusTone === "emerald"
-                                  ? "bg-emerald-500/20 text-emerald-300"
+                                  ? "bg-emerald-500/15 text-emerald-300"
                                   : acc.statusTone === "rose"
-                                    ? "bg-rose-500/20 text-rose-300"
-                                    : "bg-amber-500/20 text-amber-300"
+                                    ? "bg-rose-500/15 text-rose-300"
+                                    : "bg-amber-500/15 text-amber-300"
                               }`}
                             >
                               {acc.statusLabel}
