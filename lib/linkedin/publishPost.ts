@@ -23,6 +23,71 @@ function admin() {
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function refreshLinkedInTokenIfNeeded(
+  supabase: any,
+  account: {
+    id: string;
+    account_id: string;
+    account_name: string;
+    access_token: string | null;
+    refresh_token?: string | null;
+  }
+): Promise<string> {
+  const clientId = (process.env.LINKEDIN_CLIENT_ID || "").trim();
+  const clientSecret = (process.env.LINKEDIN_CLIENT_SECRET || "").trim();
+
+  if (account.refresh_token && clientId && clientSecret) {
+    const res = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: account.refresh_token,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+      cache: "no-store",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.access_token) {
+      const nextAccess = String(data.access_token);
+      const nextRefresh = data.refresh_token
+        ? String(data.refresh_token)
+        : account.refresh_token;
+      await supabase
+        .from("accounts")
+        .update({
+          access_token: nextAccess,
+          refresh_token: nextRefresh,
+          connected: true,
+        })
+        .eq("id", account.id);
+      return nextAccess;
+    }
+    await supabase
+      .from("accounts")
+      .update({ connected: false })
+      .eq("id", account.id);
+    throw new PublishLinkedInError(
+      data?.error_description ||
+        `LinkedIn token refresh failed (${res.status}). Reconnect LinkedIn on /accounts.`,
+      401,
+      data
+    );
+  }
+
+  if (!account.access_token) {
+    await supabase
+      .from("accounts")
+      .update({ connected: false })
+      .eq("id", account.id);
+    throw new PublishLinkedInError("No connected LinkedIn account.", 400);
+  }
+
+  return account.access_token;
+}
+
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
 }
@@ -51,9 +116,10 @@ export async function publishLinkedInPost(
     account_id: string;
     account_name: string;
     access_token: string | null;
+    refresh_token?: string | null;
   } | null = null;
 
-  const selectFields = "id, account_id, account_name, access_token";
+  const selectFields = "id, account_id, account_name, access_token, refresh_token";
 
   if (overrideAccountId) {
     const { data } = await supabase
@@ -94,9 +160,11 @@ export async function publishLinkedInPost(
     if (data?.access_token) account = data;
   }
 
-  if (!account?.access_token) {
+    if (!account) {
     throw new PublishLinkedInError("No connected LinkedIn account.", 400);
   }
+  const activeAccessToken = await refreshLinkedInTokenIfNeeded(supabase, account);
+  account.access_token = activeAccessToken;
 
   const authorUrn = account.account_id.startsWith("urn:li:")
     ? account.account_id
@@ -344,3 +412,6 @@ export async function publishLinkedInPost(
     },
   };
 }
+
+
+

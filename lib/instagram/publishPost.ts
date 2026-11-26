@@ -1,4 +1,4 @@
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+﻿import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 const INSTAGRAM_GRAPH_URL = "https://graph.instagram.com";
 
@@ -40,6 +40,71 @@ export class PublishPostError extends Error {
 - MEDIA TYPE HELPERS
 - ================================================================
  */
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function refreshInstagramTokenIfPossible(
+  supabaseAdmin: any,
+  account: {
+    id: string;
+    access_token: string;
+    refresh_token?: string | null;
+    expires_at?: string | null;
+  }
+): Promise<string> {
+  const appSecret = (process.env.INSTAGRAM_APP_SECRET || "").trim();
+  if (!appSecret) {
+    return account.access_token;
+  }
+
+  try {
+    const url = new URL(`${INSTAGRAM_GRAPH_URL}/refresh_access_token`);
+    url.searchParams.set("grant_type", "ig_refresh_token");
+    url.searchParams.set("access_token", account.access_token);
+
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.access_token) {
+      const nextToken = String(data.access_token);
+      const expiresIn = Number(data.expires_in) || 5184000;
+      const nextExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+      await supabaseAdmin
+        .from("accounts")
+        .update({
+          access_token: nextToken,
+          expires_at: nextExpiresAt,
+          connected: true,
+        })
+        .eq("id", account.id);
+      return nextToken;
+    }
+  } catch {
+    // Non-blocking refresh attempt
+  }
+
+  return account.access_token;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function markInstagramDisconnectedIfAuthError(
+  supabaseAdmin: any,
+  accountId: string,
+  errorData: unknown,
+  fallbackMessage: string
+) {
+  const errObj = (errorData as { error?: { code?: number; message?: string } })?.error;
+  const code = errObj?.code;
+  const msg = String(errObj?.message || fallbackMessage || "");
+  if (
+    code === 190 ||
+    code === 102 ||
+    /access token|session has been invalidated|invalid oauth|expired/i.test(msg)
+  ) {
+    await supabaseAdmin
+      .from("accounts")
+      .update({ connected: false })
+      .eq("id", accountId);
+  }
+}
 
 function isVideoMediaUrl(url: string): boolean {
   return /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(url);
@@ -352,8 +417,7 @@ export async function publishInstagramPost(
 
   const containerData = await containerResponse.json();
 
-  if (!containerResponse.ok) {
-    console.error("Instagram media container error:", containerData);
+  if (!containerResponse.ok) { await markInstagramDisconnectedIfAuthError(supabaseAdmin, account.id, containerData, containerData?.error?.message || ""); console.error("Instagram media container error:", containerData);
 
     throw new PublishPostError(
       containerData?.error?.message ||
@@ -429,3 +493,4 @@ export async function publishInstagramPost(
     },
   };
 }
+
