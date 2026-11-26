@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -650,6 +650,79 @@ export default function ReviewPage() {
           </p>
         </div>
 
+        {databaseSource === "user_uploaded" ? (
+          <ReviewCard title="Upload Workflow Summary">
+            <ReviewRow
+              label="Workflow Name"
+              value={workflow?.name?.trim() || "Not provided"}
+            />
+
+            <ReviewRow
+              label="Description"
+              value={workflow?.uploadDescription?.trim() || "Not provided"}
+            />
+
+            <ReviewRow
+              label="Selected Day"
+              value={
+                workflow?.scheduleDays?.length
+                  ? workflow.scheduleDays.join(", ")
+                  : "Not selected"
+              }
+            />
+
+            <ReviewRow
+              label="Time"
+              value={
+                workflow?.scheduleTimes?.length
+                  ? workflow.scheduleTimes.join(", ")
+                  : "Not selected"
+              }
+            />
+
+            <ReviewRow
+              label="Duration (Months)"
+              value={workflow?.scheduleDuration || "Not selected"}
+            />
+
+            <ReviewRow
+              label="File Name"
+              value={
+                workflow?.uploadFiles?.length
+                  ? workflow.uploadFiles
+                      .map((file: any) => {
+                        if (typeof file === "string") {
+                          const clean = file.split("?")[0];
+                          const parts = clean.split("/");
+                          return decodeURIComponent(
+                            parts[parts.length - 1] || "Uploaded File"
+                          );
+                        }
+                        return file.name;
+                      })
+                      .join(", ")
+                  : "Not provided"
+              }
+            />
+
+            <ReviewRow
+              label="Selected Account"
+              value={
+                workflow?.selectedAccounts?.length
+                  ? workflow.selectedAccounts
+                      .map(
+                        (acc) =>
+                          `${acc.accountName} (${acc.platform.toUpperCase()})`
+                      )
+                      .join(", ")
+                  : workflow?.platforms?.length
+                    ? workflow.platforms.join(", ")
+                    : "Not selected"
+              }
+            />
+          </ReviewCard>
+        ) : (
+          <>
         {/* WORKFLOW */}
 
         <ReviewCard title="Workflow">
@@ -959,98 +1032,7 @@ export default function ReviewPage() {
           )}
         </ReviewCard>
 
-        {/* UPLOADED CONTENT */}
-
-        {databaseSource ===
-          "user_uploaded" && (
-            <ReviewCard title="Uploaded Content">
-              <ReviewRow
-                label="Files"
-                value={
-                  workflow?.uploadFiles?.length
-                    ? workflow.uploadFiles
-                      .map((file: any) => {
-                        if (typeof file === "string") {
-                          // Extract filename from URL or show general name
-                          const parts = file.split("/");
-                          return parts[parts.length - 1] || "Uploaded File";
-                        }
-                        return file.name;
-                      })
-                      .join(", ")
-                    : "No files selected"
-                }
-              />
-
-              <ReviewRow
-                label="Content Description"
-                value={
-                  workflow?.uploadDescription ||
-                  "Not provided"
-                }
-              />
-
-              <div
-                className="mt-4 rounded-xl border p-4"
-                style={{
-                  borderColor:
-                    "rgba(139,92,246,.3)",
-                  background:
-                    "rgba(139,92,246,.06)",
-                }}
-              >
-                <p className="text-sm font-medium">
-                  Original content stays unchanged
-                </p>
-
-                <p
-                  className="mt-2 text-xs leading-5"
-                  style={{
-                    color: "var(--muted)",
-                  }}
-                >
-                  Postoll will publish the
-                  uploaded content without
-                  automatically adding logos,
-                  brand names, subtitles, or
-                  other edits.
-                </p>
-              </div>
-            </ReviewCard>
-          )}
-
-        {/* SUCCESS */}
-
-        {message && (
-          <div
-            className="mt-6 rounded-xl border p-4 text-sm"
-            style={{
-              borderColor:
-                "rgba(34,197,94,.3)",
-              background:
-                "rgba(34,197,94,.1)",
-              color: "#4ade80",
-            }}
-          >
-            {message}
-          </div>
-        )}
-
-        {/* ERROR */}
-
-        {error && (
-          <div
-            className="mt-6 rounded-xl border p-4 text-sm"
-            style={{
-              borderColor:
-                "rgba(239,68,68,.3)",
-              background:
-                "rgba(239,68,68,.1)",
-              color: "#f87171",
-            }}
-          >
-            {error}
-          </div>
+          </>
         )}
 
         {/* BUTTONS */}
@@ -1175,3 +1157,4 @@ function ReviewRow({
     </div>
   );
 }
+
