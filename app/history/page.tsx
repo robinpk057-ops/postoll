@@ -369,7 +369,7 @@ export default function PublishHistoryPage() {
 
         {/* CONTENT LIST */}
         {loading ? (
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid gap-4 grid-cols-1 md:grid-cols-3 lg:grid-cols-4">
             {[1, 2, 3].map((n) => (
               <div
                 key={n}
@@ -403,7 +403,7 @@ export default function PublishHistoryPage() {
             </p>
           </div>
         ) : (
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid gap-4 grid-cols-1 md:grid-cols-3 lg:grid-cols-4">
             {visibleItems.map((item) => {
               const isPublished =
                 (item.status || "").toLowerCase() === "published";
@@ -481,14 +481,14 @@ export default function PublishHistoryPage() {
                             src={item.image_url}
                             controls
                             preload="metadata"
-                            className="h-32 w-full bg-black object-cover"
+                            className="h-44 w-full bg-black object-cover"
                           />
                         ) : (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={item.image_url}
                             alt={item.displayTitle}
-                            className="h-32 w-full object-cover"
+                            className="h-44 w-full object-cover"
                           />
                         )}
                       </div>
@@ -560,3 +560,4 @@ export default function PublishHistoryPage() {
     </AppShell>
   );
 }
+
