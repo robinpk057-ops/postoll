@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -123,12 +123,19 @@ export default function WorkflowAccountsPage() {
 
     const activePlatforms = Array.from(new Set(selectedAccounts.map((a) => a.platform)));
 
+    const isUserUploaded = workflow.source === "user_uploaded";
+
     updateWorkflow({
       selectedAccounts,
       platforms: activePlatforms,
+      ...(isUserUploaded ? { requireApproval: false, approvalTime: "" } : {}),
     });
 
-    router.push("/workflows/create/approval");
+    router.push(
+      isUserUploaded
+        ? "/workflows/create/review"
+        : "/workflows/create/approval"
+    );
   };
 
   const platformsList = ["instagram", "facebook", "youtube", "linkedin", "x", "tiktok"];
@@ -331,7 +338,7 @@ export default function WorkflowAccountsPage() {
               disabled={selectedAccounts.length === 0}
               className="rounded-xl bg-white px-6 py-2.5 text-sm font-semibold text-zinc-950 shadow-sm transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Continue to Approval &rarr;
+              {workflow.source === "user_uploaded" ? "Continue to Review \u2192" : "Continue to Approval \u2192"}
             </button>
           </div>
         </form>

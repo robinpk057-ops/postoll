@@ -1,5 +1,6 @@
-"use client";
+﻿"use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "../../../AppShell";
 import { useWorkflow } from "../context";
@@ -29,6 +30,21 @@ export default function ApprovalPage() {
     workflow,
     updateWorkflow,
   } = useWorkflow();
+
+  useEffect(() => {
+    if (workflow.source === "user_uploaded") {
+      updateWorkflow({
+        requireApproval: false,
+        approvalTime: "",
+      });
+      router.replace("/workflows/create/review");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflow.source]);
+
+  if (workflow.source === "user_uploaded") {
+    return null;
+  }
 
   const canContinue =
     !workflow.requireApproval ||
@@ -70,7 +86,7 @@ export default function ApprovalPage() {
               color: "#a78bfa",
             }}
           >
-            ✦ Workflow Builder
+            âœ¦ Workflow Builder
           </p>
 
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
@@ -151,7 +167,7 @@ export default function ApprovalPage() {
               >
                 <span className="flex items-center justify-center gap-2">
                   {workflow.requireApproval && (
-                    <span>✓</span>
+                    <span>âœ“</span>
                   )}
                   Yes
                 </span>
@@ -182,7 +198,7 @@ export default function ApprovalPage() {
               >
                 <span className="flex items-center justify-center gap-2">
                   {!workflow.requireApproval && (
-                    <span>✓</span>
+                    <span>âœ“</span>
                   )}
                   No
                 </span>
@@ -291,7 +307,7 @@ export default function ApprovalPage() {
                                   : "transparent",
                             }}
                           >
-                            ✓
+                            âœ“
                           </div>
 
                         </div>
@@ -346,7 +362,7 @@ export default function ApprovalPage() {
 
               <div className="flex gap-3">
                 <span className="shrink-0">
-                  ✓
+                  âœ“
                 </span>
                 <span>
                   Open your Postoll dashboard.
@@ -355,7 +371,7 @@ export default function ApprovalPage() {
 
               <div className="flex gap-3">
                 <span className="shrink-0">
-                  ✓
+                  âœ“
                 </span>
                 <span>
                   Preview the generated post or reel.
@@ -364,7 +380,7 @@ export default function ApprovalPage() {
 
               <div className="flex gap-3">
                 <span className="shrink-0">
-                  ✓
+                  âœ“
                 </span>
                 <span>
                   Edit or regenerate content when available.
@@ -373,7 +389,7 @@ export default function ApprovalPage() {
 
               <div className="flex gap-3">
                 <span className="shrink-0">
-                  ✓
+                  âœ“
                 </span>
                 <span>
                   Approve and publish the content.
@@ -382,7 +398,7 @@ export default function ApprovalPage() {
 
               <div className="flex gap-3 sm:col-span-2">
                 <span className="shrink-0">
-                  ✓
+                  âœ“
                 </span>
                 <span>
                   If no action is required, Postoll can
@@ -411,7 +427,7 @@ export default function ApprovalPage() {
               }
               className="w-full rounded-xl border px-6 py-3 font-medium transition hover:opacity-80 sm:w-auto"
             >
-              ← Back
+              â† Back
             </button>
 
             <button
@@ -427,7 +443,7 @@ export default function ApprovalPage() {
                   "var(--background)",
               }}
             >
-              Continue →
+              Continue â†’
             </button>
 
           </div>
@@ -439,3 +455,4 @@ export default function ApprovalPage() {
     </AppShell>
   );
 }
+
