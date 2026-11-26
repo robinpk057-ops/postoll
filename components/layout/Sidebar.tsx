@@ -40,12 +40,19 @@ const navItems: NavItem[] = [
     activeBg: "rgba(16, 185, 129, 0.22)",
     iconColor: "#6EE7B7",
   },
-  {
+    {
     name: "Calendar",
     href: "/calendar",
     icon: "◫",
     activeBg: "rgba(251, 191, 36, 0.22)",
     iconColor: "#FDE68A",
+  },
+  {
+    name: "Publish History",
+    href: "/history",
+    icon: "◷",
+    activeBg: "rgba(244, 114, 182, 0.22)",
+    iconColor: "#F9A8D4",
   },
   {
     name: "Accounts",
@@ -187,3 +194,4 @@ export default function Sidebar({
     </>
   );
 }
+
