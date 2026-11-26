@@ -38,6 +38,14 @@ type SlotRow = {
   enabled: boolean;
 };
 
+type ScheduleRunRow = {
+  workflow_id: string;
+  content_id: string | null;
+  status: string | null;
+  error_message: string | null;
+  created_at: string;
+};
+
 type ConnectedAccount = {
   id: string;
   platform: string;
@@ -72,6 +80,19 @@ function isVideoUrl(url: string | null): boolean {
   return /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(url);
 }
 
+function getFailedPlatformsFromRun(run?: ScheduleRunRow): Set<string> {
+  const failed = new Set<string>();
+  const msg = (run?.error_message || "").toLowerCase();
+  if (!msg) return failed;
+
+  for (const p of ["youtube", "instagram", "facebook", "linkedin", "tiktok", "x"]) {
+    if (msg.includes(`${p}:`)) {
+      failed.add(p);
+    }
+  }
+  return failed;
+}
+
 export default function PublishHistoryPage() {
   const supabase = createClient();
 
@@ -87,6 +108,7 @@ export default function PublishHistoryPage() {
     []
   );
   const [slots, setSlots] = useState<SlotRow[]>([]);
+  const [runs, setRuns] = useState<ScheduleRunRow[]>([]);
   const [connectedAccounts, setConnectedAccounts] = useState<
     ConnectedAccount[]
   >([]);
@@ -126,10 +148,11 @@ export default function PublishHistoryPage() {
         setContents([]);
         setWorkflowAccounts([]);
         setSlots([]);
+        setRuns([]);
         return;
       }
 
-      const [contentRes, waRes, slotRes] = await Promise.all([
+      const [contentRes, waRes, slotRes, runsRes] = await Promise.all([
         supabase
           .from("content")
           .select(
@@ -147,6 +170,11 @@ export default function PublishHistoryPage() {
           .select("workflow_id, day_of_week, post_time, enabled")
           .in("workflow_id", wfIds)
           .eq("enabled", true),
+        supabase
+          .from("workflow_schedule_runs")
+          .select("workflow_id, content_id, status, error_message, created_at")
+          .in("workflow_id", wfIds)
+          .order("created_at", { ascending: false }),
       ]);
 
       if (contentRes.error) throw contentRes.error;
@@ -154,6 +182,7 @@ export default function PublishHistoryPage() {
       setContents((contentRes.data || []) as ContentRow[]);
       setWorkflowAccounts((waRes.data || []) as WorkflowAccountRow[]);
       setSlots((slotRes.data || []) as SlotRow[]);
+      setRuns((runsRes.data || []) as ScheduleRunRow[]);
     } catch (err) {
       console.error("History load error:", err);
       setError(
@@ -182,6 +211,16 @@ export default function PublishHistoryPage() {
     return map;
   }, [connectedAccounts]);
 
+  const latestRunByContent = useMemo(() => {
+    const map = new Map<string, ScheduleRunRow>();
+    for (const r of runs) {
+      if (r.content_id && !map.has(r.content_id)) {
+        map.set(r.content_id, r);
+      }
+    }
+    return map;
+  }, [runs]);
+
   const enrichedItems = useMemo(() => {
     return contents.map((item) => {
       const wf = item.workflow_id ? workflowMap.get(item.workflow_id) : undefined;
@@ -204,15 +243,22 @@ export default function PublishHistoryPage() {
         ? workflowAccounts.filter((wa) => wa.workflow_id === item.workflow_id)
         : [];
 
+      const latestRun = latestRunByContent.get(item.id);
+      const failedPlatforms = getFailedPlatformsFromRun(latestRun);
+
       const accountStatuses = linkedAccounts.map((wa) => {
-        const key = `${wa.platform.toLowerCase()}:${wa.account_id}`;
+        const platformKey = (wa.platform || "").toLowerCase();
+        const key = `${platformKey}:${wa.account_id}`;
         const matched = accountNameMap.get(key);
         const rawStatus = (item.status || "queued").toLowerCase();
 
         let statusLabel = "Scheduled";
         let statusTone = "amber";
 
-        if (rawStatus === "published") {
+        if (failedPlatforms.has(platformKey)) {
+          statusLabel = "Failed";
+          statusTone = "rose";
+        } else if (rawStatus === "published") {
           statusLabel = "Published";
           statusTone = "emerald";
         } else if (rawStatus === "failed" || rawStatus === "error") {
@@ -261,7 +307,14 @@ export default function PublishHistoryPage() {
         accountStatuses,
       };
     });
-  }, [contents, workflowMap, slots, workflowAccounts, accountNameMap]);
+  }, [
+    contents,
+    workflowMap,
+    slots,
+    workflowAccounts,
+    accountNameMap,
+    latestRunByContent,
+  ]);
 
   const userUploadedItems = useMemo(
     () => enrichedItems.filter((i) => i.category === "user_uploaded"),
@@ -369,8 +422,8 @@ export default function PublishHistoryPage() {
 
         {/* CONTENT LIST */}
         {loading ? (
-          <div className="mt-5 grid gap-4 grid-cols-1 md:grid-cols-3 lg:grid-cols-4">
-            {[1, 2, 3].map((n) => (
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((n) => (
               <div
                 key={n}
                 className="h-64 animate-pulse rounded-2xl border"
@@ -403,7 +456,7 @@ export default function PublishHistoryPage() {
             </p>
           </div>
         ) : (
-          <div className="mt-5 grid gap-4 grid-cols-1 md:grid-cols-3 lg:grid-cols-4">
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
             {visibleItems.map((item) => {
               const isPublished =
                 (item.status || "").toLowerCase() === "published";
@@ -560,4 +613,3 @@ export default function PublishHistoryPage() {
     </AppShell>
   );
 }
-
