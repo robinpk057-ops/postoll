@@ -189,6 +189,14 @@ export default function Header({
         )}
 
         <Link
+          href="/upgrade"
+          className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-gradient-to-r from-amber-500/20 via-[#7C5CFF]/25 to-pink-500/20 px-4 py-2 text-sm font-extrabold text-amber-200 shadow-sm transition hover:border-amber-300/70 hover:text-white"
+        >
+          <span>⚡</span>
+          <span>Upgrade</span>
+        </Link>
+
+        <Link
           href="/create"
           className="inline-flex items-center gap-1.5 rounded-full bg-[#7C5CFF] px-5 py-2.5 text-sm font-extrabold text-white shadow-md transition hover:bg-[#6A48F5]"
         >
@@ -349,3 +357,4 @@ function getGreeting() {
 
   return "Good evening";
 }
+
