@@ -1,8 +1,26 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { linkAccountToWorkflow } from "@/lib/account-guard";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://postoll.vercel.app";
 const GRAPH = "https://graph.facebook.com/v21.0";
+
+function parseState(rawState: string | null, fallbackUserId: string): {
+  userId: string;
+  workflowId?: string;
+} {
+  if (!rawState) return { userId: fallbackUserId };
+  try {
+    const decoded = JSON.parse(Buffer.from(rawState, "base64url").toString("utf8"));
+    return {
+      userId: typeof decoded?.userId === "string" ? decoded.userId : fallbackUserId,
+      workflowId: typeof decoded?.workflowId === "string" ? decoded.workflowId : undefined,
+    };
+  } catch {
+    return { userId: rawState || fallbackUserId };
+  }
+}
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -16,6 +34,11 @@ export async function GET(req: NextRequest) {
 
   const code = req.nextUrl.searchParams.get("code");
   const error = req.nextUrl.searchParams.get("error");
+  const parsedState = parseState(req.nextUrl.searchParams.get("state"), user.id);
+
+  if (parsedState.userId !== user.id) {
+    return NextResponse.redirect(new URL("/accounts?error=state_mismatch", SITE));
+  }
 
   if (error || !code) {
     return NextResponse.redirect(
@@ -35,7 +58,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 1) Exchange code -> short-lived user access token
   const tokenUrl = new URL(`${GRAPH}/oauth/access_token`);
   tokenUrl.searchParams.set("client_id", appId);
   tokenUrl.searchParams.set("client_secret", appSecret);
@@ -54,8 +76,6 @@ export async function GET(req: NextRequest) {
 
   let userToken = tokenData.access_token as string;
 
-  // 2) Exchange short-lived user token -> 60-day long-lived user token
-  //    (so /me/accounts returns a permanent/non-expiring Page access token)
   try {
     const longLivedUrl = new URL(`${GRAPH}/oauth/access_token`);
     longLivedUrl.searchParams.set("grant_type", "fb_exchange_token");
@@ -67,16 +87,13 @@ export async function GET(req: NextRequest) {
     const longData = await longRes.json();
     if (longRes.ok && longData.access_token) {
       userToken = String(longData.access_token);
-    } else {
-      console.warn("FB long-lived token exchange warning:", longData);
     }
   } catch (e) {
     console.warn("FB long-lived token exchange exception:", e);
   }
 
-  // 3) List Pages + permanent Page tokens
   const pagesRes = await fetch(
-    `${GRAPH}/me/accounts?access_token=${encodeURIComponent(userToken)}`,
+    `${GRAPH}/me/accounts?fields=id,name,access_token,picture&access_token=${encodeURIComponent(userToken)}`,
     { cache: "no-store" }
   );
   const pagesData = await pagesRes.json();
@@ -96,66 +113,55 @@ export async function GET(req: NextRequest) {
   const pageId = String(page.id);
   const pageName = String(page.name || "Facebook Page");
   const pageToken = String(page.access_token);
+  const pageAvatar = page.picture?.data?.url ?? null;
 
-  // 4) Upsert into accounts and verify write succeeds
-  const { data: existing, error: lookupError } = await supabase
-    .from("accounts")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("platform", "facebook")
-    .eq("account_id", pageId)
-    .maybeSingle();
+  let targetWorkflowId = parsedState.workflowId;
+  if (!targetWorkflowId) {
+    const { data: firstWorkflow } = await supabase
+      .from("workflows")
+      .select("id")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  if (lookupError) {
-    console.error("FB account lookup error:", lookupError);
+    targetWorkflowId = firstWorkflow?.id;
+  }
+
+  if (!targetWorkflowId) {
+    return NextResponse.redirect(new URL("/accounts?error=no_workflow", SITE));
+  }
+
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  if (!serviceRoleKey || !supabaseUrl) {
+    return NextResponse.redirect(new URL("/accounts?error=server_config", SITE));
+  }
+
+  const supabaseAdmin = createServiceClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const result = await linkAccountToWorkflow({
+    supabaseAdmin,
+    userId: user.id,
+    workflowId: targetWorkflowId,
+    platform: "facebook",
+    platformAccountId: pageId,
+    accountName: pageName,
+    accessToken: pageToken,
+    profileUrl: `https://www.facebook.com/${pageId}`,
+    profileImageUrl: pageAvatar,
+  });
+
+  if (!result.ok) {
     return NextResponse.redirect(
-      new URL(
-        `/accounts?error=${encodeURIComponent(lookupError.message)}`,
-        SITE
-      )
+      new URL(`/accounts?error=${encodeURIComponent(result.errorCode)}`, SITE)
     );
   }
 
-  if (existing?.id) {
-    const { error: updateError } = await supabase
-      .from("accounts")
-      .update({
-        account_name: pageName,
-        access_token: pageToken,
-        connected: true,
-      })
-      .eq("id", existing.id)
-      .eq("user_id", user.id);
-
-    if (updateError) {
-      console.error("FB account update error:", updateError);
-      return NextResponse.redirect(
-        new URL(
-          `/accounts?error=${encodeURIComponent(updateError.message)}`,
-          SITE
-        )
-      );
-    }
-  } else {
-    const { error: insertError } = await supabase.from("accounts").insert({
-      user_id: user.id,
-      platform: "facebook",
-      account_id: pageId,
-      account_name: pageName,
-      access_token: pageToken,
-      connected: true,
-    });
-
-    if (insertError) {
-      console.error("FB account insert error:", insertError);
-      return NextResponse.redirect(
-        new URL(
-          `/accounts?error=${encodeURIComponent(insertError.message)}`,
-          SITE
-        )
-      );
-    }
-  }
-
-  return NextResponse.redirect(new URL("/accounts?connected=facebook", SITE));
+  return NextResponse.redirect(
+    new URL(`/accounts?connected=facebook&workflowId=${encodeURIComponent(targetWorkflowId)}`, SITE)
+  );
 }

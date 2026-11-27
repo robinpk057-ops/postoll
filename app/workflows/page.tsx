@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AppShell from "../AppShell";
 import { createClient } from "@/lib/supabase/client";
+import { getPlanConfig, PlanTier } from "@/lib/plans";
 
 type Workflow = {
   id: string;
@@ -65,6 +66,7 @@ export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [planTier, setPlanTier] = useState<string>("scheduler");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
@@ -726,3 +728,5 @@ export default function WorkflowsPage() {
     </AppShell>
   );
 }
+
+

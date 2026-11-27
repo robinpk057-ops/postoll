@@ -1,7 +1,29 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { linkAccountToWorkflow } from "@/lib/account-guard";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://postoll.vercel.app";
+
+function parseState(
+  rawState: string | null,
+  fallbackUserId: string
+): { userId: string; workflowId?: string } {
+  if (!rawState) return { userId: fallbackUserId };
+  try {
+    const decoded = JSON.parse(
+      Buffer.from(rawState, "base64url").toString("utf8")
+    );
+    return {
+      userId:
+        typeof decoded?.userId === "string" ? decoded.userId : fallbackUserId,
+      workflowId:
+        typeof decoded?.workflowId === "string" ? decoded.workflowId : undefined,
+    };
+  } catch {
+    return { userId: rawState || fallbackUserId };
+  }
+}
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -15,6 +37,13 @@ export async function GET(req: NextRequest) {
 
   const code = req.nextUrl.searchParams.get("code");
   const error = req.nextUrl.searchParams.get("error");
+  const parsedState = parseState(req.nextUrl.searchParams.get("state"), user.id);
+
+  if (parsedState.userId !== user.id) {
+    return NextResponse.redirect(
+      new URL("/accounts?error=state_mismatch", SITE)
+    );
+  }
 
   if (error || !code) {
     return NextResponse.redirect(
@@ -63,6 +92,10 @@ export async function GET(req: NextRequest) {
   const refreshToken = tokenData.refresh_token
     ? String(tokenData.refresh_token)
     : undefined;
+  const expiresAt =
+    typeof tokenData.expires_in === "number"
+      ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+      : null;
 
   const profileRes = await fetch("https://api.linkedin.com/v2/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -86,57 +119,64 @@ export async function GET(req: NextRequest) {
         .join(" ") ||
       "LinkedIn Profile"
   );
+  const avatarUrl =
+    typeof profileData.picture === "string" ? profileData.picture : null;
 
-  const { data: existing } = await supabase
-    .from("accounts")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("platform", "linkedin")
-    .eq("account_id", memberId)
-    .maybeSingle();
+  let targetWorkflowId = parsedState.workflowId;
+  if (!targetWorkflowId) {
+    const { data: firstWorkflow } = await supabase
+      .from("workflows")
+      .select("id")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  let dbError = null;
-
-  if (existing?.id) {
-    const updatePayload: Record<string, unknown> = {
-      account_name: memberName,
-      access_token: accessToken,
-      connected: true,
-    };
-    if (refreshToken) {
-      updatePayload.refresh_token = refreshToken;
-    }
-
-    const { error: updateErr } = await supabase
-      .from("accounts")
-      .update(updatePayload)
-      .eq("id", existing.id);
-    dbError = updateErr;
-  } else {
-    const insertPayload: Record<string, unknown> = {
-      user_id: user.id,
-      platform: "linkedin",
-      account_id: memberId,
-      account_name: memberName,
-      access_token: accessToken,
-      connected: true,
-    };
-    if (refreshToken) {
-      insertPayload.refresh_token = refreshToken;
-    }
-
-    const { error: insertErr } = await supabase
-      .from("accounts")
-      .insert(insertPayload);
-    dbError = insertErr;
+    targetWorkflowId = firstWorkflow?.id;
   }
 
-  if (dbError) {
-    console.error("Supabase accounts save error:", dbError);
+  if (!targetWorkflowId) {
     return NextResponse.redirect(
-      new URL("/accounts?error=database_save_failed", SITE)
+      new URL("/accounts?error=no_workflow", SITE)
     );
   }
 
-  return NextResponse.redirect(new URL("/accounts?connected=linkedin", SITE));
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  if (!serviceRoleKey || !supabaseUrl) {
+    return NextResponse.redirect(
+      new URL("/accounts?error=server_config", SITE)
+    );
+  }
+
+  const supabaseAdmin = createServiceClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const result = await linkAccountToWorkflow({
+    supabaseAdmin,
+    userId: user.id,
+    workflowId: targetWorkflowId,
+    platform: "linkedin",
+    platformAccountId: memberId,
+    accountName: memberName,
+    accessToken,
+    refreshToken: refreshToken ?? null,
+    expiresAt,
+    profileImageUrl: avatarUrl,
+  });
+
+  if (!result.ok) {
+    return NextResponse.redirect(
+      new URL(`/accounts?error=${encodeURIComponent(result.errorCode)}`, SITE)
+    );
+  }
+
+  return NextResponse.redirect(
+    new URL(
+      `/accounts?connected=linkedin&workflowId=${encodeURIComponent(targetWorkflowId)}`,
+      SITE
+    )
+  );
 }

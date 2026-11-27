@@ -3,6 +3,8 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import AppShell from "../AppShell";
+import { createClient } from "@/lib/supabase/client";
+import { getPlanConfig, PlanTier } from "@/lib/plans";
 
 type PlatformId =
   | "instagram"
@@ -26,6 +28,18 @@ type ConnectedAccount = {
   account_name: string;
   account_id: string;
   connected: boolean;
+};
+
+type WorkflowOption = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+type WorkflowAccountLink = {
+  workflow_id: string;
+  platform: string;
+  account_id: string;
 };
 
 const platforms: Platform[] = [
@@ -79,6 +93,19 @@ const platforms: Platform[] = [
   },
 ];
 
+function formatConnectionError(code: string): string {
+  switch (code) {
+    case "upgrade_required_for_second_workflow":
+      return "Your current plan supports 1 workflow. Upgrade to Scheduler Pro or Growth to connect accounts to a 2nd workflow.";
+    case "channel_already_used_in_other_workflow":
+      return "This social channel is already linked to another workflow. Disconnect it there first or connect a different channel.";
+    case "channel_already_connected_to_another_user":
+      return "This social media channel is already connected to another Postoll account.";
+    default:
+      return `Connection error: ${code.replace(/_/g, " ")}`;
+  }
+}
+
 function BrandIcon({ platformId }: { platformId: PlatformId }) {
   switch (platformId) {
     case "instagram":
@@ -123,8 +150,15 @@ function BrandIcon({ platformId }: { platformId: PlatformId }) {
 }
 
 function AccountsContent() {
+  const supabase = createClient();
   const searchParams = useSearchParams();
+
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowOption[]>([]);
+  const [workflowLinks, setWorkflowLinks] = useState<WorkflowAccountLink[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>("");
+  const [planTier, setPlanTier] = useState<string>("scheduler");
+
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState<PlatformId | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
@@ -135,35 +169,85 @@ function AccountsContent() {
   useEffect(() => {
     setMounted(true);
     const connectedParam = searchParams.get("connected");
+    const instagramParam = searchParams.get("instagram");
     const errorParam = searchParams.get("error");
+    const messageParam = searchParams.get("message");
+    const workflowParam = searchParams.get("workflowId");
+
+    if (workflowParam) {
+      setSelectedWorkflowId(workflowParam);
+    }
+
     if (connectedParam) {
       setMessage(`Successfully connected ${connectedParam} account!`);
+    } else if (instagramParam === "connected") {
+      setMessage(messageParam || "Instagram connected successfully.");
     }
+
     if (errorParam) {
-      setError(`Connection error: ${errorParam}`);
+      setError(formatConnectionError(errorParam));
+    } else if (messageParam && instagramParam === "error") {
+      setError(messageParam);
     }
-    loadAccounts();
+
+    loadAccountsAndWorkflows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  async function loadAccounts() {
+  async function loadAccountsAndWorkflows() {
     try {
       setLoading(true);
       setError("");
 
-      const response = await fetch("/api/accounts", {
-        method: "GET",
-        cache: "no-store",
-      });
+      const [accRes, userRes] = await Promise.all([
+        fetch("/api/accounts", { method: "GET", cache: "no-store" }),
+        supabase.auth.getUser(),
+      ]);
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Unable to load connected accounts."
-        );
+      const accData = await accRes.json();
+      if (!accRes.ok) {
+        throw new Error(accData.error || "Unable to load connected accounts.");
       }
+      setAccounts(accData.accounts || []);
 
-      setAccounts(data.accounts || []);
+      const user = userRes.data?.user;
+      if (user) {
+        const [profileRes, wfRes] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("plan_tier")
+            .eq("id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("workflows")
+            .select("id, name, active")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: true }),
+        ]);
+
+        if (profileRes.data?.plan_tier) {
+          setPlanTier(profileRes.data.plan_tier);
+        }
+
+        const wfList = (wfRes.data || []) as WorkflowOption[];
+        setWorkflows(wfList);
+
+        if (wfList.length > 0) {
+          setSelectedWorkflowId((prev) =>
+            prev && wfList.some((w) => w.id === prev) ? prev : wfList[0].id
+          );
+
+          const { data: linksData } = await supabase
+            .from("workflow_accounts")
+            .select("workflow_id, platform, account_id")
+            .in(
+              "workflow_id",
+              wfList.map((w) => w.id)
+            );
+
+          setWorkflowLinks((linksData || []) as WorkflowAccountLink[]);
+        }
+      }
     } catch (err) {
       console.error("Load accounts error:", err);
       setError(
@@ -189,6 +273,9 @@ function AccountsContent() {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workflowId: selectedWorkflowId || undefined,
+        }),
       });
 
       const data = await response.json();
@@ -203,28 +290,46 @@ function AccountsContent() {
 
       window.location.href = data.authorizationUrl;
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : defaultErr
-      );
+      setError(err instanceof Error ? err.message : defaultErr);
       setConnecting(null);
     }
   }
 
   function handleConnect(platformId: PlatformId) {
     if (platformId === "instagram") {
-      return startOAuthConnect("instagram", "/api/accounts/instagram/connect", "Unable to connect Instagram.");
+      return startOAuthConnect(
+        "instagram",
+        "/api/accounts/instagram/connect",
+        "Unable to connect Instagram."
+      );
     }
     if (platformId === "facebook") {
-      return startOAuthConnect("facebook", "/api/accounts/facebook/connect", "Facebook connect failed.");
+      return startOAuthConnect(
+        "facebook",
+        "/api/accounts/facebook/connect",
+        "Facebook connect failed."
+      );
     }
     if (platformId === "youtube") {
-      return startOAuthConnect("youtube", "/api/accounts/youtube/connect", "YouTube connect failed.");
+      return startOAuthConnect(
+        "youtube",
+        "/api/accounts/youtube/connect",
+        "YouTube connect failed."
+      );
     }
     if (platformId === "linkedin") {
-      return startOAuthConnect("linkedin", "/api/accounts/linkedin/connect", "LinkedIn connect failed.");
+      return startOAuthConnect(
+        "linkedin",
+        "/api/accounts/linkedin/connect",
+        "LinkedIn connect failed."
+      );
     }
     if (platformId === "tiktok") {
-      return startOAuthConnect("tiktok", "/api/accounts/tiktok/connect", "TikTok connect failed.");
+      return startOAuthConnect(
+        "tiktok",
+        "/api/accounts/tiktok/connect",
+        "TikTok connect failed."
+      );
     }
 
     setError(`${platformId} connection is not implemented yet.`);
@@ -250,7 +355,7 @@ function AccountsContent() {
       }
 
       setMessage(`${account.account_name} has been disconnected.`);
-      await loadAccounts();
+      await loadAccountsAndWorkflows();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unable to disconnect account."
@@ -260,23 +365,30 @@ function AccountsContent() {
     }
   }
 
-  function getAccount(platformId: PlatformId) {
-    return accounts.find(
-      (account) => account.platform === platformId
-    );
+  function getAccountForWorkflow(platformId: PlatformId): ConnectedAccount | undefined {
+    if (selectedWorkflowId) {
+      const link = workflowLinks.find(
+        (l) => l.workflow_id === selectedWorkflowId && l.platform === platformId
+      );
+      if (link) {
+        return accounts.find((acc) => acc.id === link.account_id);
+      }
+    }
+    return accounts.find((account) => account.platform === platformId);
   }
 
   if (!mounted) {
     return null;
   }
 
+  const plan = getPlanConfig(planTier as PlanTier);
   const connectedCount = accounts.filter((acc) => acc.connected).length;
 
   return (
     <AppShell>
-      <div className="mx-auto w-full w-full px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-        {/* HEADER */}
-        <div className="mb-8 rounded-3xl border p-6 sm:p-8"
+      <div className="mx-auto w-full px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+        <div
+          className="mb-8 rounded-3xl border p-6 sm:p-8"
           style={{
             background:
               "linear-gradient(135deg, rgba(124,92,255,0.16) 0%, var(--card) 55%, rgba(16,185,129,0.12) 100%)",
@@ -289,20 +401,41 @@ function AccountsContent() {
           <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
             Social Accounts
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: "var(--muted)" }}>
-            Connect your social media accounts once. Postoll uses them when publishing or scheduling your workflows and reels.
+          <p
+            className="mt-2 max-w-2xl text-sm leading-6"
+            style={{ color: "var(--muted)" }}
+          >
+            Connect social channels per brand workflow. Each social account can
+            only be linked once across Postoll.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <span className="rounded-full border border-emerald-500/35 bg-emerald-500/15 px-4 py-1.5 text-xs font-bold text-emerald-300">
               {loading
                 ? "Checking connections..."
-                : `${connectedCount} of ${platforms.length} channels active`}
+                : `${connectedCount} connected · ${plan.name} (up to ${plan.maxWorkflows} ${plan.maxWorkflows === 1 ? "workflow" : "workflows"})`}
             </span>
+
+            {workflows.length > 0 && (
+              <label className="flex items-center gap-2 text-xs font-semibold">
+                <span style={{ color: "var(--muted)" }}>Target Workflow:</span>
+                <select
+                  value={selectedWorkflowId}
+                  onChange={(e) => setSelectedWorkflowId(e.target.value)}
+                  className="rounded-xl border bg-black/30 px-3 py-1.5 text-xs font-bold text-white"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  {workflows.map((wf, idx) => (
+                    <option key={wf.id} value={wf.id} className="bg-neutral-900">
+                      Workflow {idx + 1}: {wf.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
         </div>
 
-        {/* SUCCESS */}
         {message && (
           <div
             className="mb-6 rounded-2xl border p-4 text-sm"
@@ -316,7 +449,6 @@ function AccountsContent() {
           </div>
         )}
 
-        {/* ERROR */}
         {error && (
           <div
             className="mb-6 rounded-2xl border p-4 text-sm"
@@ -330,10 +462,9 @@ function AccountsContent() {
           </div>
         )}
 
-        {/* PLATFORM CARDS */}
         <div className="grid gap-4 md:grid-cols-2">
           {platforms.map((platform) => {
-            const account = getAccount(platform.id);
+            const account = getAccountForWorkflow(platform.id);
             const isConnected = Boolean(account);
             const isConnecting = connecting === platform.id;
             const isDisconnecting = disconnecting === account?.id;

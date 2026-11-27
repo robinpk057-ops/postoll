@@ -8,6 +8,7 @@ import type {
   WorkflowDirectorSettings,
 } from "@/app/types/ai-director";
 import type { StoryboardPlan } from "@/app/api/ai-director/storyboard/route";
+import { dispatchApprovalEmail } from "@/lib/approval";
 
 function getSupabaseServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -435,6 +436,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 
 

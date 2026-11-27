@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 const SITE = (
@@ -7,7 +7,7 @@ const SITE = (
   "https://postoll.vercel.app"
 ).trim();
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
     const {
@@ -16,6 +16,24 @@ export async function POST() {
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    let workflowId: string | undefined =
+      typeof body?.workflowId === "string" && body.workflowId.trim()
+        ? body.workflowId.trim()
+        : undefined;
+
+    if (!workflowId) {
+      const { data: firstWorkflow } = await supabase
+        .from("workflows")
+        .select("id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      workflowId = firstWorkflow?.id;
     }
 
     const clientKey = (
@@ -43,10 +61,9 @@ export async function POST() {
     const stateObj = {
       csrf: Math.random().toString(36).substring(2, 12),
       userId: user.id,
+      workflowId: workflowId ?? null,
     };
-    const csrfState = Buffer.from(JSON.stringify(stateObj)).toString(
-      "base64"
-    );
+    const csrfState = Buffer.from(JSON.stringify(stateObj)).toString("base64");
 
     const authUrl = new URL("https://www.tiktok.com/v2/auth/authorize/");
     authUrl.searchParams.set("client_key", clientKey);

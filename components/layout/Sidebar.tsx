@@ -55,6 +55,13 @@ const navItems: NavItem[] = [
     iconColor: "#F9A8D4",
   },
   {
+    name: "Analytics",
+    href: "/analytics",
+    icon: "◈",
+    activeBg: "rgba(16, 185, 129, 0.22)",
+    iconColor: "#34D399",
+  },
+  {
     name: "Accounts",
     href: "/accounts",
     icon: "◎",
@@ -194,4 +201,5 @@ export default function Sidebar({
     </>
   );
 }
+
 

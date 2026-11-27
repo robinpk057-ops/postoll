@@ -1,7 +1,25 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { linkAccountToWorkflow } from "@/lib/account-guard";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://postoll.vercel.app";
+
+function parseState(rawState: string | null, fallbackUserId: string): {
+  userId: string;
+  workflowId?: string;
+} {
+  if (!rawState) return { userId: fallbackUserId };
+  try {
+    const decoded = JSON.parse(Buffer.from(rawState, "base64url").toString("utf8"));
+    return {
+      userId: typeof decoded?.userId === "string" ? decoded.userId : fallbackUserId,
+      workflowId: typeof decoded?.workflowId === "string" ? decoded.workflowId : undefined,
+    };
+  } catch {
+    return { userId: rawState || fallbackUserId };
+  }
+}
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -13,6 +31,11 @@ export async function GET(req: NextRequest) {
 
   const code = req.nextUrl.searchParams.get("code");
   const error = req.nextUrl.searchParams.get("error");
+  const parsedState = parseState(req.nextUrl.searchParams.get("state"), user.id);
+
+  if (parsedState.userId !== user.id) {
+    return NextResponse.redirect(new URL("/accounts?error=state_mismatch", SITE));
+  }
 
   if (error || !code) {
     return NextResponse.redirect(
@@ -30,7 +53,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/accounts?error=youtube_config", SITE));
   }
 
-  // 1) Exchange authorization code for tokens
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -53,8 +75,10 @@ export async function GET(req: NextRequest) {
 
   const accessToken = tokenData.access_token as string;
   const refreshToken = tokenData.refresh_token as string | undefined;
+  const expiresAt = typeof tokenData.expires_in === "number"
+    ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+    : null;
 
-  // 2) Fetch the user's YouTube Channel details
   const channelRes = await fetch(
     "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
     {
@@ -72,57 +96,59 @@ export async function GET(req: NextRequest) {
   const channel = channelData.items[0];
   const channelId = String(channel.id);
   const channelName = String(channel.snippet?.title || "YouTube Channel");
+  const thumbnailUrl = channel.snippet?.thumbnails?.default?.url ?? null;
 
-  // 3) Check for existing account
-  const { data: existing } = await supabase
-    .from("accounts")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("platform", "youtube")
-    .eq("account_id", channelId)
-    .maybeSingle();
+  let targetWorkflowId = parsedState.workflowId;
+  if (!targetWorkflowId) {
+    const { data: firstWorkflow } = await supabase
+      .from("workflows")
+      .select("id")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  let dbError = null;
-
-  if (existing?.id) {
-    const updatePayload: any = {
-      account_name: channelName,
-      access_token: accessToken,
-      connected: true,
-    };
-    if (refreshToken) {
-      updatePayload.refresh_token = refreshToken;
-    }
-
-    const { error: updateErr } = await supabase
-      .from("accounts")
-      .update(updatePayload)
-      .eq("id", existing.id);
-    dbError = updateErr;
-  } else {
-    const insertPayload: any = {
-      user_id: user.id,
-      platform: "youtube",
-      account_id: channelId,
-      account_name: channelName,
-      access_token: accessToken,
-      connected: true,
-    };
-    if (refreshToken) {
-      insertPayload.refresh_token = refreshToken;
-    }
-
-    const { error: insertErr } = await supabase
-      .from("accounts")
-      .insert(insertPayload);
-    dbError = insertErr;
+    targetWorkflowId = firstWorkflow?.id;
   }
 
-  // 4) Catch and log database errors so they don't fail silently
-  if (dbError) {
-    console.error("Supabase accounts save error:", dbError);
-    return NextResponse.redirect(new URL("/accounts?error=database_save_failed", SITE));
+  if (!targetWorkflowId) {
+    return NextResponse.redirect(new URL("/workflows/create?error=no_workflow", SITE));
   }
 
-  return NextResponse.redirect(new URL("/accounts?connected=youtube", SITE));
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  if (!serviceRoleKey || !supabaseUrl) {
+    console.error("Missing SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL");
+    return NextResponse.redirect(new URL("/accounts?error=server_config", SITE));
+  }
+
+  const supabaseAdmin = createServiceClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const result = await linkAccountToWorkflow({
+    supabaseAdmin,
+    userId: user.id,
+    workflowId: targetWorkflowId,
+    platform: "youtube",
+    platformAccountId: channelId,
+    accountName: channelName,
+    accessToken,
+    refreshToken: refreshToken ?? null,
+    expiresAt,
+    profileUrl: `https://www.youtube.com/channel/${channelId}`,
+    profileImageUrl: thumbnailUrl,
+  });
+
+  if (!result.ok) {
+    console.error("YouTube linkAccountToWorkflow blocked:", result.errorCode);
+    return NextResponse.redirect(
+      new URL(`/accounts?error=${encodeURIComponent(result.errorCode)}`, SITE)
+    );
+  }
+
+  return NextResponse.redirect(
+    new URL(`/accounts?connected=youtube&workflowId=${encodeURIComponent(targetWorkflowId)}`, SITE)
+  );
 }

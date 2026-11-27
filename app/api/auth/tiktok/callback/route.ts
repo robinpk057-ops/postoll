@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { linkAccountToWorkflow } from "@/lib/account-guard";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://postoll.vercel.app";
 
@@ -25,7 +26,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 1) Resolve authenticated user from Supabase cookies first (just like Facebook callback)
+    let decodedState: { userId?: string; workflowId?: string } | null = null;
+    if (state) {
+      try {
+        decodedState = JSON.parse(
+          Buffer.from(state, "base64").toString("utf-8")
+        );
+      } catch {
+        // Ignore if state is a plain CSRF nonce
+      }
+    }
+
     let targetUserId: string | null = null;
     try {
       const serverSupabase = await createServerClient();
@@ -39,18 +50,8 @@ export async function GET(request: NextRequest) {
       console.warn("Could not read server Supabase session in TikTok callback:", e);
     }
 
-    // 2) Fallback: decode userId from state if cookies weren't sent across redirect
-    if (!targetUserId && state) {
-      try {
-        const decodedState = JSON.parse(
-          Buffer.from(state, "base64").toString("utf-8")
-        );
-        if (decodedState?.userId && typeof decodedState.userId === "string") {
-          targetUserId = decodedState.userId;
-        }
-      } catch {
-        // Ignore if state is a plain CSRF nonce rather than base64 JSON
-      }
+    if (!targetUserId && typeof decodedState?.userId === "string") {
+      targetUserId = decodedState.userId;
     }
 
     if (!targetUserId) {
@@ -115,6 +116,7 @@ export async function GET(request: NextRequest) {
     }
 
     let accountName = "TikTok Account";
+    let username: string | null = null;
     try {
       const userInfoResponse = await fetch(
         "https://open.tiktokapis.com/v2/user/info/?fields=display_name,username",
@@ -126,40 +128,67 @@ export async function GET(request: NextRequest) {
 
       const userInfoData = await userInfoResponse.json().catch(() => ({}));
       if (userInfoResponse.ok && userInfoData.data?.user) {
+        username = userInfoData.data.user.username || null;
         accountName =
           userInfoData.data.user.display_name ||
-          userInfoData.data.user.username ||
+          username ||
           "TikTok Account";
       }
     } catch (e) {
       console.warn("Could not fetch TikTok username:", e);
     }
 
-    const expiresInSec = Number(tokenData.expires_in) || 86400;
-    const expiresAt = new Date(Date.now() + expiresInSec * 1000).toISOString();
+    let targetWorkflowId =
+      typeof decodedState?.workflowId === "string"
+        ? decodedState.workflowId
+        : undefined;
 
-    const { error: dbError } = await supabaseAdmin.from("accounts").upsert(
-      {
-        user_id: targetUserId,
-        platform: "tiktok",
-        account_name: accountName,
-        account_id: openId,
-        access_token: accessToken,
-        refresh_token: tokenData.refresh_token || null,
-        expires_at: expiresAt,
-        connected: true,
-      },
-      { onConflict: "user_id,platform,account_id" }
-    );
+    if (!targetWorkflowId) {
+      const { data: firstWorkflow } = await supabaseAdmin
+        .from("workflows")
+        .select("id")
+        .eq("user_id", targetUserId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
-    if (dbError) {
-      console.error("Database save error for TikTok:", dbError);
+      targetWorkflowId = firstWorkflow?.id;
+    }
+
+    if (!targetWorkflowId) {
       return NextResponse.redirect(
-        new URL(`/accounts?error=${encodeURIComponent(dbError.message)}`, SITE)
+        new URL("/accounts?error=no_workflow", SITE)
       );
     }
 
-    return NextResponse.redirect(new URL("/accounts?connected=tiktok", SITE));
+    const expiresInSec = Number(tokenData.expires_in) || 86400;
+    const expiresAt = new Date(Date.now() + expiresInSec * 1000).toISOString();
+
+    const result = await linkAccountToWorkflow({
+      supabaseAdmin,
+      userId: targetUserId,
+      workflowId: targetWorkflowId,
+      platform: "tiktok",
+      platformAccountId: openId,
+      accountName,
+      accessToken,
+      refreshToken: tokenData.refresh_token || null,
+      expiresAt,
+      profileUrl: username ? `https://www.tiktok.com/@${username.replace(/^@/, "")}` : null,
+    });
+
+    if (!result.ok) {
+      return NextResponse.redirect(
+        new URL(`/accounts?error=${encodeURIComponent(result.errorCode)}`, SITE)
+      );
+    }
+
+    return NextResponse.redirect(
+      new URL(
+        `/accounts?connected=tiktok&workflowId=${encodeURIComponent(targetWorkflowId)}`,
+        SITE
+      )
+    );
   } catch (err) {
     console.error("TikTok callback exception:", err);
     return NextResponse.redirect(
