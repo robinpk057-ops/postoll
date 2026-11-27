@@ -666,7 +666,7 @@ async function handleScheduler(request: Request) {
           .from("workflow_schedule_runs")
           .select("id")
           .eq("schedule_slot_id", slot.id)
-          .eq("run_date", runDate)
+          .eq("run_date", runDate).in("status", ["success", "skipped"])
           .maybeSingle();
 
         if (existingRunError) {
