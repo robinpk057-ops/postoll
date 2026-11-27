@@ -33,15 +33,16 @@ import {
 export const maxDuration = 120;
 
 const WINDOW_MINUTES = 15;
-const WORKFLOW_STAGGER_MINUTES = 15;
+const WORKFLOW_STAGGER_MINUTES = 0; // Set to 15 only if you intentionally want +15m stagger per additional workflow
 const MAX_PUBLISH_ATTEMPTS = 2;
 const EXCLUDED_CALENDAR_PLATFORMS = new Set(["x", "twitter"]);
 const DEFAULT_TIMEZONE = "UTC";
+const MINUTES_PER_DAY = 24 * 60;
 
 /*
- * ================================================================
- * TIME HELPERS (timezone-aware)
- * ================================================================
+- ================================================================
+- TIME HELPERS (timezone-aware, DST-safe, midnight-safe)
+- ================================================================
  */
 
 const WEEKDAY_TO_NUMBER: Record<string, number> = {
@@ -54,13 +55,28 @@ const WEEKDAY_TO_NUMBER: Record<string, number> = {
   Sat: 6,
 };
 
-function getZonedDayOfWeek(date: Date, timeZone: string): number {
+function normalizeTimeZone(timeZone?: string | null): string {
+  const candidate = (timeZone || "").trim();
+  if (!candidate) return DEFAULT_TIMEZONE;
+
+  const normalizedAlias =
+    candidate === "Asia/Calcutta" ? "Asia/Kolkata" : candidate;
+
   try {
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
+    Intl.DateTimeFormat("en-US", { timeZone: normalizedAlias });
+    return normalizedAlias;
+  } catch {
+    return DEFAULT_TIMEZONE;
+  }
+}
+
+function getZonedDayOfWeek(date: Date, timeZone: string): number {
+  const safeTz = normalizeTimeZone(timeZone);
+  try {
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: safeTz,
       weekday: "short",
-    });
-    const weekday = formatter.format(date);
+    }).format(date);
     return WEEKDAY_TO_NUMBER[weekday] ?? date.getUTCDay();
   } catch {
     return date.getUTCDay();
@@ -68,14 +84,15 @@ function getZonedDayOfWeek(date: Date, timeZone: string): number {
 }
 
 function getZonedTimeMinutes(date: Date, timeZone: string): number {
+  const safeTz = normalizeTimeZone(timeZone);
   try {
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: safeTz,
       hour: "2-digit",
       minute: "2-digit",
       hourCycle: "h23",
-    });
-    const parts = formatter.formatToParts(date);
+    }).formatToParts(date);
+
     const hourPart = parts.find((part) => part.type === "hour")?.value;
     const minutePart = parts.find((part) => part.type === "minute")?.value;
 
@@ -93,21 +110,21 @@ function getZonedTimeMinutes(date: Date, timeZone: string): number {
 }
 
 function getZonedDateString(date: Date, timeZone: string): string {
+  const safeTz = normalizeTimeZone(timeZone);
   try {
-    const formatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: safeTz,
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-    });
-    return formatter.format(date);
+    }).format(date);
   } catch {
     return date.toISOString().slice(0, 10);
   }
 }
 
 function timeStringToMinutes(time: string): number {
-  const [hoursRaw, minutesRaw] = time.split(":");
+  const [hoursRaw, minutesRaw] = String(time || "").split(":");
   const hours = Number(hoursRaw);
   const minutes = Number(minutesRaw);
   return (
@@ -116,10 +133,47 @@ function timeStringToMinutes(time: string): number {
   );
 }
 
+/**
+ * Checks whether a target wall-clock time (in minutes from 00:00) is due within
+ * [0, windowMinutes) minutes elapsed in the target timezone, correctly handling
+ * day-of-week rollover across midnight (e.g. slot at 23:55, current time 00:05).
+ */
+function isWallClockSlotDue(params: {
+  slotDayOfWeek: number;
+  slotMinutesOfDay: number;
+  currentDayOfWeek: number;
+  currentMinutesOfDay: number;
+  windowMinutes: number;
+}): boolean {
+  const {
+    slotDayOfWeek,
+    slotMinutesOfDay,
+    currentDayOfWeek,
+    currentMinutesOfDay,
+    windowMinutes,
+  } = params;
+
+  const rawDiff = currentMinutesOfDay - slotMinutesOfDay;
+  const wrappedFromPreviousDay =
+    rawDiff < 0 && rawDiff + MINUTES_PER_DAY < windowMinutes;
+  const minutesSinceSlot =
+    rawDiff >= 0 ? rawDiff : rawDiff + MINUTES_PER_DAY;
+
+  if (minutesSinceSlot < 0 || minutesSinceSlot >= windowMinutes) {
+    return false;
+  }
+
+  const expectedDayOfWeek = wrappedFromPreviousDay
+    ? (currentDayOfWeek + 6) % 7
+    : currentDayOfWeek;
+
+  return slotDayOfWeek === expectedDayOfWeek;
+}
+
 /*
- * ================================================================
- * DURATION / EXPIRY CHECK
- * ================================================================
+- ================================================================
+- DURATION / EXPIRY CHECK
+- ================================================================
  */
 
 const DURATION_MONTHS: Record<string, number> = {
@@ -176,9 +230,9 @@ function isWorkflowExpired(
 }
 
 /*
- * ================================================================
- * TYPES & ISOLATED PUBLISHING HELPERS
- * ================================================================
+- ================================================================
+- TYPES & ISOLATED PUBLISHING HELPERS
+- ================================================================
  */
 
 type ScheduleRunInsert = {
@@ -356,9 +410,9 @@ async function publishAcrossTargetsIsolated(params: {
 }
 
 /*
- * ================================================================
- * ROUTE
- * ================================================================
+- ================================================================
+- ROUTE
+- ================================================================
  */
 
 export async function POST(request: Request) {
@@ -464,7 +518,6 @@ async function handleScheduler(request: Request) {
         (profiles ?? []).map((p) => [p.id, p.plan_tier ?? null])
       );
 
-      // Enforce per-plan active workflow limit and assign deterministic stagger index per user
       const allowedWorkflowIds = new Set<string>();
       const workflowStaggerMinutes = new Map<string, number>();
       const workflowsByUser = new Map<string, typeof workflowList>();
@@ -509,7 +562,9 @@ async function handleScheduler(request: Request) {
         if (slot.pending_post_time && slot.effective_from_date) {
           const wf = workflowMap.get(slot.workflow_id);
           if (wf) {
-            const tz = settingsMap.get(slot.workflow_id)?.timezone || DEFAULT_TIMEZONE;
+            const tz = normalizeTimeZone(
+              settingsMap.get(slot.workflow_id)?.timezone
+            );
             const localDate = getZonedDateString(now, tz);
             if (localDate >= slot.effective_from_date) {
               await supabaseAdmin
@@ -538,25 +593,24 @@ async function handleScheduler(request: Request) {
           continue;
         }
 
-        const settings = settingsMap.get(slot.workflow_id);
-        const timezone = settings?.timezone || DEFAULT_TIMEZONE;
-
+        const timezone = normalizeTimeZone(
+          settingsMap.get(slot.workflow_id)?.timezone
+        );
         const zonedDow = getZonedDayOfWeek(now, timezone);
         const zonedMinutes = getZonedTimeMinutes(now, timezone);
-
-        if (slot.day_of_week !== zonedDow) {
-          continue;
-        }
-
         const staggerOffset = workflowStaggerMinutes.get(slot.workflow_id) ?? 0;
         const effectiveSlotMinutes =
-          (timeStringToMinutes(slot.post_time) + staggerOffset) % (24 * 60);
+          (timeStringToMinutes(slot.post_time) + staggerOffset) % MINUTES_PER_DAY;
 
-        // Forward elapsed minutes in the current 24h day (handles midnight wrap-around)
-        const minutesSinceSlot =
-          (zonedMinutes - effectiveSlotMinutes + 24 * 60) % (24 * 60);
+        const isDue = isWallClockSlotDue({
+          slotDayOfWeek: slot.day_of_week,
+          slotMinutesOfDay: effectiveSlotMinutes,
+          currentDayOfWeek: zonedDow,
+          currentMinutesOfDay: zonedMinutes,
+          windowMinutes: WINDOW_MINUTES,
+        });
 
-        if (minutesSinceSlot >= WINDOW_MINUTES) {
+        if (!isDue) {
           continue;
         }
 
@@ -1026,16 +1080,31 @@ async function handleScheduler(request: Request) {
           continue;
         }
 
-        const tz = row.timezone || DEFAULT_TIMEZONE;
+        const tz = normalizeTimeZone(row.timezone);
         const localDate = getZonedDateString(now, tz);
+        const localDow = getZonedDayOfWeek(now, tz);
         const localMinutes = getZonedTimeMinutes(now, tz);
         const slotMinutes = timeStringToMinutes(
           String(row.scheduled_time).slice(0, 5)
         );
-        const diff = Math.abs(localMinutes - slotMinutes);
 
-        if (row.scheduled_date !== localDate) continue;
-        if (diff > WINDOW_MINUTES) continue;
+        const elapsedSinceSlot =
+          (localMinutes - slotMinutes + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+        const isPastOrWithinWindow =
+          elapsedSinceSlot >= 0 && elapsedSinceSlot < WINDOW_MINUTES;
+
+        const scheduledDateObj = new Date(`${row.scheduled_date}T00:00:00Z`);
+        const scheduledDow = Number.isNaN(scheduledDateObj.getTime())
+          ? localDow
+          : scheduledDateObj.getUTCDay();
+
+        const matchesDateOrRollover =
+          row.scheduled_date === localDate ||
+          (localMinutes < WINDOW_MINUTES &&
+            localMinutes - slotMinutes < 0 &&
+            scheduledDow === (localDow + 6) % 7);
+
+        if (!matchesDateOrRollover || !isPastOrWithinWindow) continue;
 
         const { data: claimed, error: claimErr } = await supabaseAdmin
           .from("calendar_posts")
@@ -1234,4 +1303,3 @@ async function insertRun(
     console.error("Failed to insert workflow_schedule_run:", error);
   }
 }
-
