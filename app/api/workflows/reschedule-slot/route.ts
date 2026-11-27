@@ -1,20 +1,19 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-const DEFAULT_TIMEZONE = "America/New_York";
+const DEFAULT_TIMEZONE = "UTC";
 
-function getTomorrowZonedDate(timeZone: string): string {
-  const now = new Date();
+function getZonedDateString(now: Date, timeZone: string, addDays = 0): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
-  const todayStr = formatter.format(now);
-  const [y, m, d] = todayStr.split("-").map(Number);
-  const tomorrowUtc = new Date(Date.UTC(y, (m || 1) - 1, (d || 1) + 1));
-  return tomorrowUtc.toISOString().slice(0, 10);
+  const baseStr = formatter.format(now);
+  const [y, m, d] = baseStr.split("-").map(Number);
+  const targetUtc = new Date(Date.UTC(y, (m || 1) - 1, (d || 1) + addDays));
+  return targetUtc.toISOString().slice(0, 10);
 }
 
 function normalizeTimeInput(raw: string): string | null {
@@ -46,6 +45,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const slotId = String(body?.slotId || "").trim();
     const nextPostTime = normalizeTimeInput(String(body?.postTime || ""));
+    const applyImmediately = Boolean(body?.applyImmediately);
 
     if (!slotId || !nextPostTime) {
       return NextResponse.json(
@@ -84,23 +84,35 @@ export async function POST(request: Request) {
       .eq("workflow_id", slot.workflow_id)
       .maybeSingle();
 
-    const tz = settings?.timezone || DEFAULT_TIMEZONE;
-    const effectiveFromDate = getTomorrowZonedDate(tz);
+    const tz = settings?.timezone || "UTC";
+    const now = new Date();
+    const effectiveFromDate = applyImmediately
+      ? getZonedDateString(now, tz, 0)
+      : getZonedDateString(now, tz, 1);
+
+    const updatePayload = applyImmediately
+      ? {
+          post_time: nextPostTime,
+          pending_post_time: null,
+          effective_from_date: effectiveFromDate,
+          updated_at: now.toISOString(),
+        }
+      : {
+          pending_post_time: nextPostTime,
+          effective_from_date: effectiveFromDate,
+          updated_at: now.toISOString(),
+        };
 
     const { data: updated, error: updateErr } = await supabase
       .from("workflow_schedule_slots")
-      .update({
-        pending_post_time: nextPostTime,
-        effective_from_date: effectiveFromDate,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", slotId)
       .select("id, post_time, pending_post_time, effective_from_date")
       .single();
 
     if (updateErr || !updated) {
       return NextResponse.json(
-        { error: updateErr?.message || "Failed to schedule next-day time." },
+        { error: updateErr?.message || "Failed to update schedule time." },
         { status: 500 }
       );
     }
@@ -108,12 +120,15 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       slot: updated,
-      message: `New schedule (${nextPostTime.slice(
-        0,
-        5
-      )}) will happen from tomorrow onwards (${effectiveFromDate}). Today's post will still run at ${String(
-        slot.post_time
-      ).slice(0, 5)}.`,
+      timezone: tz,
+      message: applyImmediately
+        ? `Schedule updated to ${nextPostTime.slice(0, 5)} (${tz}) starting ${effectiveFromDate}.`
+        : `New schedule (${nextPostTime.slice(
+            0,
+            5
+          )} in ${tz}) will happen from ${effectiveFromDate} onwards. Today's post will still run at ${String(
+            slot.post_time
+          ).slice(0, 5)}.`,
     });
   } catch (err) {
     return NextResponse.json(

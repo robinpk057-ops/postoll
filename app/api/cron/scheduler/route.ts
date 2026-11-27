@@ -36,7 +36,7 @@ const WINDOW_MINUTES = 15;
 const WORKFLOW_STAGGER_MINUTES = 15;
 const MAX_PUBLISH_ATTEMPTS = 2;
 const EXCLUDED_CALENDAR_PLATFORMS = new Set(["x", "twitter"]);
-const DEFAULT_TIMEZONE = "America/New_York";
+const DEFAULT_TIMEZONE = "UTC";
 
 /*
  * ================================================================
@@ -551,9 +551,12 @@ async function handleScheduler(request: Request) {
         const staggerOffset = workflowStaggerMinutes.get(slot.workflow_id) ?? 0;
         const effectiveSlotMinutes =
           (timeStringToMinutes(slot.post_time) + staggerOffset) % (24 * 60);
-        const diff = Math.abs(zonedMinutes - effectiveSlotMinutes);
 
-        if (diff > WINDOW_MINUTES) {
+        // Forward elapsed minutes in the current 24h day (handles midnight wrap-around)
+        const minutesSinceSlot =
+          (zonedMinutes - effectiveSlotMinutes + 24 * 60) % (24 * 60);
+
+        if (minutesSinceSlot >= WINDOW_MINUTES) {
           continue;
         }
 
@@ -1231,3 +1234,4 @@ async function insertRun(
     console.error("Failed to insert workflow_schedule_run:", error);
   }
 }
+
