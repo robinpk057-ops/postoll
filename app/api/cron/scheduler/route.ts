@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   createClient as createSupabaseClient,
   SupabaseClient,
@@ -530,12 +530,21 @@ async function handleScheduler(request: Request) {
 
       for (const [uid, uWorkflows] of workflowsByUser.entries()) {
         const plan = getPlanConfig(planByUserId.get(uid));
-        uWorkflows.forEach((wf, index) => {
-          if (wf.active === true && index < plan.maxWorkflows) {
-            allowedWorkflowIds.add(wf.id);
-            workflowStaggerMinutes.set(wf.id, index * WORKFLOW_STAGGER_MINUTES);
+        let activeIndex = 0;
+
+        for (const wf of uWorkflows) {
+          if (wf.active !== true) {
+            continue;
           }
-        });
+          if (activeIndex < plan.maxWorkflows) {
+            allowedWorkflowIds.add(wf.id);
+            workflowStaggerMinutes.set(
+              wf.id,
+              activeIndex * WORKFLOW_STAGGER_MINUTES
+            );
+            activeIndex += 1;
+          }
+        }
       }
 
       const workflowMap = new Map(
