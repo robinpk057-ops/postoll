@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import AppShell from "../AppShell";
 import { createClient } from "@/lib/supabase/client";
+import { PLAN_CONFIGS, getPlanConfig, type PlanTier } from "@/lib/plans";
 import {
   getPasswordChecklist,
   validateStrongPassword,
@@ -83,6 +84,9 @@ export default function SettingsPage() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [planTier, setPlanTier] = useState<PlanTier>("scheduler");
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
+  const [selectingPlan, setSelectingPlan] = useState<PlanTier | null>(null);
 
   const [automaticScheduling, setAutomaticScheduling] = useState(false);
   const [timezone, setTimezone] = useState("Asia/Kolkata");
@@ -119,6 +123,33 @@ export default function SettingsPage() {
   const [apiKeyName, setApiKeyName] = useState("n8n");
   const [apiKeySecretOnce, setApiKeySecretOnce] = useState<string | null>(null);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+
+  async function handleSelectPlan(nextTier: PlanTier) {
+    try {
+      setSelectingPlan(nextTier);
+      setError(null);
+      setSuccess(null);
+
+      const res = await fetch("/api/billing/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planTier: nextTier, billingCycle }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to switch plan.");
+      }
+
+      setPlanTier(nextTier);
+      setSuccess(
+        `Switched to ${PLAN_CONFIGS[nextTier].name} (${billingCycle}).`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to switch plan.");
+    } finally {
+      setSelectingPlan(null);
+    }
+  }
 
   async function handleUpdateAccountPassword(e: FormEvent) {
     e.preventDefault();
@@ -241,6 +272,15 @@ export default function SettingsPage() {
 
       setUserId(user.id);
       setUserEmail(user.email || null);
+
+      const { data: profileRow } = await supabase
+        .from("profiles")
+        .select("plan_tier")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (profileRow?.plan_tier) {
+        setPlanTier(getPlanConfig(profileRow.plan_tier).id);
+      }
 
       const { data: settings, error: settingsError } = await supabase
         .from("schedule_settings")
@@ -643,6 +683,134 @@ export default function SettingsPage() {
               {error}
             </div>
           )}
+
+          {/* SUBSCRIPTION PLAN TIERS */}
+          <section
+            className="mb-6 rounded-2xl border p-6"
+            style={{
+              background: "var(--card)",
+              borderColor: "var(--border)",
+            }}
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold">Subscription Plan</h2>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+                  Select a plan tier for workflow limits, daily uploads, and AI
+                  credits. Payment gateway checkout can be attached here later.
+                </p>
+              </div>
+
+              <div
+                className="inline-flex rounded-xl border p-1 text-xs font-bold"
+                style={{ borderColor: "var(--border)", background: "var(--background)" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle("monthly")}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    billingCycle === "monthly"
+                      ? "bg-[#7C5CFF] text-white"
+                      : "opacity-75 hover:opacity-100"
+                  }`}
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle("yearly")}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    billingCycle === "yearly"
+                      ? "bg-[#7C5CFF] text-white"
+                      : "opacity-75 hover:opacity-100"
+                  }`}
+                >
+                  Yearly (Save ~20%)
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {(Object.values(PLAN_CONFIGS) as Array<(typeof PLAN_CONFIGS)[PlanTier]>).map(
+                (cfg) => {
+                  const isCurrent = planTier === cfg.id;
+                  const price =
+                    billingCycle === "yearly"
+                      ? cfg.yearlyMonthlyPriceUsd
+                      : cfg.monthlyPriceUsd;
+
+                  return (
+                    <div
+                      key={cfg.id}
+                      className="flex flex-col justify-between rounded-2xl border p-5"
+                      style={{
+                        borderColor: isCurrent ? "#7C5CFF" : "var(--border)",
+                        background: isCurrent
+                          ? "rgba(124, 92, 255, 0.08)"
+                          : "var(--background)",
+                      }}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-base font-bold">{cfg.name}</h3>
+                          {cfg.badge && (
+                            <span className="rounded-full bg-[#7C5CFF]/20 px-2.5 py-0.5 text-[10px] font-bold text-[#C4B5FD]">
+                              {cfg.badge}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="mt-3 text-2xl font-black">
+                          ${price.toFixed(2)}
+                          <span
+                            className="text-xs font-normal"
+                            style={{ color: "var(--muted)" }}
+                          >
+                            /mo
+                          </span>
+                        </p>
+
+                        <ul
+                          className="mt-4 space-y-1.5 text-xs"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          <li>
+                            • Up to <strong>{cfg.maxWorkflows}</strong>{" "}
+                            {cfg.maxWorkflows === 1 ? "workflow" : "workflows"}
+                          </li>
+                          <li>
+                            • <strong>{cfg.maxManualUploadsPerDay}</strong>{" "}
+                            unique uploads/day
+                          </li>
+                          <li>
+                            • <strong>{cfg.monthlyAiCredits}</strong> AI
+                            credits/month
+                          </li>
+                        </ul>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isCurrent || Boolean(selectingPlan)}
+                        onClick={() => handleSelectPlan(cfg.id)}
+                        className={`mt-5 w-full rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+                          isCurrent
+                            ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                            : "bg-[#7C5CFF] text-white hover:bg-[#6A48F5] disabled:opacity-50"
+                        }`}
+                      >
+                        {isCurrent
+                          ? "Current Plan"
+                          : selectingPlan === cfg.id
+                          ? "Switching..."
+                          : `Select ${cfg.name}`}
+                      </button>
+                    </div>
+                  );
+                }
+              )}
+            </div>
+          </section>
 
           {/* ACCOUNT & PASSWORD */}
           <section
@@ -1315,3 +1483,4 @@ export default function SettingsPage() {
     </AppShell>
   );
 }
+
