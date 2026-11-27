@@ -1,4 +1,4 @@
-﻿import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 const INSTAGRAM_GRAPH_URL = "https://graph.instagram.com";
 
@@ -379,6 +379,11 @@ export async function publishInstagramPost(
     );
   }
 
+  const activeAccessToken = await refreshInstagramTokenIfPossible(
+    supabaseAdmin,
+    account
+  );
+
   console.log("Creating Instagram media container:", {
     contentId: content.id,
     type: content.type,
@@ -401,7 +406,7 @@ export async function publishInstagramPost(
     containerBody.set("caption", caption);
   }
 
-  containerBody.set("access_token", account.access_token);
+  containerBody.set("access_token", activeAccessToken);
 
   const containerResponse = await fetch(
     `${INSTAGRAM_GRAPH_URL}/${account.account_id}/media`,
@@ -436,14 +441,14 @@ export async function publishInstagramPost(
     );
   }
 
-  await waitForContainerReady(creationId, account.access_token);
+  await waitForContainerReady(creationId, activeAccessToken);
 
   console.log("Publishing Instagram media:", creationId);
 
   const publishBody = new URLSearchParams();
 
   publishBody.set("creation_id", creationId);
-  publishBody.set("access_token", account.access_token);
+  publishBody.set("access_token", activeAccessToken);
 
   const publishResponse = await fetch(
     `${INSTAGRAM_GRAPH_URL}/${account.account_id}/media_publish`,
