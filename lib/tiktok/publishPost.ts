@@ -312,8 +312,17 @@ export async function publishTikTokVideo(
   }
   const privacyLevel = choosePrivacyLevel(creatorCheck.options);
 
-  const chunkSize = videoSize <= MAX_CHUNK_BYTES ? videoSize : MAX_CHUNK_BYTES;
-  const totalChunkCount = Math.ceil(videoSize / chunkSize);
+  const MIN_CHUNK_BYTES = 5 * 1024 * 1024;
+  const MAX_ALLOWED_CHUNK_BYTES = 64 * 1024 * 1024;
+  const effectiveMaxChunk = Math.min(MAX_CHUNK_BYTES, MAX_ALLOWED_CHUNK_BYTES);
+
+  let chunkSize = videoSize;
+  let totalChunkCount = 1;
+
+  if (videoSize > MIN_CHUNK_BYTES) {
+    chunkSize = Math.min(videoSize, effectiveMaxChunk);
+    totalChunkCount = Math.max(1, Math.floor(videoSize / chunkSize));
+  }
 
   const title = buildCaptionText({
     title: contentRow.title,
