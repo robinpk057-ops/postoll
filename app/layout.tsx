@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import "./globals.css";
+import { RoboAssistant } from "@/components/RoboAssistant";
 
 export const metadata: Metadata = {
   title: "Postoll",
@@ -14,7 +15,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        {children}
+        <RoboAssistant />
+      </body>
     </html>
   );
 }
