@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { validateSafetyText } from "@/lib/safety-guardrail";
 
@@ -20,6 +20,10 @@ export async function POST(req: NextRequest) {
       ? body.targetAccountIds.map(String)
       : [];
 
+    if (!jobId) {
+      return NextResponse.json({ error: "'jobId' is required" }, { status: 400 });
+    }
+
     const { data: job, error: jobErr } = await supabase
       .from("generation_jobs")
       .select("*")
@@ -33,8 +37,8 @@ export async function POST(req: NextRequest) {
 
     const scenes = Array.isArray(job.storyboard_json?.scenes) ? job.storyboard_json.scenes : [];
     const combinedScript = scenes
-      .map((s: { narration?: string; visualPrompt?: string }, i: number) =>
-        `Clip ${i + 1}: ${s.narration || ""} (${s.visualPrompt || ""})`
+      .map((s: { narration?: string; narrationOrOverlayText?: string; visualPrompt?: string }, i: number) =>
+        `Clip ${i + 1}: ${s.narration || s.narrationOrOverlayText || ""} (${s.visualPrompt || ""})`
       )
       .join("\n");
 
@@ -52,24 +56,30 @@ export async function POST(req: NextRequest) {
         ? job.target_account_ids
         : [];
 
-    const stitchedClips = scenes.map((s: any, idx: number) => ({
+    const stitchedClips = scenes.map((s: Record<string, unknown>, idx: number) => ({
       clipIndex: idx,
       sceneNumber: idx + 1,
-      durationSeconds: s.durationSeconds || 10,
-      visualPrompt: s.visualPrompt || "",
-      narration: s.narration || "",
+      durationSeconds: Number(s.durationSeconds) || 10,
+      visualPrompt: String(s.visualPrompt || ""),
+      narration: String(s.narration || s.narrationOrOverlayText || ""),
+      mediaUrl: typeof s.videoUrl === "string" ? s.videoUrl : typeof s.imageUrl === "string" ? s.imageUrl : null,
       combinedOrder: idx + 1,
     }));
+
+    const hasRealMedia =
+      typeof job.final_video_url === "string" &&
+      (job.final_video_url.startsWith("http://") || job.final_video_url.startsWith("https://"));
+
+    const nextJobStatus = hasRealMedia ? "published" : "ready_for_review";
+    const nextContentStatus = hasRealMedia ? "published" : "draft";
 
     const { data: updatedJob, error: updErr } = await supabase
       .from("generation_jobs")
       .update({
-        approval_status: "approved",
-        status: "published",
+        approval_status: hasRealMedia ? "approved" : "pending_media",
+        status: nextJobStatus,
         target_account_ids: accountIdsToUse,
         clips_json: stitchedClips,
-        final_video_url:
-          job.final_video_url || `stitched://job/${job.id}/combined-clips.mp4`,
         updated_at: new Date().toISOString(),
       })
       .eq("id", jobId)
@@ -84,8 +94,8 @@ export async function POST(req: NextRequest) {
       await supabase
         .from("content")
         .update({
-          status: "published",
-          approval_status: "approved",
+          status: nextContentStatus,
+          approval_status: hasRealMedia ? "approved" : "pending_review",
           target_account_ids: accountIdsToUse,
         })
         .eq("id", job.output_post_id)
@@ -94,6 +104,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      hasRealMedia,
       job: updatedJob,
       stitchedClipCount: stitchedClips.length,
       publishedAccountIds: accountIdsToUse,

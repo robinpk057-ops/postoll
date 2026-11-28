@@ -331,6 +331,63 @@ export async function syncSubscriptionAndProfile(params: {
   return { subscriptionId };
 }
 
+export async function grantPlanCreditsForBillingEvent(params: {
+  userId: string;
+  planTier: PlanTier;
+  eventKey: string;
+}): Promise<{ granted: number; newBalance: number | null }> {
+  const adminDb = createServiceRoleClient();
+  if (!adminDb) return { granted: 0, newBalance: null };
+
+  const grantAmount = getPlanConfig(params.planTier).monthlyAiCredits;
+  if (!Number.isFinite(grantAmount) || grantAmount <= 0) {
+    return { granted: 0, newBalance: null };
+  }
+
+  // Idempotency guard via payment_webhook_events under credit_grant namespace
+  const creditEventId = `credit_${params.eventKey}`;
+  const { error: claimErr } = await adminDb
+    .from("payment_webhook_events")
+    .insert({
+      provider: "credit_grant",
+      event_id: creditEventId,
+      event_type: `grant_${params.planTier}`,
+      status: "processing",
+      processed_at: new Date().toISOString(),
+    });
+
+  if (claimErr) {
+    // Already granted for this billing event
+    return { granted: 0, newBalance: null };
+  }
+
+  const { data: prof } = await adminDb
+    .from("profiles")
+    .select("credits")
+    .eq("id", params.userId)
+    .maybeSingle();
+
+  const currentCredits = Number(prof?.credits ?? 0);
+  const nextCredits = (Number.isFinite(currentCredits) ? currentCredits : 0) + grantAmount;
+
+  const { error: updErr } = await adminDb
+    .from("profiles")
+    .update({ credits: nextCredits })
+    .eq("id", params.userId);
+
+  await adminDb
+    .from("payment_webhook_events")
+    .update({
+      status: updErr ? "error" : "processed",
+      processed_at: new Date().toISOString(),
+      ...(updErr ? { error_message: updErr.message } : {}),
+    })
+    .eq("provider", "credit_grant")
+    .eq("event_id", creditEventId);
+
+  return updErr ? { granted: 0, newBalance: null } : { granted: grantAmount, newBalance: nextCredits };
+}
+
 export async function enforceExpiredSubscriptions(): Promise<{
   checked: number;
   pausedOrExpired: number;
