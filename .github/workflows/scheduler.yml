@@ -1,18 +1,14 @@
 ﻿name: Postoll Scheduler
 
 on:
-  schedule:
-    - cron: "4,19,34,49 * * * *"
-    - cron: "30 0 * * *"
   workflow_dispatch:
 
 jobs:
   trigger-scheduler:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '4,19,34,49 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Call scheduler backup endpoint
+      - name: Call scheduler endpoint
         env:
           POSTOLL_SCHEDULER_URL: ${{ secrets.POSTOLL_SCHEDULER_URL }}
           POSTOLL_CRON_SECRET: ${{ secrets.POSTOLL_CRON_SECRET }}
@@ -24,19 +20,3 @@ jobs:
             -X POST "${POSTOLL_SCHEDULER_URL}" \
             -H "Authorization: Bearer ${POSTOLL_CRON_SECRET}" \
             -H "Content-Type: application/json"
-
-  sync-analytics:
-    if: github.event.schedule == '30 0 * * *'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Sync Growth tier daily analytics
-        env:
-          POSTOLL_SCHEDULER_URL: ${{ secrets.POSTOLL_SCHEDULER_URL }}
-          POSTOLL_CRON_SECRET: ${{ secrets.POSTOLL_CRON_SECRET }}
-        run: |
-          BASE_URL="${POSTOLL_SCHEDULER_URL%/api/cron/scheduler}"
-          curl --fail --show-error --silent \
-            --max-time 115 \
-            -X POST "${BASE_URL}/api/analytics/sync" \
-            -H "Authorization: Bearer ${POSTOLL_CRON_SECRET}"
