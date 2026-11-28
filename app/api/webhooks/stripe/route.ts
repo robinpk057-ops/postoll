@@ -627,7 +627,7 @@ export async function POST(req: NextRequest) {
           typeof charge.customer === "string" ? charge.customer : charge.customer?.id ?? null;
         const userId = await resolveUserIdFromStripe({
           customerId,
-          customerEmail: invoice.customer_email || null,
+          customerEmail: charge.billing_details?.email || charge.receipt_email || null,
         });
         if (!userId) break;
 
