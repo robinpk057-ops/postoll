@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceRoleClient } from "@/lib/security/guards";
 import { claimWebhookEvent } from "@/lib/security/payments";
@@ -137,15 +137,20 @@ export async function POST(req: NextRequest) {
           typeof session.subscription === "string"
             ? session.subscription
             : session.subscription?.id ?? null;
+        const customerEmail = session.customer_details?.email || session.customer_email || null;
 
         const userId = await resolveUserIdFromStripe({
           customerId,
           metadataUserId: session.metadata?.user_id,
           clientReferenceId: session.client_reference_id,
-          customerEmail: session.customer_details?.email || session.customer_email || null,
+          customerEmail,
         });
 
-        if (!userId) break;
+        if (!userId) {
+          throw new Error(
+            `Could not resolve userId for checkout.session.completed (customer=${customerId}, email=${customerEmail})`
+          );
+        }
 
         let planTier: PlanTier = isValidTier(session.metadata?.plan_tier)
           ? session.metadata.plan_tier
@@ -197,10 +202,13 @@ export async function POST(req: NextRequest) {
           taxId: session.customer_details?.tax_ids?.[0]?.value ?? null,
         });
 
+        if (synced.error) {
+          throw new Error(`syncSubscriptionAndProfile failed: ${synced.error}`);
+        }
+
         const amountCents = session.amount_total ?? 0;
         const taxCents = session.total_details?.amount_tax ?? 0;
         const currency = session.currency || "usd";
-        const customerEmail = session.customer_details?.email || session.customer_email || null;
         const customerName = session.customer_details?.name || null;
 
         await recordBillingTransaction({
@@ -259,7 +267,11 @@ export async function POST(req: NextRequest) {
           customerId,
           customerEmail: invoice.customer_email || null,
         });
-        if (!userId) break;
+        if (!userId) {
+          throw new Error(
+            `Could not resolve userId for invoice.paid (customer=${customerId}, email=${invoice.customer_email})`
+          );
+        }
 
         let planTier: PlanTier = "scheduler";
         let billingCycle: BillingCycle = "monthly";
@@ -312,6 +324,10 @@ export async function POST(req: NextRequest) {
           billingAddress: (invoice.customer_address as unknown as Record<string, unknown>) || {},
           taxId: invoice.customer_tax_ids?.[0]?.value ?? null,
         });
+
+        if (synced.error) {
+          throw new Error(`syncSubscriptionAndProfile failed on invoice.paid: ${synced.error}`);
+        }
 
         const amountCents = invoice.amount_paid ?? invoice.total ?? 0;
         const taxCents = (invoice as unknown as { tax?: number }).tax ?? 0;
@@ -671,10 +687,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Webhook processing error";
+    console.error("[stripe-webhook] Error:", message);
     if (adminDb) {
       await adminDb
         .from("payment_webhook_events")
-        .update({ status: "error", error_message: message })
+        .update({ status: "error", processed_at: new Date().toISOString() })
         .eq("provider", "stripe")
         .eq("event_id", event.id);
     }
