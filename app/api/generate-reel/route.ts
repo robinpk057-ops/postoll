@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 type JsonObject = Record<string, unknown>;
 type SupportedAspectRatio = "1:1" | "9:16" | "16:9" | "4:5";
@@ -442,6 +442,12 @@ function extractVideoUrl(result: JsonObject): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  const { requireAuthenticatedUser } = await import("@/lib/api-guard");
+  const { checkAndDeductCredits } = await import("@/lib/billing/credits");
+  const auth = await requireAuthenticatedUser(request, { routeName: "generate-reel", maxRequests: 20, windowMs: 60_000 });
+  if (!auth.ok) return auth.response;
+  const creditRes = await checkAndDeductCredits({ userId: auth.user.id, cost: 2, endpoint: "/api/generate-reel", provider: "openrouter_video" });
+  if (!creditRes.ok) return creditRes.response;
   try {
     const body = (await request.json()) as GenerateReelRequest;
 

@@ -291,6 +291,12 @@ async function addExactText(
 }
 
 export async function POST(request: Request) {
+  const { requireAuthenticatedUser } = await import("@/lib/api-guard");
+  const { checkAndDeductCredits } = await import("@/lib/billing/credits");
+  const auth = await requireAuthenticatedUser(request as unknown as import("next/server").NextRequest, { routeName: "generate-image", maxRequests: 25, windowMs: 60_000 });
+  if (!auth.ok) return auth.response;
+  const creditRes = await checkAndDeductCredits({ userId: auth.user.id, cost: 1, endpoint: "/api/generate-image", provider: "gemini_image" });
+  if (!creditRes.ok) return creditRes.response;
   try {
     const body = (await request.json()) as GenerateImageBody;
     const aspectRatio: SupportedAspectRatio =

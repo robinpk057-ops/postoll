@@ -212,6 +212,9 @@ export async function POST(
   request: Request
 ) {
   try {
+    const { checkAndDeductCredits } = await import("@/lib/billing/credits");
+    const creditRes = await checkAndDeductCredits({ userId: user.id, cost: 1, endpoint: "/api/generate-content", provider: "gemini" });
+    if (!creditRes.ok) return creditRes.response;
     const body = await request.json();
 
     const {
