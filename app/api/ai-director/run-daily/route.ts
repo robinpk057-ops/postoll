@@ -1,4 +1,4 @@
-﻿import { assertGeminiResponseSafe, STRICT_GEMINI_SAFETY_SETTINGS, validateSafetyText } from "@/lib/safety-guardrail";
+import { assertGeminiResponseSafe, STRICT_GEMINI_SAFETY_SETTINGS, validateSafetyText } from "@/lib/safety-guardrail";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createSessionClient } from "@/lib/supabase/server";
@@ -227,6 +227,28 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const creditCost = 1;
+    const { data: ownerProfile, error: profFetchErr } = await supabase
+      .from("profiles")
+      .select("credits")
+      .eq("id", userId)
+      .single();
+
+    if (profFetchErr || !ownerProfile) {
+      return NextResponse.json(
+        { error: "Unable to verify user credit balance." },
+        { status: 500 }
+      );
+    }
+
+    const currentCredits = Number(ownerProfile.credits ?? 0);
+    if (!Number.isFinite(currentCredits) || currentCredits < creditCost) {
+      return NextResponse.json(
+        { error: "Insufficient AI credits to run daily generation. Please upgrade or add credits." },
+        { status: 402 }
+      );
+    }
+
     if (existingJob && existingJob.status === "failed") {
       jobId = existingJob.id;
       await supabase
@@ -294,9 +316,9 @@ export async function POST(req: NextRequest) {
     const modelsToTry = [
       "gemini-2.5-flash",
       "gemini-2.5-flash-lite",
-      "gemini-3.8-flash",
-      "gemini-3.6-flash",
-      "gemini-3.5-flash-lite",
+      "gemini-2.5-pro",
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
     ];
     let response;
     let lastGenError: unknown;
@@ -394,7 +416,14 @@ export async function POST(req: NextRequest) {
       outputPostId = createdContent.id;
     }
 
-    // 6. Mark generation job completed
+    // 6. Deduct credit and mark generation job completed
+    const nextCredits = Math.max(0, currentCredits - creditCost);
+    await supabase
+      .from("profiles")
+      .update({ credits: nextCredits })
+      .eq("id", userId)
+      .gte("credits", creditCost);
+
     const { data: completedJob, error: completeError } = await supabase
       .from("generation_jobs")
       .update({

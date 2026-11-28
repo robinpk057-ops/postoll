@@ -554,7 +554,7 @@ If Post was not selected:
       await openai.responses.create({
         model:
           process.env.POSTOLL_SCRIPT_MODEL ||
-          "gpt-5.6",
+          "gpt-4o-mini",
 
         input: prompt,
 

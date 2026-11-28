@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { GoogleGenAI } from "@google/genai";
 
@@ -428,7 +428,7 @@ QUALITY:
 
     const geminiApiKey = process.env.GEMINI_API_KEY;
     const geminiModel =
-      process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
+      process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 
     if (geminiApiKey) {
       try {

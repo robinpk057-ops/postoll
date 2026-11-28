@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const model = process.env.GEMINI_PLAN_MODEL || "gemini-3.8-flash";
+    const model = process.env.GEMINI_PLAN_MODEL || "gemini-2.5-flash";
 
     const prompt = `You are a social media copywriter for Instagram.
 Write a short caption (max 2 sentences) and 8-12 hashtags (no # symbol).
