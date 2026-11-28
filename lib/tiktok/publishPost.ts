@@ -319,9 +319,15 @@ export async function publishTikTokVideo(
   let chunkSize = videoSize;
   let totalChunkCount = 1;
 
-  if (videoSize > MIN_CHUNK_BYTES) {
-    chunkSize = Math.min(videoSize, effectiveMaxChunk);
-    totalChunkCount = Math.max(1, Math.floor(videoSize / chunkSize));
+  if (videoSize > effectiveMaxChunk) {
+    chunkSize = effectiveMaxChunk;
+    totalChunkCount = Math.ceil(videoSize / chunkSize);
+  } else if (videoSize >= MIN_CHUNK_BYTES) {
+    chunkSize = videoSize;
+    totalChunkCount = 1;
+  } else {
+    chunkSize = videoSize;
+    totalChunkCount = 1;
   }
 
   const title = buildCaptionText({
