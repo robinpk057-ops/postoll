@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -26,9 +26,8 @@ const ROUTE_LABELS: Record<string, string> = {
   "/automatic-posting": "Automatic Posting",
 };
 
-function isHiddenRoute(pathname: string | null): boolean {
+function isAlwaysHiddenRoute(pathname: string | null): boolean {
   if (!pathname) return true;
-  if (pathname === "/") return true;
   const hiddenPrefixes = [
     "/login",
     "/signup",
@@ -43,8 +42,60 @@ function isHiddenRoute(pathname: string | null): boolean {
   );
 }
 
+function ChaarAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const dims =
+    size === "lg"
+      ? "h-11 w-11"
+      : size === "sm"
+      ? "h-8 w-8"
+      : "h-10 w-10";
+
+  return (
+    <span
+      className={`relative inline-flex ${dims} shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-400/50 bg-[#0B0A14] shadow-[0_0_16px_rgba(124,58,237,0.55)]`}
+    >
+      {!imgFailed ? (
+        <img
+          src="/chaar-avatar.png"
+          alt="Chaar"
+          onError={() => setImgFailed(true)}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <svg
+          viewBox="0 0 40 40"
+          className="h-full w-full"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <rect width="40" height="40" rx="20" fill="#0B0A14" />
+          <path
+            d="M20 5V8M12 16C12 11.5817 15.5817 8 20 8C24.4183 8 28 11.5817 28 16V21C28 24.3137 25.3137 27 22 27H18C14.6863 27 12 24.3137 12 21V16Z"
+            fill="#181526"
+            stroke="#8B5CF6"
+            strokeWidth="1.5"
+          />
+          <rect x="14.5" y="15" width="11" height="5" rx="2.5" fill="#0B0A14" />
+          <circle cx="17.5" cy="17.5" r="1.4" fill="#A78BFA" />
+          <circle cx="22.5" cy="17.5" r="1.4" fill="#A78BFA" />
+          <path
+            d="M11 35C11 30.5817 14.5817 28 20 28C25.4183 28 29 30.5817 29 35"
+            fill="#181526"
+            stroke="#7C3AED"
+            strokeWidth="1.5"
+          />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 export function RoboAssistant() {
   const pathname = usePathname();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(pathname !== "/");
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,12 +103,36 @@ export function RoboAssistant() {
     {
       id: "welcome",
       role: "robo",
-      text: "Hey there! I'm Robo. Ask me how to check your calendar, workflows, connected accounts, or plans—and if something isn't working right, I'll flag it for our team.",
+      text: "Hey there! I'm Chaar. Ask me how to check your calendar, workflows, connected accounts, or plans—and if something isn't working right, I'll flag it for our team.",
       links: ["/calendar", "/workflows", "/accounts", "/upgrade"],
     },
   ]);
 
-  if (isHiddenRoute(pathname)) {
+  useEffect(() => {
+    if (isAlwaysHiddenRoute(pathname)) {
+      setIsAuthenticated(false);
+      return;
+    }
+    if (pathname !== "/") {
+      setIsAuthenticated(true);
+      return;
+    }
+
+    let cancelled = false;
+    fetch("/api/billing/me", { credentials: "include" })
+      .then((res) => {
+        if (!cancelled) setIsAuthenticated(res.ok);
+      })
+      .catch(() => {
+        if (!cancelled) setIsAuthenticated(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+
+  if (isAlwaysHiddenRoute(pathname) || !isAuthenticated) {
     return null;
   }
 
@@ -67,7 +142,7 @@ export function RoboAssistant() {
     if (!trimmed || loading) return;
 
     const userMsg: ChatMessage = {
-      id: `${Date.now()}-u`,
+      id: `user-${Date.now()}`,
       role: "user",
       text: trimmed,
     };
@@ -84,38 +159,27 @@ export function RoboAssistant() {
           currentPath: pathname,
         }),
       });
+      const data = await res.json();
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.reply) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-e`,
-            role: "robo",
-            text:
-              data.error ||
-              "I couldn't reply right now. Please try again in a moment.",
-          },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-r`,
-            role: "robo",
-            text: data.reply,
-            links: Array.isArray(data.suggestedLinks) ? data.suggestedLinks : [],
-            escalated: Boolean(data.escalated),
-          },
-        ]);
-      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `chaar-${Date.now()}`,
+          role: "robo",
+          text:
+            data.reply ||
+            "I couldn't process that just now. Please try again in a moment.",
+          links: Array.isArray(data.suggestedLinks) ? data.suggestedLinks : [],
+          escalated: Boolean(data.escalated),
+        },
+      ]);
     } catch {
       setMessages((prev) => [
         ...prev,
         {
-          id: `${Date.now()}-n`,
+          id: `chaar-err-${Date.now()}`,
           role: "robo",
-          text: "Network hiccup while reaching Robo. Please try again.",
+          text: "I ran into a connection hiccup. Please try again in a few seconds.",
         },
       ]);
     } finally {
@@ -126,33 +190,58 @@ export function RoboAssistant() {
   return (
     <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end">
       {open && (
-        <div className="mb-3 flex h-[430px] w-[340px] sm:w-[370px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between bg-slate-900 px-4 py-3 text-white">
-            <div className="flex items-center gap-2.5">
-              <span
-                aria-hidden="true"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500 text-sm font-bold"
-              >
-                🤖
-              </span>
+        <div
+          style={{
+            backgroundColor: "#0E0C1A",
+            borderColor: "rgba(139, 92, 246, 0.38)",
+          }}
+          className="mb-3 flex h-[480px] w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border shadow-[0_20px_60px_rgba(0,0,0,0.75),0_0_30px_rgba(124,58,237,0.22)] backdrop-blur-xl"
+        >
+          {/* Header */}
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(124,58,237,0.24) 0%, rgba(15,13,29,0.98) 65%)",
+              borderBottomColor: "rgba(139, 92, 246, 0.25)",
+            }}
+            className="flex items-center justify-between border-b px-4 py-3.5"
+          >
+            <div className="flex items-center gap-3">
+              <ChaarAvatar size="lg" />
               <div>
-                <div className="text-sm font-semibold leading-tight">Robo Helper</div>
-                <div className="text-[11px] text-slate-300">
-                  Postoll Guide &bull; Always Safe
+                <div className="flex items-center gap-2">
+                  <span
+                    style={{ color: "#FFFFFF" }}
+                    className="text-sm font-semibold tracking-wide"
+                  >
+                    Chaar
+                  </span>
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                </div>
+                <div
+                  style={{ color: "#C4B5FD" }}
+                  className="text-[11px] font-medium"
+                >
+                  Postoll Studio Copilot &bull; Always Safe
                 </div>
               </div>
             </div>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              aria-label="Close Robo Helper"
-              className="rounded-lg px-2 py-1 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
+              aria-label="Close Chaar"
+              style={{ color: "#CBD5E1" }}
+              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs transition hover:border-violet-400/40 hover:bg-violet-500/20 hover:text-white"
             >
               ✕
             </button>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50 p-3.5 text-sm">
+          {/* Messages */}
+          <div
+            style={{ backgroundColor: "#0B0A14" }}
+            className="flex-1 space-y-3.5 overflow-y-auto p-4 text-sm"
+          >
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -161,29 +250,52 @@ export function RoboAssistant() {
                 }`}
               >
                 <div
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 leading-relaxed ${
+                  style={
                     msg.role === "user"
-                      ? "bg-indigo-600 text-white"
-                      : "border border-slate-200 bg-white text-slate-800"
+                      ? {
+                          background:
+                            "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)",
+                          color: "#FFFFFF",
+                        }
+                      : {
+                          backgroundColor: "#161326",
+                          borderColor: "rgba(139, 92, 246, 0.26)",
+                          color: "#F8FAFC",
+                        }
+                  }
+                  className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 leading-relaxed shadow-sm ${
+                    msg.role === "user" ? "" : "border"
                   }`}
                 >
                   {msg.text}
                 </div>
 
                 {msg.escalated && (
-                  <span className="mt-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-medium text-amber-800">
-                    Escalated to our team
+                  <span
+                    style={{
+                      backgroundColor: "rgba(245, 158, 11, 0.16)",
+                      borderColor: "rgba(245, 158, 11, 0.4)",
+                      color: "#FDE68A",
+                    }}
+                    className="mt-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
+                  >
+                    Flagged for Postoll support team
                   </span>
                 )}
 
                 {msg.links && msg.links.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {msg.links.map((href) => (
                       <Link
                         key={href}
                         href={href}
                         onClick={() => setOpen(false)}
-                        className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                        style={{
+                          backgroundColor: "#1D1836",
+                          borderColor: "rgba(167, 139, 250, 0.45)",
+                          color: "#EDE9FE",
+                        }}
+                        className="rounded-full border px-3 py-1 text-xs font-medium transition hover:border-violet-400 hover:bg-violet-600/30"
                       >
                         {ROUTE_LABELS[href] || href} →
                       </Link>
@@ -193,26 +305,46 @@ export function RoboAssistant() {
               </div>
             ))}
             {loading && (
-              <div className="text-xs text-slate-500">Robo is thinking...</div>
+              <div
+                style={{ color: "#A78BFA" }}
+                className="flex items-center gap-2 text-xs font-medium"
+              >
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-400" />
+                <span>Chaar is thinking...</span>
+              </div>
             )}
           </div>
 
+          {/* Input */}
           <form
             onSubmit={handleSend}
-            className="flex items-center gap-2 border-t border-slate-200 bg-white p-2.5"
+            style={{
+              backgroundColor: "#0E0C1A",
+              borderTopColor: "rgba(139, 92, 246, 0.25)",
+            }}
+            className="flex items-center gap-2 border-t p-3"
           >
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               maxLength={600}
-              placeholder="Ask about calendar, accounts, plans..."
-              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+              placeholder="Ask Chaar about calendar, accounts, plans..."
+              style={{
+                backgroundColor: "#161326",
+                borderColor: "rgba(139, 92, 246, 0.3)",
+                color: "#F8FAFC",
+              }}
+              className="flex-1 rounded-xl border px-3.5 py-2 text-sm placeholder:text-slate-400 focus:border-violet-400 focus:outline-none"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              style={{
+                background: "linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)",
+                color: "#FFFFFF",
+              }}
+              className="rounded-xl px-4 py-2 text-sm font-semibold shadow-[0_0_16px_rgba(124,58,237,0.45)] transition hover:brightness-110 disabled:opacity-45"
             >
               Send
             </button>
@@ -220,15 +352,22 @@ export function RoboAssistant() {
         </div>
       )}
 
+      {/* Floating Launcher Pill */}
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-700"
+        style={{
+          background:
+            "linear-gradient(135deg, #161326 0%, #241942 55%, #6D28D9 100%)",
+          borderColor: "rgba(167, 139, 250, 0.55)",
+          color: "#FFFFFF",
+        }}
+        className="group flex items-center gap-2.5 rounded-full border py-1.5 pl-2 pr-4 text-sm font-semibold shadow-[0_10px_30px_rgba(0,0,0,0.6),0_0_24px_rgba(124,58,237,0.45)] transition hover:scale-[1.02] hover:border-violet-300"
       >
-        <span aria-hidden="true" className="text-base">
-          🤖
+        <ChaarAvatar size="sm" />
+        <span className="tracking-wide">
+          {open ? "Hide Chaar" : "Ask Chaar"}
         </span>
-        <span>{open ? "Hide Robo" : "Ask Robo"}</span>
       </button>
     </div>
   );
