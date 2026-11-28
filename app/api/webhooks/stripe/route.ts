@@ -40,27 +40,50 @@ async function resolveUserIdFromStripe(params: {
   customerId?: string | null;
   metadataUserId?: string | null;
   clientReferenceId?: string | null;
+  customerEmail?: string | null;
 }): Promise<string | null> {
   if (params.metadataUserId) return params.metadataUserId;
   if (params.clientReferenceId) return params.clientReferenceId;
-  if (!params.customerId) return null;
 
   const adminDb = createServiceRoleClient();
   if (!adminDb) return null;
 
-  const { data: prof } = await adminDb
-    .from("profiles")
-    .select("id")
-    .eq("stripe_customer_id", params.customerId)
-    .maybeSingle();
-  if (prof?.id) return prof.id;
+  if (params.customerId) {
+    const { data: prof } = await adminDb
+      .from("profiles")
+      .select("id")
+      .eq("stripe_customer_id", params.customerId)
+      .maybeSingle();
+    if (prof?.id) return prof.id;
 
-  const { data: sub } = await adminDb
-    .from("subscriptions")
-    .select("user_id")
-    .eq("provider_customer_id", params.customerId)
-    .maybeSingle();
-  return sub?.user_id ?? null;
+    const { data: sub } = await adminDb
+      .from("subscriptions")
+      .select("user_id")
+      .eq("provider_customer_id", params.customerId)
+      .maybeSingle();
+    if (sub?.user_id) return sub.user_id;
+  }
+
+  if (params.customerEmail) {
+    const normalizedEmail = params.customerEmail.trim().toLowerCase();
+    const { data: byEmail } = await adminDb
+      .from("profiles")
+      .select("id, stripe_customer_id")
+      .ilike("email", normalizedEmail)
+      .maybeSingle();
+
+    if (byEmail?.id) {
+      if (params.customerId && byEmail.stripe_customer_id !== params.customerId) {
+        await adminDb
+          .from("profiles")
+          .update({ stripe_customer_id: params.customerId })
+          .eq("id", byEmail.id);
+      }
+      return byEmail.id;
+    }
+  }
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -119,6 +142,7 @@ export async function POST(req: NextRequest) {
           customerId,
           metadataUserId: session.metadata?.user_id,
           clientReferenceId: session.client_reference_id,
+          customerEmail: session.customer_details?.email || session.customer_email || null,
         });
 
         if (!userId) break;
@@ -231,7 +255,10 @@ export async function POST(req: NextRequest) {
         const subscriptionId =
           typeof rawSub === "string" ? rawSub : rawSub?.id ?? null;
 
-        const userId = await resolveUserIdFromStripe({ customerId });
+        const userId = await resolveUserIdFromStripe({
+          customerId,
+          customerEmail: invoice.customer_email || null,
+        });
         if (!userId) break;
 
         let planTier: PlanTier = "scheduler";
@@ -354,7 +381,10 @@ export async function POST(req: NextRequest) {
         const subscriptionId =
           typeof rawSub === "string" ? rawSub : rawSub?.id ?? null;
 
-        const userId = await resolveUserIdFromStripe({ customerId });
+        const userId = await resolveUserIdFromStripe({
+          customerId,
+          customerEmail: invoice.customer_email || null,
+        });
         if (!userId) break;
 
         let planTier: PlanTier = "scheduler";
@@ -595,7 +625,10 @@ export async function POST(req: NextRequest) {
         const charge = event.data.object as Stripe.Charge;
         const customerId =
           typeof charge.customer === "string" ? charge.customer : charge.customer?.id ?? null;
-        const userId = await resolveUserIdFromStripe({ customerId });
+        const userId = await resolveUserIdFromStripe({
+          customerId,
+          customerEmail: invoice.customer_email || null,
+        });
         if (!userId) break;
 
         await recordBillingTransaction({
