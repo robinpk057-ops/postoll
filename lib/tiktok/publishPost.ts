@@ -319,9 +319,9 @@ export async function publishTikTokVideo(
   let chunkSize = videoSize;
   let totalChunkCount = 1;
 
-  if (videoSize > effectiveMaxChunk) {
+  if (videoSize >= effectiveMaxChunk * 2) {
     chunkSize = effectiveMaxChunk;
-    totalChunkCount = Math.max(1, Math.floor(videoSize / chunkSize));
+    totalChunkCount = Math.floor(videoSize / chunkSize);
   } else {
     chunkSize = videoSize;
     totalChunkCount = 1;
