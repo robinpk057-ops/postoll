@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/lib/security/guards";
 import { claimWebhookEvent } from "@/lib/security/payments";
 import { PLAN_CONFIGS, getPlanConfig, type PlanTier } from "@/lib/plans";
 import {
+  grantPlanCreditsForBillingEvent,
   recordBillingTransaction,
   resolvePlanFromStripePriceId,
   sendBillingReceiptEmail,
@@ -227,7 +228,7 @@ export async function POST(req: NextRequest) {
         const currency = session.currency || "usd";
         const customerName = session.customer_details?.name || null;
 
-        await recordBillingTransaction({
+        const txRes = await recordBillingTransaction({
           userId,
           subscriptionId: synced.subscriptionId,
           provider: "stripe",
@@ -254,6 +255,18 @@ export async function POST(req: NextRequest) {
           periodEnd: periodEndIso,
           occurredAt: occurredAtIso,
         });
+
+        if (!txRes.ok) {
+          throw new Error(`recordBillingTransaction failed: ${txRes.error}`);
+        }
+
+        if (session.payment_status === "paid") {
+          await grantPlanCreditsForBillingEvent({
+            userId,
+            planTier,
+            eventKey: event.id,
+          });
+        }
 
         if (customerEmail) {
           await sendBillingReceiptEmail({
@@ -352,7 +365,7 @@ export async function POST(req: NextRequest) {
         const customerName = invoice.customer_name || null;
         const rawPi = (invoice as unknown as { payment_intent?: string | { id?: string } | null }).payment_intent;
 
-        await recordBillingTransaction({
+        const txRes = await recordBillingTransaction({
           userId,
           subscriptionId: synced.subscriptionId,
           provider: "stripe",
@@ -384,6 +397,16 @@ export async function POST(req: NextRequest) {
           periodStart: periodStartIso,
           periodEnd: periodEndIso,
           occurredAt: occurredAtIso,
+        });
+
+        if (!txRes.ok) {
+          throw new Error(`recordBillingTransaction failed on invoice.paid: ${txRes.error}`);
+        }
+
+        await grantPlanCreditsForBillingEvent({
+          userId,
+          planTier,
+          eventKey: event.id,
         });
 
         if (customerEmail) {

@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import { createServiceRoleClient } from "@/lib/security/guards";
 import { PLAN_CONFIGS, getPlanConfig, type PlanTier } from "@/lib/plans";
@@ -119,7 +119,7 @@ export async function sendBillingReceiptEmail(params: {
   const subject =
     params.eventKind === "payment_failed"
       ? `[Postoll] Action Required: Payment Failed for ${params.planName}`
-      : `[Postoll] Billing Receipt & Invoice — ${params.planName} (${formattedAmount})`;
+      : `[Postoll] Billing Receipt & Invoice â€” ${params.planName} (${formattedAmount})`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px; color: #111827;">
@@ -380,7 +380,6 @@ export async function grantPlanCreditsForBillingEvent(params: {
     .update({
       status: updErr ? "error" : "processed",
       processed_at: new Date().toISOString(),
-      ...(updErr ? { error_message: updErr.message } : {}),
     })
     .eq("provider", "credit_grant")
     .eq("event_id", creditEventId);
