@@ -321,10 +321,7 @@ export async function publishTikTokVideo(
 
   if (videoSize > effectiveMaxChunk) {
     chunkSize = effectiveMaxChunk;
-    totalChunkCount = Math.ceil(videoSize / chunkSize);
-  } else if (videoSize >= MIN_CHUNK_BYTES) {
-    chunkSize = videoSize;
-    totalChunkCount = 1;
+    totalChunkCount = Math.max(1, Math.floor(videoSize / chunkSize));
   } else {
     chunkSize = videoSize;
     totalChunkCount = 1;
