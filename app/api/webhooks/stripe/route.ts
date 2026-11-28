@@ -46,31 +46,42 @@ async function resolveUserIdFromStripe(params: {
   if (params.clientReferenceId) return params.clientReferenceId;
 
   const adminDb = createServiceRoleClient();
-  if (!adminDb) return null;
+  const supaHost = process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host
+    : "missing-url";
+
+  if (!adminDb) {
+    console.error("[resolveUserIdFromStripe] adminDb is null", { supaHost });
+    return null;
+  }
 
   if (params.customerId) {
-    const { data: prof } = await adminDb
+    const { data: prof, error: profErr } = await adminDb
       .from("profiles")
       .select("id")
       .eq("stripe_customer_id", params.customerId)
       .maybeSingle();
+    if (profErr) console.error("[resolveUserIdFromStripe] customer query error:", profErr);
     if (prof?.id) return prof.id;
 
-    const { data: sub } = await adminDb
+    const { data: sub, error: subErr } = await adminDb
       .from("subscriptions")
       .select("user_id")
       .eq("provider_customer_id", params.customerId)
       .maybeSingle();
+    if (subErr) console.error("[resolveUserIdFromStripe] sub query error:", subErr);
     if (sub?.user_id) return sub.user_id;
   }
 
   if (params.customerEmail) {
     const normalizedEmail = params.customerEmail.trim().toLowerCase();
-    const { data: byEmail } = await adminDb
+    const { data: byEmail, error: emailErr } = await adminDb
       .from("profiles")
       .select("id, stripe_customer_id")
       .ilike("email", normalizedEmail)
       .maybeSingle();
+
+    if (emailErr) console.error("[resolveUserIdFromStripe] email query error:", emailErr);
 
     if (byEmail?.id) {
       if (params.customerId && byEmail.stripe_customer_id !== params.customerId) {
@@ -83,6 +94,11 @@ async function resolveUserIdFromStripe(params: {
     }
   }
 
+  console.error("[resolveUserIdFromStripe] No match found", {
+    supaHost,
+    customerId: params.customerId ?? null,
+    customerEmail: params.customerEmail ?? null,
+  });
   return null;
 }
 
