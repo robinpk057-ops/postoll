@@ -10,7 +10,25 @@ import {
   type StatCmsItem,
 } from "@/lib/cms-defaults";
 
-type AdminTab = "cms" | "users" | "monitoring" | "security";
+type AdminTab = "cms" | "users" | "monitoring" | "security" | "watchdog";
+
+type WatchdogIncidentRow = {
+  id: string;
+  fingerprint: string;
+  source: string;
+  severity: "info" | "warning" | "critical" | string;
+  category: string;
+  title: string;
+  summary: string;
+  recommended_action: string | null;
+  affected_route_or_feature: string | null;
+  affected_user_id: string | null;
+  occurrence_count: number;
+  status: "open" | "acknowledged" | "resolved" | string;
+  email_sent_at: string | null;
+  created_at: string;
+  last_seen_at: string;
+};
 
 type SectionRow = {
   section_key: string;
@@ -97,6 +115,72 @@ export default function AdminDashboardPage() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [userSearch, setUserSearch] = useState("");
   const [onlyErrors, setOnlyErrors] = useState(false);
+  const [watchdogIncidents, setWatchdogIncidents] = useState<WatchdogIncidentRow[]>([]);
+  const [watchdogSummary, setWatchdogSummary] = useState({
+    open: 0,
+    acknowledged: 0,
+    resolved: 0,
+    criticalOpen: 0,
+  });
+  const [watchdogFilter, setWatchdogFilter] = useState<"all" | "open" | "acknowledged" | "resolved">("open");
+  const [loadingWatchdog, setLoadingWatchdog] = useState(false);
+  const [updatingIncidentId, setUpdatingIncidentId] = useState<string | null>(null);
+
+  const loadWatchdog = useCallback(async () => {
+    setLoadingWatchdog(true);
+    try {
+      const res = await fetch("/api/admin/watchdog", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.incidents)) {
+        setWatchdogIncidents(data.incidents);
+      }
+      if (data.summary) {
+        setWatchdogSummary(data.summary);
+      }
+    } catch {
+      // Non-blocking watchdog fetch
+    } finally {
+      setLoadingWatchdog(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWatchdog();
+  }, [loadWatchdog]);
+
+  const handleUpdateIncidentStatus = useCallback(
+    async (id: string, nextStatus: "open" | "acknowledged" | "resolved") => {
+      setUpdatingIncidentId(id);
+      try {
+        const res = await fetch("/api/admin/watchdog", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, status: nextStatus }),
+        });
+        if (res.ok) {
+          await loadWatchdog();
+          setStatusMessage({
+            type: "success",
+            text: `Incident marked as ${nextStatus}.`,
+          });
+        } else {
+          setStatusMessage({
+            type: "error",
+            text: "Could not update incident status.",
+          });
+        }
+      } catch {
+        setStatusMessage({
+          type: "error",
+          text: "Network error updating incident.",
+        });
+      } finally {
+        setUpdatingIncidentId(null);
+      }
+    },
+    [loadWatchdog]
+  );
 
   const loadOverview = useCallback(async (isManual = false) => {
     if (isManual) setRefreshingOverview(true);
@@ -283,7 +367,7 @@ export default function AdminDashboardPage() {
 
         <button
           type="button"
-          onClick={() => loadOverview(true)}
+          onClick={() => { loadOverview(true); loadWatchdog(); }}
           disabled={refreshingOverview}
           className="self-start rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-neutral-200 transition hover:border-white/35 hover:text-white disabled:opacity-50 sm:self-auto"
         >
@@ -328,6 +412,7 @@ export default function AdminDashboardPage() {
             ["users", `Users & Credits (${summary.totalUsers})`],
             ["monitoring", `API Costs & Issues (${summary.totalApiCalls})`],
             ["security", "Payments & Audit Trail"],
+            ["watchdog", `Chaar & Watchdog (${watchdogSummary.open} Open)`],
           ] as const
         ).map(([tabKey, label]) => {
           const isActive = activeTab === tabKey;
@@ -837,6 +922,185 @@ export default function AdminDashboardPage() {
           </section>
         </div>
       )}
+      {/* TAB 5: CHAAR ESCALATIONS & WATCHDOG */}
+      {activeTab === "watchdog" && (
+        <section className="rounded-3xl border border-white/10 bg-[#0D0D10] p-6 sm:p-8 space-y-6">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-lg font-bold">Chaar Escalations &amp; Watchdog Alerts</h2>
+              <p className="text-xs text-neutral-400">
+                Review user issues escalated through Chaar and automated system health probes, and resolve tickets in one click.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {(["open", "acknowledged", "resolved", "all"] as const).map((filterKey) => (
+                <button
+                  key={filterKey}
+                  type="button"
+                  onClick={() => setWatchdogFilter(filterKey)}
+                  className={`rounded-full px-3.5 py-1.5 text-xs font-bold capitalize transition ${
+                    watchdogFilter === filterKey
+                      ? "bg-[#7C5CFF] text-white"
+                      : "border border-white/10 bg-[#050505] text-neutral-300 hover:border-white/30 hover:text-white"
+                  }`}
+                >
+                  {filterKey}
+                  {filterKey === "open" ? ` (${watchdogSummary.open})` : ""}
+                  {filterKey === "acknowledged" ? ` (${watchdogSummary.acknowledged})` : ""}
+                  {filterKey === "resolved" ? ` (${watchdogSummary.resolved})` : ""}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={loadWatchdog}
+                disabled={loadingWatchdog}
+                className="rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs font-semibold text-neutral-200 hover:border-white/35 hover:text-white disabled:opacity-50"
+              >
+                {loadingWatchdog ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {watchdogIncidents
+              .filter((inc) => watchdogFilter === "all" || inc.status === watchdogFilter)
+              .map((inc) => {
+                const matchedUser = inc.affected_user_id
+                  ? (overview?.users ?? []).find((u) => u.id === inc.affected_user_id)
+                  : null;
+                const isChaarTicket = inc.source === "robo_escalation";
+
+                return (
+                  <div
+                    key={inc.id}
+                    className="rounded-2xl border border-white/10 bg-[#050505] p-4 sm:p-5 space-y-3"
+                  >
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                              isChaarTicket
+                                ? "bg-violet-500/20 text-violet-300 border border-violet-400/30"
+                                : "bg-sky-500/20 text-sky-300 border border-sky-400/30"
+                            }`}
+                          >
+                            {isChaarTicket ? "Chaar Escalation" : "Watchdog Probe"}
+                          </span>
+
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${
+                              inc.severity === "critical"
+                                ? "bg-red-500/20 text-red-300"
+                                : inc.severity === "warning"
+                                ? "bg-amber-500/20 text-amber-300"
+                                : "bg-neutral-500/20 text-neutral-300"
+                            }`}
+                          >
+                            {inc.severity}
+                          </span>
+
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${
+                              inc.status === "open"
+                                ? "bg-rose-500/20 text-rose-300"
+                                : inc.status === "acknowledged"
+                                ? "bg-amber-500/20 text-amber-300"
+                                : "bg-emerald-500/20 text-emerald-300"
+                            }`}
+                          >
+                            {inc.status}
+                          </span>
+
+                          {inc.occurrence_count > 1 && (
+                            <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-neutral-300">
+                              {inc.occurrence_count}x reported
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 className="text-sm font-bold text-white">{inc.title}</h3>
+                        <p className="text-xs leading-relaxed text-neutral-300">
+                          {inc.summary}
+                        </p>
+
+                        {inc.recommended_action && (
+                          <p className="text-xs text-neutral-400">
+                            <span className="font-semibold text-neutral-200">Next step:</span>{" "}
+                            {inc.recommended_action}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-neutral-400">
+                          {matchedUser?.email && (
+                            <span>
+                              User: <strong className="text-neutral-200">{matchedUser.email}</strong>
+                            </span>
+                          )}
+                          {!matchedUser?.email && inc.affected_user_id && (
+                            <span>
+                              User ID: <code className="text-neutral-300">{inc.affected_user_id}</code>
+                            </span>
+                          )}
+                          {inc.affected_route_or_feature && (
+                            <span>
+                              Route: <code className="text-violet-300">{inc.affected_route_or_feature}</code>
+                            </span>
+                          )}
+                          <span>
+                            Last seen: {new Date(inc.last_seen_at).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        {inc.status === "open" && (
+                          <button
+                            type="button"
+                            disabled={updatingIncidentId === inc.id}
+                            onClick={() => handleUpdateIncidentStatus(inc.id, "acknowledged")}
+                            className="rounded-xl border border-amber-400/35 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/25 disabled:opacity-50"
+                          >
+                            Acknowledge
+                          </button>
+                        )}
+                        {inc.status !== "resolved" ? (
+                          <button
+                            type="button"
+                            disabled={updatingIncidentId === inc.id}
+                            onClick={() => handleUpdateIncidentStatus(inc.id, "resolved")}
+                            className="rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                          >
+                            {updatingIncidentId === inc.id ? "Saving..." : "Mark Resolved"}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={updatingIncidentId === inc.id}
+                            onClick={() => handleUpdateIncidentStatus(inc.id, "open")}
+                            className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-neutral-300 transition hover:border-white/35 hover:text-white disabled:opacity-50"
+                          >
+                            Reopen
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+            {watchdogIncidents.filter(
+              (inc) => watchdogFilter === "all" || inc.status === watchdogFilter
+            ).length === 0 && (
+              <p className="py-8 text-center text-xs text-neutral-400">
+                No {watchdogFilter === "all" ? "" : watchdogFilter} Chaar or Watchdog incidents right now.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
+
