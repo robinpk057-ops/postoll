@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -43,8 +43,7 @@ function isAlwaysHiddenRoute(pathname: string | null): boolean {
 }
 
 function ChaarAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const [imgFailed, setImgFailed] = useState(false);
-
+  const uid = useId().replace(/:/g, "");
   const dims =
     size === "lg"
       ? "h-11 w-11"
@@ -54,41 +53,112 @@ function ChaarAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
 
   return (
     <span
-      className={`relative inline-flex ${dims} shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-400/50 bg-[#0B0A14] shadow-[0_0_16px_rgba(124,58,237,0.55)]`}
+      className={`relative inline-flex ${dims} shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-400/60 bg-[#0B0A14] shadow-[0_0_18px_rgba(124,58,237,0.65)]`}
     >
-      {!imgFailed ? (
-        <img
-          src="/chaar-avatar.png"
-          alt="Chaar"
-          onError={() => setImgFailed(true)}
-          className="h-full w-full object-cover"
+      <svg
+        viewBox="0 0 64 64"
+        className="h-full w-full"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <defs>
+          <radialGradient id={`aura-${uid}`} cx="50%" cy="35%" r="60%">
+            <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.45" />
+            <stop offset="65%" stopColor="#1E1338" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#0B0A14" stopOpacity="1" />
+          </radialGradient>
+          <linearGradient id={`armor-${uid}`} x1="16" y1="10" x2="48" y2="56" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#3B3556" />
+            <stop offset="35%" stopColor="#1C192B" />
+            <stop offset="100%" stopColor="#0D0B16" />
+          </linearGradient>
+          <linearGradient id={`helmet-${uid}`} x1="20" y1="9" x2="44" y2="39" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#4C446E" />
+            <stop offset="40%" stopColor="#1F1B30" />
+            <stop offset="100%" stopColor="#0E0C18" />
+          </linearGradient>
+          <linearGradient id={`neon-${uid}`} x1="18" y1="22" x2="46" y2="26" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#C4B5FD" />
+            <stop offset="50%" stopColor="#A855F7" />
+            <stop offset="100%" stopColor="#7C3AED" />
+          </linearGradient>
+        </defs>
+
+        {/* Deep Obsidian & Violet Aura Backdrop */}
+        <circle cx="32" cy="32" r="32" fill={`url(#aura-${uid})`} />
+
+        {/* Shoulders & Chest Armor Bust */}
+        <path
+          d="M12 58C13.5 47.5 21 42.5 32 42.5C43 42.5 50.5 47.5 52 58H12Z"
+          fill={`url(#armor-${uid})`}
+          stroke="#7C3AED"
+          strokeOpacity="0.55"
+          strokeWidth="1.2"
         />
-      ) : (
-        <svg
-          viewBox="0 0 40 40"
-          className="h-full w-full"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <rect width="40" height="40" rx="20" fill="#0B0A14" />
-          <path
-            d="M20 5V8M12 16C12 11.5817 15.5817 8 20 8C24.4183 8 28 11.5817 28 16V21C28 24.3137 25.3137 27 22 27H18C14.6863 27 12 24.3137 12 21V16Z"
-            fill="#181526"
-            stroke="#8B5CF6"
-            strokeWidth="1.5"
-          />
-          <rect x="14.5" y="15" width="11" height="5" rx="2.5" fill="#0B0A14" />
-          <circle cx="17.5" cy="17.5" r="1.4" fill="#A78BFA" />
-          <circle cx="22.5" cy="17.5" r="1.4" fill="#A78BFA" />
-          <path
-            d="M11 35C11 30.5817 14.5817 28 20 28C25.4183 28 29 30.5817 29 35"
-            fill="#181526"
-            stroke="#7C3AED"
-            strokeWidth="1.5"
-          />
-        </svg>
-      )}
+        {/* Glowing Chest V-Core Trim */}
+        <path
+          d="M22 45.5L32 52.5L42 45.5M32 52.5V58"
+          stroke={`url(#neon-${uid})`}
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Neck */}
+        <rect x="27" y="36" width="10" height="8" rx="3" fill="#12101E" />
+        <path d="M29 38V43M35 38V43" stroke="#8B5CF6" strokeOpacity="0.6" strokeWidth="1.1" />
+
+        {/* Ear Pods */}
+        <rect x="15.5" y="19" width="3.5" height="10" rx="1.75" fill="#231E38" stroke="#8B5CF6" strokeWidth="1" />
+        <rect x="45" y="19" width="3.5" height="10" rx="1.75" fill="#231E38" stroke="#8B5CF6" strokeWidth="1" />
+
+        {/* 3D Sculpted Helmet */}
+        <path
+          d="M18.5 21C18.5 13.5 24.2 8.5 32 8.5C39.8 8.5 45.5 13.5 45.5 21V27.5C45.5 33.8 40.3 38.5 34 38.5H30C23.7 38.5 18.5 33.8 18.5 27.5V21Z"
+          fill={`url(#helmet-${uid})`}
+          stroke="#A78BFA"
+          strokeOpacity="0.65"
+          strokeWidth="1.2"
+        />
+
+        {/* Forehead Crest Highlight */}
+        <path
+          d="M25 12.5C27.2 11.2 29.5 10.7 32 10.7C34.5 10.7 36.8 11.2 39 12.5"
+          stroke="#DDD6FE"
+          strokeOpacity="0.5"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+
+        {/* Dark Visor Recess */}
+        <rect
+          x="21"
+          y="19.5"
+          width="22"
+          height="8.5"
+          rx="4.25"
+          fill="#07060D"
+          stroke="#7C3AED"
+          strokeOpacity="0.7"
+          strokeWidth="1"
+        />
+
+        {/* Glowing Neon-Violet Eyes */}
+        <rect x="24" y="22.2" width="6.2" height="3" rx="1.5" fill="#E9D5FF" />
+        <rect x="33.8" y="22.2" width="6.2" height="3" rx="1.5" fill="#E9D5FF" />
+        <rect x="23.5" y="21.8" width="7.2" height="3.8" rx="1.9" stroke="#A855F7" strokeOpacity="0.75" strokeWidth="1" />
+        <rect x="33.3" y="21.8" width="7.2" height="3.8" rx="1.9" stroke="#A855F7" strokeOpacity="0.75" strokeWidth="1" />
+
+        {/* Cheek / Jaw Neon Accent Lines */}
+        <path
+          d="M21.5 29.5L25.5 34.5M42.5 29.5L38.5 34.5"
+          stroke="#8B5CF6"
+          strokeOpacity="0.75"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      </svg>
     </span>
   );
 }
