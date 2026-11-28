@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -10,8 +10,26 @@ import { PLAN_CONFIGS, getPlanConfig, type PlanTier } from "@/lib/plans";
 
 type BillingSummary = {
   planTier: PlanTier;
+  planStatus: string;
   purchasedAt: string | null;
   expiresAt: string | null;
+  cancelAtPeriodEnd: boolean;
+};
+
+type UserBillingTx = {
+  id: string;
+  event_kind: string;
+  plan_tier: string;
+  billing_cycle: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  invoice_number: string | null;
+  hosted_invoice_url: string | null;
+  invoice_pdf_url: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  occurred_at: string;
 };
 
 function formatDateTime(value: string | null) {
@@ -35,9 +53,14 @@ export default function SettingsPage() {
 
   const [billing, setBilling] = useState<BillingSummary>({
     planTier: "scheduler",
+    planStatus: "active",
     purchasedAt: null,
     expiresAt: null,
+    cancelAtPeriodEnd: false,
   });
+  const [billingHistory, setBillingHistory] = useState<UserBillingTx[]>([]);
+  const [openingPortal, setOpeningPortal] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -102,12 +125,42 @@ export default function SettingsPage() {
         setUsername(row.username);
       }
 
+      const { data: subRow } = await supabase
+        .from("subscriptions")
+        .select(
+          "plan_tier, status, current_period_start, current_period_end, cancel_at_period_end"
+        )
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const { data: txRows } = await supabase
+        .from("billing_transactions")
+        .select(
+          "id, event_kind, plan_tier, billing_cycle, amount_cents, currency, status, invoice_number, hosted_invoice_url, invoice_pdf_url, period_start, period_end, occurred_at"
+        )
+        .eq("user_id", user.id)
+        .order("occurred_at", { ascending: false })
+        .limit(25);
+
+      if (Array.isArray(txRows)) {
+        setBillingHistory(txRows as UserBillingTx[]);
+      }
+
       const resolvedTier = getPlanConfig(
-        typeof row.plan_tier === "string" ? row.plan_tier : "scheduler"
+        typeof subRow?.plan_tier === "string" &&
+          (subRow.status === "active" || subRow.status === "past_due")
+          ? subRow.plan_tier
+          : typeof row.plan_tier === "string"
+          ? row.plan_tier
+          : "scheduler"
       ).id;
 
       const purchasedRaw =
-        typeof row.plan_started_at === "string" && row.plan_started_at
+        typeof subRow?.current_period_start === "string" && subRow.current_period_start
+          ? subRow.current_period_start
+          : typeof row.plan_started_at === "string" && row.plan_started_at
           ? row.plan_started_at
           : typeof row.updated_at === "string" && row.updated_at
           ? row.updated_at
@@ -116,14 +169,25 @@ export default function SettingsPage() {
           : null;
 
       const expiresRaw =
-        typeof row.plan_expires_at === "string" && row.plan_expires_at
+        typeof subRow?.current_period_end === "string" && subRow.current_period_end
+          ? subRow.current_period_end
+          : typeof row.plan_ends_at === "string" && row.plan_ends_at
+          ? row.plan_ends_at
+          : typeof row.plan_expires_at === "string" && row.plan_expires_at
           ? row.plan_expires_at
           : null;
 
       setBilling({
         planTier: resolvedTier,
+        planStatus:
+          typeof subRow?.status === "string"
+            ? subRow.status
+            : typeof row.plan_status === "string"
+            ? row.plan_status
+            : "active",
         purchasedAt: purchasedRaw,
         expiresAt: expiresRaw,
+        cancelAtPeriodEnd: Boolean(subRow?.cancel_at_period_end),
       });
     } catch (err) {
       setLoadError(
@@ -424,15 +488,47 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <Link
-                href="/upgrade"
-                className="self-start rounded-xl border border-[#7C5CFF]/50 bg-[#7C5CFF]/15 px-4 py-2 text-xs font-bold text-[#C4B5FD] transition hover:bg-[#7C5CFF]/25 sm:self-auto"
-              >
-                Manage / Upgrade Plan
-              </Link>
+              <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+                <button
+                  type="button"
+                  disabled={openingPortal}
+                  onClick={async () => {
+                    try {
+                      setOpeningPortal(true);
+                      setPortalError(null);
+                      const res = await fetch("/api/billing/portal", { method: "POST" });
+                      const data = await res.json().catch(() => ({}));
+                      if (!res.ok || !data.url) {
+                        throw new Error(data.error || "Unable to open billing portal.");
+                      }
+                      window.location.href = data.url;
+                    } catch (err) {
+                      setPortalError(
+                        err instanceof Error ? err.message : "Unable to open billing portal."
+                      );
+                      setOpeningPortal(false);
+                    }
+                  }}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10 disabled:opacity-50"
+                >
+                  {openingPortal ? "Opening Portal..." : "Manage Billing / Cancel"}
+                </button>
+                <Link
+                  href="/upgrade"
+                  className="rounded-xl border border-[#7C5CFF]/50 bg-[#7C5CFF]/15 px-4 py-2 text-xs font-bold text-[#C4B5FD] transition hover:bg-[#7C5CFF]/25"
+                >
+                  Manage / Upgrade Plan
+                </Link>
+              </div>
             </div>
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+            {portalError && (
+              <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+                {portalError}
+              </div>
+            )}
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-4">
               <div
                 className="rounded-xl border p-4"
                 style={{
@@ -445,6 +541,22 @@ export default function SettingsPage() {
                 </p>
                 <p className="mt-1 text-base font-black text-white">
                   {activePlan.name} (${activePlan.monthlyPriceUsd.toFixed(2)}/mo)
+                </p>
+              </div>
+
+              <div
+                className="rounded-xl border p-4"
+                style={{
+                  borderColor: "var(--border)",
+                  background: "var(--background)",
+                }}
+              >
+                <p className="text-xs font-semibold" style={{ color: "var(--muted)" }}>
+                  Billing status
+                </p>
+                <p className="mt-1 text-sm font-bold uppercase text-white">
+                  {billing.planStatus}
+                  {billing.cancelAtPeriodEnd ? " (Cancels at end)" : ""}
                 </p>
               </div>
 
@@ -471,13 +583,78 @@ export default function SettingsPage() {
                 }}
               >
                 <p className="text-xs font-semibold" style={{ color: "var(--muted)" }}>
-                  Plan ending time
+                  Plan ending / renewal time
                 </p>
                 <p className="mt-1 text-sm font-bold text-white">
                   {formatDateTime(billing.expiresAt)}
                 </p>
               </div>
             </div>
+
+            {billingHistory.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-bold text-white">Billing history &amp; invoices</h3>
+                <div className="mt-3 space-y-2">
+                  {billingHistory.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="flex flex-col gap-2 rounded-xl border p-3.5 text-xs sm:flex-row sm:items-center sm:justify-between"
+                      style={{
+                        borderColor: "var(--border)",
+                        background: "var(--background)",
+                      }}
+                    >
+                      <div>
+                        <span className="font-bold uppercase text-white">
+                          {tx.event_kind.replace("_", " ")}
+                        </span>
+                        <span className="mx-2 text-neutral-500">&bull;</span>
+                        <span className="text-neutral-300">
+                          {getPlanConfig(tx.plan_tier).name} ({tx.billing_cycle})
+                        </span>
+                        <span className="mx-2 text-neutral-500">&bull;</span>
+                        <span className="text-neutral-400">
+                          {formatDateTime(tx.occurred_at)}
+                        </span>
+                        {tx.invoice_number && (
+                          <span className="ml-2 text-neutral-400">
+                            Invoice #{tx.invoice_number}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-white">
+                          {(tx.amount_cents / 100).toFixed(2)} {tx.currency.toUpperCase()}
+                        </span>
+                        <span className="rounded-full border border-white/15 px-2.5 py-0.5 text-[11px] uppercase text-neutral-300">
+                          {tx.status}
+                        </span>
+                        {tx.hosted_invoice_url && (
+                          <a
+                            href={tx.hosted_invoice_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold text-[#C4B5FD] underline"
+                          >
+                            Invoice
+                          </a>
+                        )}
+                        {tx.invoice_pdf_url && (
+                          <a
+                            href={tx.invoice_pdf_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold text-emerald-300 underline"
+                          >
+                            PDF
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           <section

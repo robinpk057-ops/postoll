@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -196,25 +196,26 @@ export default function UpgradePage() {
       setErrorMsg(null);
       setSuccessMsg(null);
 
-      const res = await fetch("/api/billing/plan", {
+      const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ planTier: tier, billingCycle: "monthly" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || "Unable to activate plan.");
+        throw new Error(data.error || "Unable to start checkout.");
       }
 
-      setCurrentPlan(tier);
-      setSuccessMsg(
-        `You are now on the ${PLAN_CONFIGS[tier].name} monthly plan! All workflow limits and perks are active immediately.`
-      );
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+
+      throw new Error("Checkout session URL was not returned.");
     } catch (err) {
       setErrorMsg(
-        err instanceof Error ? err.message : "Unable to activate plan."
+        err instanceof Error ? err.message : "Unable to start checkout."
       );
-    } finally {
       setSelecting(null);
     }
   }

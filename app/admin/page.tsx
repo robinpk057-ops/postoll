@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -79,6 +79,43 @@ type AuditRow = {
   created_at: string;
 };
 
+type AdminSubscriptionRow = {
+  id: string;
+  user_id: string;
+  provider: string;
+  provider_subscription_id: string | null;
+  plan_tier: string;
+  billing_cycle: string;
+  status: string;
+  current_period_start: string;
+  current_period_end: string;
+  cancel_at_period_end: boolean;
+  canceled_at: string | null;
+  paused_at: string | null;
+  last_payment_at: string | null;
+};
+
+type AdminBillingTxRow = {
+  id: string;
+  user_id: string;
+  provider: string;
+  provider_event_id: string;
+  event_kind: string;
+  plan_tier: string;
+  billing_cycle: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  invoice_number: string | null;
+  hosted_invoice_url: string | null;
+  invoice_pdf_url: string | null;
+  customer_email: string | null;
+  description: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  occurred_at: string;
+};
+
 type OverviewResponse = {
   summary: {
     totalUsers: number;
@@ -87,11 +124,15 @@ type OverviewResponse = {
     totalApiCostUsd: number;
     totalCreditsCharged: number;
     webhookEventsCount: number;
+    activeSubscriptionsCount?: number;
+    totalRevenueUsd?: number;
   };
   users: UserRow[];
   apiLogs: ApiLogRow[];
   webhooks: WebhookRow[];
   auditLogs: AuditRow[];
+  subscriptions?: AdminSubscriptionRow[];
+  billingTransactions?: AdminBillingTxRow[];
   warnings?: {
     missingServiceRoleKey?: boolean;
   };
@@ -859,67 +900,164 @@ export default function AdminDashboardPage() {
         </section>
       )}
 
-      {/* TAB 4: PAYMENTS & AUDIT TRAIL */}
+      {/* TAB 4: PAYMENTS, SUBSCRIPTIONS & AUDIT TRAIL */}
       {activeTab === "security" && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-3xl border border-white/10 bg-[#0D0D10] p-6 space-y-4">
-            <h2 className="text-lg font-bold">Payment Webhook Ledger</h2>
-            <p className="text-xs text-neutral-400">
-              Idempotent webhook events recorded for payment gateway safety.
-            </p>
-            <div className="space-y-2.5">
-              {(overview?.webhooks ?? []).map((w) => (
-                <div
-                  key={w.id}
-                  className="rounded-2xl border border-white/10 bg-[#050505] p-3.5 text-xs"
-                >
-                  <div className="flex items-center justify-between font-semibold text-white">
-                    <span>
-                      {w.provider} · {w.event_type}
-                    </span>
-                    <span className="text-emerald-300">{w.status}</span>
+        <div className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="rounded-3xl border border-white/10 bg-[#0D0D10] p-6 space-y-4">
+              <h2 className="text-lg font-bold">Subscriptions &amp; Period Dates</h2>
+              <p className="text-xs text-neutral-400">
+                Live plan status, start dates, renewal/end dates, and cancellations per user.
+              </p>
+              <div className="space-y-2.5">
+                {(overview?.subscriptions ?? []).map((s) => (
+                  <div
+                    key={s.id}
+                    className="rounded-2xl border border-white/10 bg-[#050505] p-3.5 text-xs space-y-1"
+                  >
+                    <div className="flex items-center justify-between font-semibold text-white">
+                      <span>
+                        {s.plan_tier} ({s.billing_cycle}) &middot; {s.provider}
+                      </span>
+                      <span className="uppercase text-emerald-300">
+                        {s.status}
+                        {s.cancel_at_period_end ? " (Cancel at end)" : ""}
+                      </span>
+                    </div>
+                    <div className="text-neutral-400">User ID: {s.user_id}</div>
+                    <div className="text-neutral-400">
+                      Start: {new Date(s.current_period_start).toLocaleString()} &rarr; End:{" "}
+                      {new Date(s.current_period_end).toLocaleString()}
+                    </div>
                   </div>
-                  <div className="mt-1 text-neutral-400">Event: {w.event_id}</div>
-                </div>
-              ))}
-              {(overview?.webhooks ?? []).length === 0 && (
-                <p className="py-6 text-center text-xs text-neutral-400">
-                  No payment webhook events yet.
-                </p>
-              )}
-            </div>
-          </section>
+                ))}
+                {(overview?.subscriptions ?? []).length === 0 && (
+                  <p className="py-6 text-center text-xs text-neutral-400">
+                    No subscription records yet.
+                  </p>
+                )}
+              </div>
+            </section>
 
-          <section className="rounded-3xl border border-white/10 bg-[#0D0D10] p-6 space-y-4">
-            <h2 className="text-lg font-bold">Admin Audit Trail</h2>
-            <p className="text-xs text-neutral-400">
-              Tracks CMS edits, media uploads, and administrative actions.
-            </p>
-            <div className="space-y-2.5">
-              {(overview?.auditLogs ?? []).map((a) => (
-                <div
-                  key={a.id}
-                  className="rounded-2xl border border-white/10 bg-[#050505] p-3.5 text-xs"
-                >
-                  <div className="flex items-center justify-between font-semibold text-white">
-                    <span>{a.action}</span>
-                    <span className="text-neutral-400">
-                      {new Date(a.created_at).toLocaleString()}
-                    </span>
+            <section className="rounded-3xl border border-white/10 bg-[#0D0D10] p-6 space-y-4">
+              <h2 className="text-lg font-bold">Billing &amp; Repayment Ledger</h2>
+              <p className="text-xs text-neutral-400">
+                Records initial payments, renewals/repayments, upgrades, cancellations, refunds, and invoices.
+              </p>
+              <div className="space-y-2.5">
+                {(overview?.billingTransactions ?? []).map((tx) => (
+                  <div
+                    key={tx.id}
+                    className="rounded-2xl border border-white/10 bg-[#050505] p-3.5 text-xs space-y-1"
+                  >
+                    <div className="flex items-center justify-between font-semibold text-white">
+                      <span>
+                        {tx.event_kind.toUpperCase()} &middot; {tx.plan_tier} ({tx.billing_cycle})
+                      </span>
+                      <span className="text-emerald-300">
+                        {(tx.amount_cents / 100).toFixed(2)} {tx.currency.toUpperCase()} ({tx.status})
+                      </span>
+                    </div>
+                    <div className="text-neutral-400">
+                      {tx.customer_email ? `${tx.customer_email} · ` : ""}
+                      {new Date(tx.occurred_at).toLocaleString()}
+                      {tx.invoice_number ? ` · Inv #${tx.invoice_number}` : ""}
+                    </div>
+                    {(tx.hosted_invoice_url || tx.invoice_pdf_url) && (
+                      <div className="flex gap-3 pt-0.5">
+                        {tx.hosted_invoice_url && (
+                          <a
+                            href={tx.hosted_invoice_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[#C4B5FD] underline"
+                          >
+                            Hosted Invoice
+                          </a>
+                        )}
+                        {tx.invoice_pdf_url && (
+                          <a
+                            href={tx.invoice_pdf_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-emerald-300 underline"
+                          >
+                            PDF
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="mt-1 text-neutral-400">
-                    Target: {a.target_type}
-                    {a.target_id ? ` (${a.target_id})` : ""}
+                ))}
+                {(overview?.billingTransactions ?? []).length === 0 && (
+                  <p className="py-6 text-center text-xs text-neutral-400">
+                    No billing transactions recorded yet.
+                  </p>
+                )}
+              </div>
+            </section>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="rounded-3xl border border-white/10 bg-[#0D0D10] p-6 space-y-4">
+              <h2 className="text-lg font-bold">Payment Webhook Ledger</h2>
+              <p className="text-xs text-neutral-400">
+                Idempotent webhook events recorded for payment gateway safety.
+              </p>
+              <div className="space-y-2.5">
+                {(overview?.webhooks ?? []).map((w) => (
+                  <div
+                    key={w.id}
+                    className="rounded-2xl border border-white/10 bg-[#050505] p-3.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between font-semibold text-white">
+                      <span>
+                        {w.provider} · {w.event_type}
+                      </span>
+                      <span className="text-emerald-300">{w.status}</span>
+                    </div>
+                    <div className="mt-1 text-neutral-400">Event: {w.event_id}</div>
                   </div>
-                </div>
-              ))}
-              {(overview?.auditLogs ?? []).length === 0 && (
-                <p className="py-6 text-center text-xs text-neutral-400">
-                  No audit records yet.
-                </p>
-              )}
-            </div>
-          </section>
+                ))}
+                {(overview?.webhooks ?? []).length === 0 && (
+                  <p className="py-6 text-center text-xs text-neutral-400">
+                    No payment webhook events yet.
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-white/10 bg-[#0D0D10] p-6 space-y-4">
+              <h2 className="text-lg font-bold">Admin Audit Trail</h2>
+              <p className="text-xs text-neutral-400">
+                Tracks CMS edits, media uploads, and administrative actions.
+              </p>
+              <div className="space-y-2.5">
+                {(overview?.auditLogs ?? []).map((a) => (
+                  <div
+                    key={a.id}
+                    className="rounded-2xl border border-white/10 bg-[#050505] p-3.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between font-semibold text-white">
+                      <span>{a.action}</span>
+                      <span className="text-neutral-400">
+                        {new Date(a.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-neutral-400">
+                      Target: {a.target_type}
+                      {a.target_id ? ` (${a.target_id})` : ""}
+                    </div>
+                  </div>
+                ))}
+                {(overview?.auditLogs ?? []).length === 0 && (
+                  <p className="py-6 text-center text-xs text-neutral-400">
+                    No audit records yet.
+                  </p>
+                )}
+              </div>
+            </section>
+          </div>
         </div>
       )}
       {/* TAB 5: CHAAR ESCALATIONS & WATCHDOG */}

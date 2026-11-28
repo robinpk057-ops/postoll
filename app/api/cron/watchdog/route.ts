@@ -1,7 +1,8 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { WatchdogIncidentDraft, WatchdogRunReport } from "@/lib/watchdog/types";
 import { sendWatchdogAlertEmail } from "@/lib/watchdog/mailer";
+import { enforceExpiredSubscriptions } from "@/lib/billing/ledger";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -90,6 +91,7 @@ async function handleWatchdog(req: NextRequest) {
   }
 
   const incidents: WatchdogIncidentDraft[] = [];
+  await enforceExpiredSubscriptions();
   const checksRun: string[] = [];
   const warnings: string[] = [];
   const now = new Date();
